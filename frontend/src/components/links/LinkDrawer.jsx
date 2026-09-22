@@ -26,10 +26,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link as RouterLink } from 'react-router-dom';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
+import { useConfirm } from '../../context/ConfirmContext';
 
 const CATEGORIES = ['marketing', 'sales', 'product', 'social', 'personal', 'other'];
 
 export default function LinkDrawer({ link, open, onClose }) {
+  const confirm = useConfirm();
   const { updateLink, removeLink } = useLinkStore();
   const [copied, setCopied] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -133,13 +135,16 @@ export default function LinkDrawer({ link, open, onClose }) {
   };
 
   const handleDelete = async () => {
-    if (
-      !window.confirm(
-        'Are you sure you want to delete this link? This will permanently break the short link.'
-      )
-    ) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: 'Delete Short Link',
+      message: 'Are you sure you want to delete this short link? The redirect URL will stop working immediately and all analytics data will be permanently deleted.',
+      confirmText: 'Delete Link',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      detail: `${link.shortUrl} ➔ ${link.originalUrl}`,
+    });
+    if (!confirmed) return;
+
     setIsUpdating(true);
     try {
       await linkService.deleteLink(link._id);

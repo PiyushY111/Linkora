@@ -1,6 +1,18 @@
 import mongoose from 'mongoose';
 
-export const WEBHOOK_EVENTS = ['click', 'link.expired', 'abuse.flagged'];
+export const WEBHOOK_EVENTS = [
+  'link.clicked',
+  'link.created',
+  'link.updated',
+  'link.deleted',
+  'link.limit_reached',
+  'link.expired',
+  'security.abuse_flagged',
+  'endpoint.test',
+  // Backward compatibility aliases
+  'click',
+  'abuse.flagged',
+];
 
 const webhookSchema = new mongoose.Schema(
   {
@@ -8,7 +20,12 @@ const webhookSchema = new mongoose.Schema(
     url: { type: String, required: true },
     events: [{ type: String, enum: WEBHOOK_EVENTS }],
     secret: { type: String, required: true },
+    description: { type: String, default: '' },
     isActive: { type: Boolean, default: true },
+    consecutiveFailures: { type: Number, default: 0 },
+    lastDeliveryStatus: { type: String, enum: ['success', 'failed', null], default: null },
+    lastDeliveredAt: { type: Date, default: null },
+    disabledAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

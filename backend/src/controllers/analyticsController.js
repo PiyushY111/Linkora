@@ -17,6 +17,7 @@ import {
   seedLinkUsage,
 } from '../services/cacheService.js';
 import { emitClickEvent } from '../services/eventStreamService.js';
+import { dispatchEvent } from '../services/webhookService.js';
 
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$/;
 
@@ -167,6 +168,15 @@ export const redirectLink = async (req, res) => {
         );
         invalidateLinkMeta(shortCode).catch((err) =>
           logger.error({ err, shortCode }, 'Failed to invalidate link meta after reaching maxClicks')
+        );
+        dispatchEvent(meta.userId, 'link.limit_reached', {
+          linkId: meta.linkId,
+          shortCode,
+          originalUrl: meta.originalUrl,
+          maxClicks: meta.maxClicks,
+          totalClicks: usage.current,
+        }).catch((err) =>
+          logger.error({ err, linkId: meta.linkId }, 'Failed to dispatch link.limit_reached webhook')
         );
       }
     }

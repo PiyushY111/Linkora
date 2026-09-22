@@ -120,8 +120,22 @@ export const webhookService = {
     return response.data;
   },
 
-  create: async (url, events) => {
-    const response = await api.post('/webhooks', { url, events });
+  get: async (id) => {
+    const response = await api.get(`/webhooks/${id}`);
+    return response.data;
+  },
+
+  create: async (dataOrUrl, events, description) => {
+    const payload =
+      typeof dataOrUrl === 'object'
+        ? dataOrUrl
+        : { url: dataOrUrl, events, description };
+    const response = await api.post('/webhooks', payload);
+    return response.data;
+  },
+
+  update: async (id, data) => {
+    const response = await api.put(`/webhooks/${id}`, data);
     return response.data;
   },
 
@@ -129,10 +143,147 @@ export const webhookService = {
     const response = await api.delete(`/webhooks/${id}`);
     return response.data;
   },
+
+  test: async (id, event = 'endpoint.test') => {
+    const response = await api.post(`/webhooks/${id}/test`, { event });
+    return response.data;
+  },
+
+  rotateSecret: async (id) => {
+    const response = await api.post(`/webhooks/${id}/rotate-secret`);
+    return response.data;
+  },
+
+  listDeliveries: async (id, params = {}) => {
+    const response = await api.get(`/webhooks/${id}/deliveries`, { params });
+    return response.data;
+  },
+
+  retryDelivery: async (id, deliveryId) => {
+    const response = await api.post(`/webhooks/${id}/deliveries/${deliveryId}/retry`);
+    return response.data;
+  },
+};
+
+export const developerService = {
+  listKeys: async () => {
+    const response = await api.get('/developer/keys');
+    return response.data;
+  },
+
+  createKey: async (data) => {
+    const response = await api.post('/developer/keys', data);
+    return response.data;
+  },
+
+  updateKey: async (id, data) => {
+    const response = await api.patch(`/developer/keys/${id}`, data);
+    return response.data;
+  },
+
+  rollKey: async (id) => {
+    const response = await api.post(`/developer/keys/${id}/roll`);
+    return response.data;
+  },
+
+  revokeKey: async (id) => {
+    const response = await api.delete(`/developer/keys/${id}`);
+    return response.data;
+  },
+
+  getMetrics: async () => {
+    const response = await api.get('/developer/metrics');
+    return response.data;
+  },
+
+  listLogs: async (params = {}) => {
+    const response = await api.get('/developer/logs', { params });
+    return response.data;
+  },
+
+  getOpenApiSpec: async () => {
+    const response = await api.get('/public/v1/openapi.json');
+    return response.data;
+  },
 };
 
 export const publicApiService = {
-  /** Exercises the public bulk-create endpoint using an X-API-Key, not the session JWT. */
+  /**
+   * Universal runner for the Developer Playground.
+   * Executes requests with the user's active API key and measures client-side latency.
+   */
+  executeRequest: async (apiKey, method, endpoint, payload = null, params = {}) => {
+    const start = Date.now();
+    try {
+      const response = await api({
+        method,
+        url: `/public/v1${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`,
+        data: payload,
+        params,
+        headers: { 'x-api-key': apiKey },
+      });
+
+      return {
+        status: response.status,
+        statusText: response.statusText,
+        latencyMs: Date.now() - start,
+        headers: response.headers,
+        data: response.data,
+      };
+    } catch (error) {
+      return {
+        status: error.response?.status || 500,
+        statusText: error.response?.statusText || 'Error',
+        latencyMs: Date.now() - start,
+        headers: error.response?.headers || {},
+        data: error.response?.data || { success: false, message: error.message },
+      };
+    }
+  },
+
+  listLinks: async (apiKey, params = {}) => {
+    const response = await api.get('/public/v1/links', {
+      params,
+      headers: { 'x-api-key': apiKey },
+    });
+    return response.data;
+  },
+
+  createLink: async (apiKey, linkData) => {
+    const response = await api.post('/public/v1/links', linkData, {
+      headers: { 'x-api-key': apiKey },
+    });
+    return response.data;
+  },
+
+  getLink: async (apiKey, code) => {
+    const response = await api.get(`/public/v1/links/${code}`, {
+      headers: { 'x-api-key': apiKey },
+    });
+    return response.data;
+  },
+
+  updateLink: async (apiKey, code, linkData) => {
+    const response = await api.patch(`/public/v1/links/${code}`, linkData, {
+      headers: { 'x-api-key': apiKey },
+    });
+    return response.data;
+  },
+
+  deleteLink: async (apiKey, code) => {
+    const response = await api.delete(`/public/v1/links/${code}`, {
+      headers: { 'x-api-key': apiKey },
+    });
+    return response.data;
+  },
+
+  getLinkAnalytics: async (apiKey, code) => {
+    const response = await api.get(`/public/v1/links/${code}/analytics`, {
+      headers: { 'x-api-key': apiKey },
+    });
+    return response.data;
+  },
+
   bulkCreateLinks: async (apiKey, links) => {
     const response = await api.post(
       '/public/v1/links/bulk',
@@ -141,4 +292,17 @@ export const publicApiService = {
     );
     return response.data;
   },
+
+  getUsage: async (apiKey) => {
+    const response = await api.get('/public/v1/usage', {
+      headers: { 'x-api-key': apiKey },
+    });
+    return response.data;
+  },
+
+  getOpenApiSpec: async () => {
+    const response = await api.get('/public/v1/openapi.json');
+    return response.data;
+  },
 };
+

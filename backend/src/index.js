@@ -21,6 +21,7 @@ import analyticsRoutes from './routes/analytics.js';
 import workspaceRoutes from './routes/workspaces.js';
 import webhookRoutes from './routes/webhooks.js';
 import publicApiRoutes from './routes/publicApi.js';
+import developerRoutes from './routes/developer.js';
 
 // Connect to database
 connectDB();
@@ -118,6 +119,7 @@ app.use('/api/analytics', analyticsRoutes); // Analytics API
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/public', publicApiRoutes);
+app.use('/api/developer', developerRoutes);
 
 // Error handling
 app.use(notFound);

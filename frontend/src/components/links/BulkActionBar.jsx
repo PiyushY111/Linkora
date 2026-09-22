@@ -5,8 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Papa from 'papaparse';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function BulkActionBar({ selectedIds, links, onClearSelection }) {
+  const confirm = useConfirm();
   const { removeLink, updateLink } = useLinkStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -29,8 +31,8 @@ export default function BulkActionBar({ selectedIds, links, onClearSelection }) 
       // Toggle each selected link in parallel
       await Promise.all(
         selectedLinks.map(async (l) => {
-          const res = await linkService.toggleLinkStatus(l._id);
-          updateLink(res.link);
+          const updated = await linkService.updateLink(l._id, { isActive: !l.isActive });
+          updateLink(updated.link || updated);
         })
       );
       toast.success(`Updated status for ${selectedLinks.length} links`);
@@ -42,13 +44,14 @@ export default function BulkActionBar({ selectedIds, links, onClearSelection }) 
   };
 
   const handleBulkDelete = async () => {
-    if (
-      !window.confirm(
-        `Are you sure you want to delete ${selectedLinks.length} links? This action cannot be undone.`
-      )
-    ) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: `Delete ${selectedLinks.length} Selected Links`,
+      message: `Are you sure you want to permanently delete these ${selectedLinks.length} links? Their short URLs will stop redirecting immediately and this action cannot be undone.`,
+      confirmText: `Delete ${selectedLinks.length} Links`,
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
 
     setIsProcessing(true);
     try {

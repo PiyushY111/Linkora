@@ -17,6 +17,7 @@ import { motion } from 'framer-motion';
 import { Link as RouterLink } from 'react-router-dom';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
+import { useConfirm } from '../context/ConfirmContext';
 
 const formatDate = (date) =>
   new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -35,6 +36,7 @@ export default function LinkCard({
   onToggleSelect,
   onInspectLink,
 }) {
+  const confirm = useConfirm();
   const [isLoading, setIsLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -52,7 +54,15 @@ export default function LinkCard({
 
   const handleDelete = async (e) => {
     e?.stopPropagation();
-    if (!window.confirm('Delete this link? This cannot be undone.')) return;
+    const confirmed = await confirm({
+      title: 'Delete Short Link',
+      message: 'Are you sure you want to delete this short link? The redirect URL will stop working immediately and analytics cannot be recovered.',
+      confirmText: 'Delete Link',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      detail: `${link.shortUrl} ➔ ${link.originalUrl}`,
+    });
+    if (!confirmed) return;
     setIsLoading(true);
     try {
       await linkService.deleteLink(link._id);

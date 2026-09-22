@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import { Link as RouterLink } from 'react-router-dom';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
+import { useConfirm } from '../../context/ConfirmContext';
 
 function getDomain(url) {
   try {
@@ -29,17 +30,19 @@ export default function LinkTableView({
   selectedIds,
   onToggleSelect,
   onSelectAll,
+  onToggleStatus,
   onInspectLink,
 }) {
+  const confirm = useConfirm();
   const { updateLink, removeLink } = useLinkStore();
   const [copiedId, setCopiedId] = useState(null);
   const [menuOpenId, setMenuOpenId] = useState(null);
 
   const allSelected = links.length > 0 && selectedIds.length === links.length;
 
-  const handleCopy = (id, text, e) => {
+  const handleCopy = (id, shortUrl, e) => {
     e?.stopPropagation();
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(shortUrl);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
     toast.success('Copied to clipboard');
@@ -60,7 +63,17 @@ export default function LinkTableView({
   const handleDelete = async (id, e) => {
     e?.stopPropagation();
     setMenuOpenId(null);
-    if (!window.confirm('Delete this link? This will permanently break the short link.')) return;
+    const linkToDelete = links.find((l) => l._id === id);
+    const confirmed = await confirm({
+      title: 'Delete Short Link',
+      message: 'Are you sure you want to delete this short link? This will permanently disable redirects and remove analytics.',
+      confirmText: 'Delete Link',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      detail: linkToDelete ? `${linkToDelete.shortUrl} ➔ ${linkToDelete.originalUrl}` : undefined,
+    });
+    if (!confirmed) return;
+
     try {
       await linkService.deleteLink(id);
       removeLink(id);

@@ -3,10 +3,12 @@ import { Helmet } from 'react-helmet-async';
 import { Copy, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppShell from '../components/layout/AppShell';
+import { useConfirm } from '../context/ConfirmContext';
 import { authService } from '../services';
 import useAuthStore from '../context/authStore';
 
 const Settings = () => {
+  const confirm = useConfirm();
   const { user, setUser } = useAuthStore();
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -35,7 +37,15 @@ const Settings = () => {
   };
 
   const handleGenerateApiKey = async () => {
-    if (!window.confirm('Generate a new API key? Any previous key stops working immediately.')) return;
+    const confirmed = await confirm({
+      title: 'Generate New API Key',
+      message: 'Generating a new API key will immediately invalidate your previous primary key. Any integrations or scripts relying on the old key will stop working.',
+      confirmText: 'Generate Key',
+      cancelText: 'Cancel',
+      variant: 'warning',
+    });
+    if (!confirmed) return;
+
     setIsGenerating(true);
     try {
       const data = await authService.generateApiKey();

@@ -9,6 +9,7 @@ import { logger } from '../config/logger.js';
 import { env } from '../config/env.js';
 import { logAudit } from '../utils/auditLogger.js';
 import { checkUrlThreat } from '../services/threatDetectionService.js';
+import { dispatchEvent } from '../services/webhookService.js';
 
 /**
  * Core link-creation logic, shared by the single-create route and the
@@ -115,6 +116,14 @@ export const createLink = async (req, res) => {
       ipAddress: getClientIp(req),
       diff: { shortCode: result.link.shortCode, originalUrl: result.link.originalUrl },
     });
+
+    dispatchEvent(req.user.id, 'link.created', {
+      linkId: String(result.link._id),
+      shortCode: result.link.shortCode,
+      originalUrl: result.link.originalUrl,
+      title: result.link.title || '',
+      createdAt: result.link.createdAt,
+    }).catch((err) => logger.error({ err }, 'Failed to dispatch link.created webhook'));
 
     res.status(201).json({ success: true, link: result.link });
   } catch (error) {
@@ -314,6 +323,14 @@ export const updateLink = async (req, res) => {
       diff: { title, description, tags, category, expiryDate },
     });
 
+    dispatchEvent(req.user.id, 'link.updated', {
+      linkId: String(link._id),
+      shortCode: link.shortCode,
+      originalUrl: link.originalUrl,
+      title: link.title || '',
+      updatedAt: link.updatedAt,
+    }).catch((err) => logger.error({ err }, 'Failed to dispatch link.updated webhook'));
+
     res.status(200).json({
       success: true,
       link,
@@ -355,6 +372,13 @@ export const deleteLink = async (req, res) => {
       ipAddress: getClientIp(req),
       diff: { shortCode: link.shortCode },
     });
+
+    dispatchEvent(req.user.id, 'link.deleted', {
+      linkId: String(link._id),
+      shortCode: link.shortCode,
+      originalUrl: link.originalUrl,
+      deletedAt: new Date().toISOString(),
+    }).catch((err) => logger.error({ err }, 'Failed to dispatch link.deleted webhook'));
 
     res.status(200).json({
       success: true,
