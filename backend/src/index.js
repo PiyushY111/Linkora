@@ -48,8 +48,9 @@ app.use(metricsMiddleware);
 // paths by the Redis-backed sliding-window limiter in Phase 5.
 const limiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW * 60 * 1000,
-  max: env.RATE_LIMIT_MAX_REQUESTS,
+  max: env.NODE_ENV === 'development' ? 5000 : env.RATE_LIMIT_MAX_REQUESTS,
   message: 'Too many requests, please try again later',
+  skip: (req) => req.path.startsWith('/health') || req.path === '/metrics',
 });
 
 app.use(limiter);
@@ -112,7 +113,8 @@ app.get('/metrics', metricsAuth, metricsHandler);
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/links', linkRoutes);
-app.use('/api/r', analyticsRoutes); // Redirect route
+app.use('/api/r', analyticsRoutes); // Redirect route & analytics
+app.use('/api/analytics', analyticsRoutes); // Analytics API
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/public', publicApiRoutes);

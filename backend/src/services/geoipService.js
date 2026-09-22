@@ -54,7 +54,15 @@ async function getReader() {
  * @property {number} longitude
  */
 
-const EMPTY_RESULT = { countryCode: '', city: '', latitude: 0, longitude: 0 };
+const DEV_GEO_FALLBACKS = {
+  '8.8.8.8': { countryCode: 'US', city: 'Mountain View', latitude: 37.386, longitude: -122.0838 },
+  '1.1.1.1': { countryCode: 'AU', city: 'Sydney', latitude: -33.8688, longitude: 151.2093 },
+  '81.2.69.142': { countryCode: 'GB', city: 'London', latitude: 51.5074, longitude: -0.1278 },
+  '103.21.244.0': { countryCode: 'IN', city: 'New Delhi', latitude: 28.6139, longitude: 77.209 },
+  '141.1.1.1': { countryCode: 'DE', city: 'Frankfurt', latitude: 50.1109, longitude: 8.6821 },
+  '127.0.0.1': { countryCode: 'US', city: 'San Francisco', latitude: 37.7749, longitude: -122.4194 },
+  '::1': { countryCode: 'US', city: 'San Francisco', latitude: 37.7749, longitude: -122.4194 },
+};
 
 /**
  * Resolves geo data for an IP address using the in-memory MaxMind reader.
@@ -68,7 +76,9 @@ export async function lookupGeo(ip) {
   if (!ip) return EMPTY_RESULT;
 
   const r = await getReader();
-  if (!r) return EMPTY_RESULT;
+  if (!r) {
+    return DEV_GEO_FALLBACKS[ip] || EMPTY_RESULT;
+  }
 
   try {
     const response = r.city(ip);
@@ -80,7 +90,7 @@ export async function lookupGeo(ip) {
     };
   } catch {
     // AddressNotFoundError for private/reserved ranges, or malformed IPs.
-    return EMPTY_RESULT;
+    return DEV_GEO_FALLBACKS[ip] || EMPTY_RESULT;
   }
 }
 

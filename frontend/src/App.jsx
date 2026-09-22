@@ -32,6 +32,7 @@ function App() {
           <Route path="/register" element={!token ? <Register /> : <Navigate to="/dashboard" />} />
 
           <Route path="/dashboard" element={<ProtectedRoute component={Dashboard} />} />
+          <Route path="/analytics" element={<Navigate to="/analytics/all" replace />} />
           <Route path="/analytics/:linkId" element={<ProtectedRoute component={Analytics} />} />
           <Route path="/workspaces" element={<ProtectedRoute component={Workspaces} />} />
           <Route path="/webhooks" element={<ProtectedRoute component={Webhooks} />} />

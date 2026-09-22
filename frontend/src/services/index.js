@@ -68,14 +68,20 @@ export const linkService = {
 };
 
 export const analyticsService = {
-  getLinkAnalytics: async (linkId) => {
-    const response = await api.get(`/r/link/${linkId}`);
+  getLinkAnalytics: async (linkId, params = {}) => {
+    const response = await api.get(`/analytics/link/${linkId}`, { params });
     return response.data;
   },
 
-  getAnalyticsSummary: async (startDate, endDate) => {
-    const response = await api.get('/r/summary/all', {
-      params: { startDate, endDate },
+  getAnalyticsSummary: async (params = {}) => {
+    const response = await api.get('/analytics/summary/all', { params });
+    return response.data;
+  },
+
+  exportAnalytics: async (params = {}) => {
+    const response = await api.get('/analytics/export', {
+      params,
+      responseType: 'blob',
     });
     return response.data;
   },
