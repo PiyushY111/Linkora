@@ -1,0 +1,51 @@
+{
+  "name": "linkly-backend",
+  "version": "1.0.0",
+  "description": "URL Shortener with Advanced Analytics - Backend",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest --detectOpenHandles",
+    "test:watch": "jest --watch"
+  },
+  "keywords": [
+    "url-shortener",
+    "analytics",
+    "qr-code",
+    "custom-domain"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@maxmind/geoip2-node": "^7.1.0",
+    "axios": "^1.6.2",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^1.40.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^6.15.0",
+    "helmet": "^7.1.0",
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^8.5.1",
+    "mongoose": "^8.0.0",
+    "nanoid": "^4.0.2",
+    "node-cron": "^3.0.2",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "prom-client": "^15.1.3",
+    "qrcode": "^1.5.3",
+    "ua-parser-js": "^2.0.10",
+    "validator": "^13.11.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "supertest": "^6.3.3"
+  }
+}
