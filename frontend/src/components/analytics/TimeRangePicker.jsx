@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { Calendar, ChevronDown } from 'lucide-react';
+import { Calendar, ChevronDown, Check } from 'lucide-react';
 
 const PRESETS = [
-  { id: '24h', label: '24h', sub: 'Hourly' },
-  { id: '7d', label: '7d', sub: 'Daily' },
-  { id: '30d', label: '30d', sub: 'Daily' },
-  { id: '90d', label: '90d', sub: 'Daily' },
-  { id: 'ytd', label: 'YTD', sub: 'Monthly' },
-  { id: 'all', label: 'All', sub: 'Total' },
-  { id: 'custom', label: 'Custom', sub: 'Range' },
+  { id: '24h', label: '24h' },
+  { id: '7d', label: '7d' },
+  { id: '30d', label: '30d' },
+  { id: '90d', label: '90d' },
+  { id: 'ytd', label: 'YTD' },
+  { id: 'all', label: 'All' },
+  { id: 'custom', label: 'Custom' },
 ];
 
 export default function TimeRangePicker({
@@ -43,9 +43,9 @@ export default function TimeRangePicker({
   };
 
   return (
-    <div className={`relative flex flex-wrap items-center gap-2 ${className}`}>
-      {/* Preset pills button group */}
-      <div className="inline-flex rounded-xl bg-ink-800/90 p-1 ring-1 ring-ink-700/80 shadow-inner">
+    <div className={`relative flex items-center gap-2 ${className}`}>
+      {/* Segmented pill group */}
+      <div className="inline-flex h-8.5 items-center rounded-xl bg-ink-900/90 p-1 ring-1 ring-ink-700/80 shadow-inner">
         {PRESETS.map((p) => {
           const isActive = value === p.id;
           return (
@@ -53,10 +53,10 @@ export default function TimeRangePicker({
               key={p.id}
               type="button"
               onClick={() => handlePresetSelect(p.id)}
-              className={`relative rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 ${
+              className={`relative h-6.5 rounded-lg px-2.5 text-xs font-medium transition-all duration-150 ${
                 isActive
-                  ? 'bg-accent-400 text-ink-950 font-semibold shadow-sm'
-                  : 'text-paper-400 hover:text-paper-100 hover:bg-ink-700/50'
+                  ? 'bg-accent-400 text-ink-950 font-bold shadow-sm shadow-accent-400/20'
+                  : 'text-paper-400 hover:text-paper-100 hover:bg-ink-800/60'
               }`}
             >
               <span>{p.label}</span>
@@ -65,27 +65,27 @@ export default function TimeRangePicker({
         })}
       </div>
 
-      {/* Custom date range display / button */}
+      {/* Custom date range trigger */}
       {value === 'custom' && (
         <button
           type="button"
           onClick={() => setShowCustomModal((prev) => !prev)}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-ink-700 bg-ink-800/90 px-3 py-1.5 text-xs text-paper-200 hover:border-ink-600 hover:text-paper-100 transition-colors"
+          className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-ink-700 bg-ink-850 px-2.5 text-xs text-paper-200 hover:border-ink-600 hover:text-paper-100 transition-colors"
         >
           <Calendar size={13} className="text-accent-400" />
-          <span>
+          <span className="font-mono text-[11px]">
             {customStart || 'Start'} → {customEnd || 'Now'}
           </span>
           <ChevronDown size={13} className="text-paper-500" />
         </button>
       )}
 
-      {/* Custom Date Modal / Popover */}
+      {/* Custom Date Modal */}
       {showCustomModal && (
-        <div className="absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-ink-600 bg-ink-850 p-4 shadow-2xl ring-1 ring-black/40 backdrop-blur-md">
-          <div className="flex items-center justify-between pb-3 border-b border-ink-700">
+        <div className="absolute left-0 top-full z-30 mt-2 w-72 rounded-2xl border border-ink-600 bg-ink-900/95 p-4 shadow-2xl ring-1 ring-black/40 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center justify-between pb-3 border-b border-ink-800">
             <span className="text-xs font-semibold uppercase tracking-wider text-paper-300">
-              Custom Date Window
+              Custom Timeframe
             </span>
             <button
               type="button"
@@ -98,7 +98,9 @@ export default function TimeRangePicker({
 
           <form onSubmit={handleApplyCustom} className="mt-3 space-y-3">
             <div>
-              <label className="block text-[11px] font-medium text-paper-400 mb-1">Start Date</label>
+              <label className="block text-[11px] font-medium text-paper-400 mb-1">
+                Start Date
+              </label>
               <input
                 type="date"
                 value={startDate}

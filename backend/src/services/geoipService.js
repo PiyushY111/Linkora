@@ -54,44 +54,55 @@ async function getReader() {
  * @property {number} longitude
  */
 
-const DEV_GEO_FALLBACKS = {
-  '8.8.8.8': { countryCode: 'US', city: 'Mountain View', latitude: 37.386, longitude: -122.0838 },
-  '1.1.1.1': { countryCode: 'AU', city: 'Sydney', latitude: -33.8688, longitude: 151.2093 },
-  '81.2.69.142': { countryCode: 'GB', city: 'London', latitude: 51.5074, longitude: -0.1278 },
-  '103.21.244.0': { countryCode: 'IN', city: 'New Delhi', latitude: 28.6139, longitude: 77.209 },
-  '141.1.1.1': { countryCode: 'DE', city: 'Frankfurt', latitude: 50.1109, longitude: 8.6821 },
-  '127.0.0.1': { countryCode: 'US', city: 'San Francisco', latitude: 37.7749, longitude: -122.4194 },
-  '::1': { countryCode: 'US', city: 'San Francisco', latitude: 37.7749, longitude: -122.4194 },
-};
+import geoip from 'geoip-lite';
+
+const EMPTY_RESULT = { countryCode: '', city: '', latitude: 0, longitude: 0 };
 
 /**
- * Resolves geo data for an IP address using the in-memory MaxMind reader.
- * Never throws — returns an empty result for private IPs, lookup misses, or
- * when the database isn't configured. Intended for use only in the async
- * click consumer, never on the redirect hot path.
+ * Resolves real geo data for an IP address dynamically using either
+ * local MaxMind reader (if configured) or offline geoip-lite dataset.
+ * Never throws — returns an empty result for private/reserved ranges.
  * @param {string} ip
  * @returns {Promise<GeoLookupResult>}
  */
 export async function lookupGeo(ip) {
   if (!ip) return EMPTY_RESULT;
 
+  // Ignore private / loopback IPs
+  if (ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+    return EMPTY_RESULT;
+  }
+
   const r = await getReader();
-  if (!r) {
-    return DEV_GEO_FALLBACKS[ip] || EMPTY_RESULT;
+  if (r) {
+    try {
+      const response = r.city(ip);
+      return {
+        countryCode: response.country?.isoCode || '',
+        city: response.city?.names?.en || '',
+        latitude: response.location?.latitude ?? 0,
+        longitude: response.location?.longitude ?? 0,
+      };
+    } catch {
+      // fallback to geoip-lite below
+    }
   }
 
   try {
-    const response = r.city(ip);
-    return {
-      countryCode: response.country?.isoCode || '',
-      city: response.city?.names?.en || '',
-      latitude: response.location?.latitude ?? 0,
-      longitude: response.location?.longitude ?? 0,
-    };
-  } catch {
-    // AddressNotFoundError for private/reserved ranges, or malformed IPs.
-    return DEV_GEO_FALLBACKS[ip] || EMPTY_RESULT;
+    const geo = geoip.lookup(ip);
+    if (geo) {
+      return {
+        countryCode: geo.country || '',
+        city: geo.city || '',
+        latitude: geo.ll?.[0] ?? 0,
+        longitude: geo.ll?.[1] ?? 0,
+      };
+    }
+  } catch (err) {
+    logger.debug({ err, ip }, 'geoip lookup failed');
   }
+
+  return EMPTY_RESULT;
 }
 
 /**

@@ -297,8 +297,60 @@ export function calculateTimeRange(timeRange = '30d', customStart, customEnd) {
 const toClickHouseDateTime = (d) => d.toISOString().replace('T', ' ').replace('Z', '');
 
 function calculateGrowth(current, prior) {
-  if (!prior || prior === 0) return current > 0 ? 100 : 0;
+  if (!prior || prior === 0) return null;
   return Math.round(((current - prior) / prior) * 100);
+}
+
+function fillTimeSeries(rows, start, end, granularity) {
+  const map = new Map();
+  for (const r of rows) {
+    if (r.day) {
+      let key = String(r.day);
+      if (key.length >= 19) {
+        key = key.slice(0, 13) + ':00';
+      }
+      map.set(key, Number(r.clicks) || 0);
+    }
+  }
+
+  const result = [];
+  const current = new Date(start);
+  const finish = new Date(end);
+
+  if (granularity === 'hour') {
+    current.setUTCMinutes(0, 0, 0);
+    while (current <= finish) {
+      const yyyy = current.getUTCFullYear();
+      const mm = String(current.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(current.getUTCDate()).padStart(2, '0');
+      const hh = String(current.getUTCHours()).padStart(2, '0');
+      const key = `${yyyy}-${mm}-${dd} ${hh}:00`;
+      result.push({ day: key, clicks: map.get(key) || 0 });
+      current.setUTCHours(current.getUTCHours() + 1);
+    }
+  } else if (granularity === 'day') {
+    current.setUTCHours(0, 0, 0, 0);
+    while (current <= finish) {
+      const yyyy = current.getUTCFullYear();
+      const mm = String(current.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(current.getUTCDate()).padStart(2, '0');
+      const key = `${yyyy}-${mm}-${dd}`;
+      result.push({ day: key, clicks: map.get(key) || 0 });
+      current.setUTCDate(current.getUTCDate() + 1);
+    }
+  } else {
+    current.setUTCDate(1);
+    current.setUTCHours(0, 0, 0, 0);
+    while (current <= finish) {
+      const yyyy = current.getUTCFullYear();
+      const mm = String(current.getUTCMonth() + 1).padStart(2, '0');
+      const key = `${yyyy}-${mm}`;
+      result.push({ day: key, clicks: map.get(key) || 0 });
+      current.setUTCMonth(current.getUTCMonth() + 1);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -366,7 +418,12 @@ async function getLinkAnalyticsFromMongo(linkId, timeInfo) {
       topDevices: byDevice.map((d) => ({ device: d._id, clicks: d.clicks })),
       topOperatingSystems: [],
       topBrowsers: byBrowser.map((b) => ({ browser: b._id, clicks: b.clicks })),
-      clicksByDay: byDay.map((d) => ({ day: d._id, clicks: d.clicks })),
+      clicksByDay: fillTimeSeries(
+        byDay.map((d) => ({ day: d._id, clicks: d.clicks })),
+        timeInfo.start,
+        timeInfo.end,
+        timeInfo.granularity
+      ),
       utmCampaigns: [],
       utmSources: [],
       utmMediums: [],
@@ -439,7 +496,12 @@ async function getAnalyticsSummaryFromMongo(userId, timeInfo) {
     topDevices: byDevice.map((d) => ({ device: d._id, clicks: d.clicks })),
     topOperatingSystems: [],
     topBrowsers: byBrowser.map((b) => ({ browser: b._id, clicks: b.clicks })),
-    clicksByDay: byDay.map((d) => ({ day: d._id, clicks: d.clicks })),
+    clicksByDay: fillTimeSeries(
+      byDay.map((d) => ({ day: d._id, clicks: d.clicks })),
+      timeInfo.start,
+      timeInfo.end,
+      timeInfo.granularity
+    ),
     utmCampaigns: [],
     utmSources: [],
     utmMediums: [],
@@ -535,7 +597,7 @@ export const getLinkAnalytics = async (req, res) => {
         params
       ),
       runQuery(
-        `SELECT if(referrer_domain = '', 'Direct / Dark Traffic', referrer_domain) as referrer, count() as clicks
+        `SELECT if(referrer_domain = '' OR referrer_domain = 'Direct / Dark Traffic' OR referrer_domain = 'localhost' OR referrer_domain LIKE '127.0.0.1%' OR referrer_domain LIKE 'localhost%', 'Direct', referrer_domain) as referrer, count() as clicks
          FROM ${db}.click_events
          WHERE link_id = {linkId:String} AND timestamp BETWEEN {startTs:DateTime64(3, 'UTC')} AND {endTs:DateTime64(3, 'UTC')}
          GROUP BY referrer ORDER BY clicks DESC LIMIT 10`,
@@ -621,7 +683,7 @@ export const getLinkAnalytics = async (req, res) => {
         topDevices: byDevice.map((d) => ({ device: d.device, clicks: Number(d.clicks) })),
         topOperatingSystems: byOs.map((o) => ({ os: o.os, clicks: Number(o.clicks) })),
         topBrowsers: byBrowser.map((b) => ({ browser: b.browser, clicks: Number(b.clicks) })),
-        clicksByDay: byDay.map((d) => ({ day: d.day, clicks: Number(d.clicks) })),
+        clicksByDay: fillTimeSeries(byDay, timeInfo.start, timeInfo.end, timeInfo.granularity),
         utmCampaigns: utmCampaigns.map((u) => ({ name: u.name, clicks: Number(u.clicks) })),
         utmSources: utmSources.map((u) => ({ name: u.name, clicks: Number(u.clicks) })),
         utmMediums: utmMediums.map((u) => ({ name: u.name, clicks: Number(u.clicks) })),
@@ -715,7 +777,7 @@ export const getAnalyticsSummary = async (req, res) => {
         params
       ),
       runQuery(
-        `SELECT if(referrer_domain = '', 'Direct / Dark Traffic', referrer_domain) as referrer, count() as clicks
+        `SELECT if(referrer_domain = '' OR referrer_domain = 'Direct / Dark Traffic' OR referrer_domain = 'localhost' OR referrer_domain LIKE '127.0.0.1%' OR referrer_domain LIKE 'localhost%', 'Direct', referrer_domain) as referrer, count() as clicks
          FROM ${db}.click_events
          WHERE user_id = {userId:String} AND timestamp BETWEEN {startTs:DateTime64(3, 'UTC')} AND {endTs:DateTime64(3, 'UTC')}
          GROUP BY referrer ORDER BY clicks DESC LIMIT 10`,
@@ -803,7 +865,7 @@ export const getAnalyticsSummary = async (req, res) => {
         topDevices: byDevice.map((d) => ({ device: d.device, clicks: Number(d.clicks) })),
         topOperatingSystems: byOs.map((o) => ({ os: o.os, clicks: Number(o.clicks) })),
         topBrowsers: byBrowser.map((b) => ({ browser: b.browser, clicks: Number(b.clicks) })),
-        clicksByDay: byDay.map((d) => ({ day: d.day, clicks: Number(d.clicks) })),
+        clicksByDay: fillTimeSeries(byDay, timeInfo.start, timeInfo.end, timeInfo.granularity),
         utmCampaigns: utmCampaigns.map((u) => ({ name: u.name, clicks: Number(u.clicks) })),
         utmSources: utmSources.map((u) => ({ name: u.name, clicks: Number(u.clicks) })),
         utmMediums: utmMediums.map((u) => ({ name: u.name, clicks: Number(u.clicks) })),

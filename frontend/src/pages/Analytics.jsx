@@ -11,6 +11,8 @@ import {
   Activity,
   Layers,
   ArrowRight,
+  Globe,
+  ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppShell from '../components/layout/AppShell';
@@ -141,68 +143,105 @@ const Analytics = () => {
         <title>Analytics Engine — Linkly Enterprise</title>
       </Helmet>
       <AppShell>
-        {/* Header Toolbar */}
-        <div className="mb-6 flex flex-col gap-4 border-b border-ink-800 pb-6 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-accent-400/10 text-accent-400 ring-1 ring-accent-400/30">
-                <Activity size={14} />
-              </span>
-              <h1 className="text-2xl font-bold tracking-tight text-paper-100">
-                Analytics Engine
-              </h1>
-              <span className="rounded-md bg-ink-800 px-2 py-0.5 font-mono text-[10px] font-semibold text-paper-400 border border-ink-700">
-                ClickHouse
-              </span>
+        {/* Executive Header Toolbar */}
+        <div className="mb-6 flex flex-col gap-4 border-b border-ink-800 pb-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-400/10 text-accent-400 ring-1 ring-accent-400/25 shadow-inner">
+              <Activity size={18} />
             </div>
-            <p className="mt-1 text-xs text-paper-400">
-              High-throughput columnar event ingestion with period-over-period intelligence.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-paper-100">
+                  Analytics Engine
+                </h1>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-850 px-2.5 py-0.5 text-[10px] font-mono font-medium text-paper-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  ClickHouse Columnar
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-paper-400">
+                Real-time telemetry, period-over-period intelligence & marketing attribution.
+              </p>
+            </div>
           </div>
 
-          {/* Right Action Bar */}
+          {/* Right Header Actions */}
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Link Selector */}
-            <div className="w-full sm:w-auto">
+            {/* Styled Link Selector */}
+            <div className="relative w-full sm:w-64">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-paper-400">
+                <Globe size={13} className="text-accent-400" />
+              </div>
               <select
                 value={linkId}
                 onChange={(e) => navigate(`/analytics/${e.target.value}`)}
-                className="input py-1.5 text-xs w-full sm:w-60 font-medium"
+                className="h-9 w-full rounded-xl border border-ink-700 bg-ink-850/90 pl-8.5 pr-8 text-xs font-medium text-paper-100 shadow-sm transition-colors hover:border-ink-600 focus:border-accent-400 focus:outline-none focus:ring-1 focus:ring-accent-400 appearance-none cursor-pointer"
               >
-                <option value="all">🌐 All Links (Global Overview)</option>
+                <option value="all" className="bg-ink-900 text-paper-100">
+                  All Links (Global Overview)
+                </option>
                 {links.map((link) => (
-                  <option key={link._id} value={link._id}>
+                  <option key={link._id} value={link._id} className="bg-ink-900 text-paper-100">
                     {link.title ? `${link.title} (/${link.shortCode})` : `/${link.shortCode}`}
                   </option>
                 ))}
               </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-paper-500">
+                <ChevronDown size={13} />
+              </div>
             </div>
 
-            {/* Time Range Selector */}
+            {/* Export CSV Button */}
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              disabled={isExporting}
+              className="btn-primary inline-flex h-9 items-center gap-2 px-3.5 text-xs font-semibold shadow-lg shadow-accent-400/10 hover:shadow-accent-400/20 transition-all cursor-pointer"
+            >
+              <Download size={13} className={isExporting ? 'animate-bounce' : ''} />
+              <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Dedicated Control & Filter Deck */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink-750 bg-ink-850/70 p-2 backdrop-blur-md shadow-sm">
+          {/* Left: Time Range Segmented Control */}
+          <div className="flex items-center gap-2">
             <TimeRangePicker
               value={timeRange}
               onChange={handleTimeRangeChange}
               customStart={customStart}
               customEnd={customEnd}
             />
+          </div>
 
+          {/* Right: Live Telemetry Switch & Refresh */}
+          <div className="flex items-center gap-2">
             {/* Live Auto-Refresh Toggle */}
             <button
               type="button"
               onClick={() => setAutoRefresh((prev) => !prev)}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium border transition-colors ${
+              className={`inline-flex h-8.5 items-center gap-2 rounded-xl px-3 text-xs font-medium border transition-all duration-200 cursor-pointer ${
                 autoRefresh
-                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                  : 'border-ink-700 bg-ink-800 text-paper-400 hover:text-paper-200'
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                  : 'border-ink-700 bg-ink-800 text-paper-400 hover:border-ink-600 hover:text-paper-200'
               }`}
-              title="Automatically refresh every 15 seconds"
+              title="Automatically poll telemetry every 15 seconds"
             >
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  autoRefresh ? 'bg-emerald-400 animate-pulse' : 'bg-paper-600'
-                }`}
-              />
-              <span>Live {autoRefresh ? 'ON' : 'OFF'}</span>
+              <span className="relative flex h-2 w-2">
+                {autoRefresh && (
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                )}
+                <span
+                  className={`relative inline-flex h-2 w-2 rounded-full ${
+                    autoRefresh ? 'bg-emerald-400' : 'bg-paper-600'
+                  }`}
+                />
+              </span>
+              <span className="font-mono text-[11px] font-semibold">
+                {autoRefresh ? 'LIVE STREAMING' : 'LIVE OFF'}
+              </span>
             </button>
 
             {/* Manual Refresh Button */}
@@ -210,21 +249,10 @@ const Analytics = () => {
               type="button"
               onClick={() => fetchAnalytics(true)}
               disabled={isRefreshing}
-              className="btn-ghost p-2 text-paper-400 hover:text-paper-100"
-              title="Refresh data"
+              className="inline-flex h-8.5 w-8.5 items-center justify-center rounded-xl border border-ink-700 bg-ink-800 text-paper-400 transition-colors hover:border-ink-600 hover:text-paper-100 disabled:opacity-50 cursor-pointer"
+              title="Refresh telemetry"
             >
-              <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-accent-400' : ''} />
-            </button>
-
-            {/* Export CSV Button */}
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              disabled={isExporting}
-              className="btn-primary inline-flex items-center gap-1.5 py-1.5 px-3 text-xs"
-            >
-              <Download size={13} className={isExporting ? 'animate-bounce' : ''} />
-              <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+              <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-accent-400' : ''} />
             </button>
           </div>
         </div>

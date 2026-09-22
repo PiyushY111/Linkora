@@ -95,9 +95,13 @@ export default function RealtimeClickStream({ clicks = [], isLive = true }) {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ink-800 text-paper-500 ring-1 ring-ink-700 mb-2">
             <Activity size={18} />
           </div>
-          <p className="text-xs font-medium text-paper-300">No matching click events</p>
+          <p className="text-xs font-medium text-paper-300">
+            {searchQuery ? 'No matching click events found' : 'No click events recorded yet'}
+          </p>
           <p className="mt-1 text-[11px] text-paper-500">
-            Incoming redirects are ingested asynchronously via Redis and ClickHouse.
+            {searchQuery
+              ? 'Try adjusting your filter terms'
+              : 'Incoming link redirects will stream here in real time via ClickHouse.'}
           </p>
         </div>
       ) : (
