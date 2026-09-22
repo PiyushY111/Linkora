@@ -168,14 +168,12 @@ const Analytics = () => {
           {/* Right Header Actions */}
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Styled Link Selector */}
-            <div className="relative w-full sm:w-64">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-paper-400">
-                <Globe size={13} className="text-accent-400" />
-              </div>
+            <div className="flex h-9 w-full sm:w-auto items-center gap-2 rounded-xl border border-ink-700 bg-ink-850/90 px-3 shadow-sm transition-colors hover:border-ink-600 focus-within:border-accent-400 focus-within:ring-1 focus-within:ring-accent-400">
+              <Globe size={14} className="text-accent-400 shrink-0" />
               <select
                 value={linkId}
                 onChange={(e) => navigate(`/analytics/${e.target.value}`)}
-                className="h-9 w-full rounded-xl border border-ink-700 bg-ink-850/90 pl-8.5 pr-8 text-xs font-medium text-paper-100 shadow-sm transition-colors hover:border-ink-600 focus:border-accent-400 focus:outline-none focus:ring-1 focus:ring-accent-400 appearance-none cursor-pointer"
+                className="h-full w-full sm:w-60 bg-transparent text-xs font-medium text-paper-100 outline-none cursor-pointer pr-1"
               >
                 <option value="all" className="bg-ink-900 text-paper-100">
                   All Links (Global Overview)
@@ -186,9 +184,6 @@ const Analytics = () => {
                   </option>
                 ))}
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-paper-500">
-                <ChevronDown size={13} />
-              </div>
             </div>
 
             {/* Export CSV Button */}
