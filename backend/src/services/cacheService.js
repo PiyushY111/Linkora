@@ -36,7 +36,10 @@ export const linkSequenceKey = () => 'key:link_sequence';
  * @property {string} passwordHash
  * @property {string} linkId
  * @property {string} userId
+ * @property {number} [maxClicks] - 0 if no click limit
  */
+
+export const linkUsageKey = (linkId) => `link:usage:${linkId}`;
 
 /**
  * Reads link:meta:{shortCode} via a single HGETALL.
@@ -70,6 +73,10 @@ export async function getLinkMeta(shortCode) {
       passwordHash: hash.passwordHash || '',
       linkId: hash.linkId,
       userId: hash.userId,
+      maxClicks: Number(hash.maxClicks) || 0,
+      iosRedirect: hash.iosRedirect || '',
+      androidRedirect: hash.androidRedirect || '',
+      expiredRedirectUrl: hash.expiredRedirectUrl || '',
     },
   };
 }
@@ -89,6 +96,10 @@ export async function setLinkMeta(shortCode, meta) {
     passwordHash: meta.passwordHash || '',
     linkId: meta.linkId,
     userId: meta.userId,
+    maxClicks: String(meta.maxClicks || 0),
+    iosRedirect: meta.iosRedirect || '',
+    androidRedirect: meta.androidRedirect || '',
+    expiredRedirectUrl: meta.expiredRedirectUrl || '',
   });
   pipeline.expire(key, env.REDIS_CACHE_TTL_SECONDS);
   await pipeline.exec();
@@ -127,4 +138,42 @@ export async function incrementClickCounter(linkId, when = new Date()) {
   await redis.hincrby(linkCountersKey(date), linkId, 1);
 }
 
+/**
+ * Atomically evaluates and records click usage against maxClicks.
+ * @param {string} linkId
+ * @param {number} maxClicks
+ * @returns {Promise<{ allowed: boolean, current: number, max: number, reached: boolean }>}
+ */
+export async function checkAndIncrementUsage(linkId, maxClicks) {
+  if (!maxClicks || maxClicks <= 0) return { allowed: true };
+  const key = linkUsageKey(linkId);
+  const current = await redis.incr(key);
+  if (current > maxClicks) {
+    return { allowed: false, current, max: maxClicks, reached: true };
+  }
+  return { allowed: true, current, max: maxClicks, reached: current >= maxClicks };
+}
+
+/**
+ * Returns the current recorded usage count from Redis.
+ * @param {string} linkId
+ * @returns {Promise<number>}
+ */
+export async function getCurrentUsage(linkId) {
+  const key = linkUsageKey(linkId);
+  const val = await redis.get(key);
+  return Number(val) || 0;
+}
+
+/**
+ * Seeds the link usage counter in Redis (only if not already set).
+ * @param {string} linkId
+ * @param {number} currentClicks
+ */
+export async function seedLinkUsage(linkId, currentClicks) {
+  const key = linkUsageKey(linkId);
+  await redis.set(key, currentClicks || 0, 'NX');
+}
+
 export default redis;
+

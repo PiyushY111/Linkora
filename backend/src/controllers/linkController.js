@@ -21,7 +21,21 @@ import { checkUrlThreat } from '../services/threatDetectionService.js';
  * @param {{ generateQr?: boolean }} [options]
  */
 export async function createLinkRecord(userId, payload, { generateQr = true } = {}) {
-  const { originalUrl, customAlias, title, description, tags, category, expiryDate, password } = payload;
+  const {
+    originalUrl,
+    customAlias,
+    title,
+    description,
+    tags,
+    category,
+    expiryDate,
+    password,
+    maxClicks,
+    iosRedirect,
+    androidRedirect,
+    expiredRedirectUrl,
+    utm,
+  } = payload;
 
   if (!validateUrl(originalUrl)) {
     return { success: false, status: 400, message: 'Invalid URL' };
@@ -55,6 +69,11 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
       category,
       expiryDate,
       password,
+      maxClicks: Number(maxClicks) > 0 ? parseInt(maxClicks, 10) : null,
+      iosRedirect: iosRedirect ? iosRedirect.trim() : null,
+      androidRedirect: androidRedirect ? androidRedirect.trim() : null,
+      expiredRedirectUrl: expiredRedirectUrl ? expiredRedirectUrl.trim() : null,
+      ...(utm && typeof utm === 'object' ? { utm } : {}),
     });
   } catch (createError) {
     if (createError.code === 11000) {
@@ -104,27 +123,56 @@ export const createLink = async (req, res) => {
   }
 };
 
-// Get user's links
+// Get user's links with optional filtering, search, and sorting
 export const getUserLinks = async (req, res) => {
   try {
-    const { page = 1, limit = 10, sort = '-createdAt' } = req.query;
+    const { page = 1, limit = 50, sort = '-createdAt', search, status, category, tag } = req.query;
 
-    const links = await Link.find({ user: req.user.id })
+    const query = { user: req.user.id };
+
+    if (search && search.trim()) {
+      const sanitized = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(sanitized, 'i');
+      query.$or = [
+        { title: regex },
+        { shortCode: regex },
+        { customAlias: regex },
+        { originalUrl: regex },
+      ];
+    }
+
+    if (status === 'active') {
+      query.isActive = true;
+    } else if (status === 'disabled') {
+      query.isActive = false;
+    } else if (status === 'flagged') {
+      query.abuseFlag = true;
+    }
+
+    if (category && category !== 'all') {
+      query.category = category;
+    }
+
+    if (tag && tag.trim()) {
+      query.tags = tag.trim();
+    }
+
+    const links = await Link.find(query)
       .sort(sort)
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
+      .limit(Math.min(parseInt(limit, 10) || 50, 100))
+      .skip((Math.max(parseInt(page, 10) || 1, 1) - 1) * (parseInt(limit, 10) || 50))
       .populate('analytics')
       .read('secondaryPreferred');
 
-    const totalCount = await Link.countDocuments({ user: req.user.id }).read('secondaryPreferred');
+    const totalCount = await Link.countDocuments(query).read('secondaryPreferred');
 
     res.status(200).json({
       success: true,
       links,
       pagination: {
         totalCount,
-        page: parseInt(page),
-        pages: Math.ceil(totalCount / limit),
+        page: parseInt(page, 10),
+        pages: Math.ceil(totalCount / (parseInt(limit, 10) || 50)),
       },
     });
   } catch (error) {
@@ -158,7 +206,26 @@ export const getLink = async (req, res) => {
 // Update link
 export const updateLink = async (req, res) => {
   try {
-    const { title, description, tags, category, expiryDate } = req.body;
+    const {
+      originalUrl,
+      title,
+      description,
+      tags,
+      category,
+      expiryDate,
+      removeExpiryDate,
+      password,
+      removePassword,
+      maxClicks,
+      removeMaxClicks,
+      iosRedirect,
+      removeIosRedirect,
+      androidRedirect,
+      removeAndroidRedirect,
+      expiredRedirectUrl,
+      removeExpiredRedirectUrl,
+      utm,
+    } = req.body;
 
     let link = await Link.findById(req.params.id);
 
@@ -171,9 +238,68 @@ export const updateLink = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
+    const updateFields = {};
+
+    if (title !== undefined) updateFields.title = title;
+    if (description !== undefined) updateFields.description = description;
+    if (tags !== undefined) updateFields.tags = tags;
+    if (category !== undefined) updateFields.category = category;
+
+    if (originalUrl && originalUrl.trim() && originalUrl.trim() !== link.originalUrl) {
+      const trimmedUrl = originalUrl.trim();
+      if (!validateUrl(trimmedUrl)) {
+        return res.status(400).json({ success: false, message: 'Invalid destination URL format' });
+      }
+      const threat = await checkUrlThreat(trimmedUrl);
+      if (threat.malicious) {
+        return res.status(400).json({ success: false, message: 'URL flagged as malicious' });
+      }
+      updateFields.originalUrl = trimmedUrl;
+    }
+
+    if (removeExpiryDate) {
+      updateFields.expiryDate = null;
+    } else if (expiryDate) {
+      updateFields.expiryDate = new Date(expiryDate);
+    }
+
+    if (removePassword) {
+      updateFields.password = null;
+    } else if (typeof password === 'string' && password.trim().length > 0) {
+      updateFields.password = await bcrypt.hash(password.trim(), 10);
+    }
+
+    if (removeMaxClicks) {
+      updateFields.maxClicks = null;
+    } else if (maxClicks !== undefined) {
+      updateFields.maxClicks = Number(maxClicks) > 0 ? parseInt(maxClicks, 10) : null;
+    }
+
+    if (removeIosRedirect) {
+      updateFields.iosRedirect = null;
+    } else if (iosRedirect !== undefined) {
+      updateFields.iosRedirect = iosRedirect && iosRedirect.trim() ? iosRedirect.trim() : null;
+    }
+
+    if (removeAndroidRedirect) {
+      updateFields.androidRedirect = null;
+    } else if (androidRedirect !== undefined) {
+      updateFields.androidRedirect = androidRedirect && androidRedirect.trim() ? androidRedirect.trim() : null;
+    }
+
+    if (removeExpiredRedirectUrl) {
+      updateFields.expiredRedirectUrl = null;
+    } else if (expiredRedirectUrl !== undefined) {
+      updateFields.expiredRedirectUrl = expiredRedirectUrl && expiredRedirectUrl.trim() ? expiredRedirectUrl.trim() : null;
+    }
+
+    if (utm && typeof utm === 'object') {
+      updateFields.utm = utm;
+    }
+
     link = await Link.findByIdAndUpdate(
       req.params.id,
-      { title, description, tags, category, expiryDate },
+      updateFields,
       { new: true, runValidators: true }
     );
 

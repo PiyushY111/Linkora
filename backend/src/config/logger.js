@@ -3,8 +3,21 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import { env } from './env.js';
 
+const isDev = env.NODE_ENV !== 'production';
+
 export const logger = pino({
   level: env.LOG_LEVEL,
+  ...(isDev && {
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'SYS:HH:MM:ss',
+        ignore: 'pid,hostname,responseTime',
+        singleLine: true,
+      },
+    },
+  }),
   redact: {
     paths: [
       'password',
@@ -46,7 +59,23 @@ export const httpLogger = pinoHttp({
     if (res.statusCode >= 400) return 'warn';
     return 'info';
   },
-  customProps: (req) => ({ requestId: req.id }),
+  customSuccessMessage: (req, res, responseTime) => {
+    return `${req.method} ${req.url} ${res.statusCode} (${responseTime}ms)`;
+  },
+  customErrorMessage: (req, res, err) => {
+    return `${req.method} ${req.url} ${res.statusCode} (${res.responseTime || 0}ms) - ${err.message}`;
+  },
+  // In development, strip giant request and response headers (CSP, cookies, sec-ch-ua)
+  // so the terminal output stays concise and readable. In production, keep standard serializers.
+  serializers: {
+    req: isDev ? () => undefined : pinoHttp.stdSerializers.req,
+    res: isDev ? () => undefined : pinoHttp.stdSerializers.res,
+  },
+  customProps: (req) => (isDev ? {} : { requestId: req.id }),
+  autoLogging: {
+    ignore: (req) => req.url === '/health' || req.url === '/metrics',
+  },
 });
 
 export default logger;
+

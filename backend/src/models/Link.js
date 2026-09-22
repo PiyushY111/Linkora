@@ -75,6 +75,10 @@ const linkSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    maxClicks: {
+      type: Number,
+      default: null, // null means unlimited opens
+    },
     analytics: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Analytics',
@@ -83,6 +87,20 @@ const linkSchema = new mongoose.Schema(
       source: String,
       medium: String,
       campaign: String,
+      term: String,
+      content: String,
+    },
+    iosRedirect: {
+      type: String,
+      default: null,
+    },
+    androidRedirect: {
+      type: String,
+      default: null,
+    },
+    expiredRedirectUrl: {
+      type: String,
+      default: null,
     },
     lastAccessedAt: Date,
   },

@@ -38,10 +38,11 @@ export const linkService = {
     return response.data;
   },
 
-  getLinks: async (page = 1, limit = 10, sort = '-createdAt') => {
-    const response = await api.get('/links', {
-      params: { page, limit, sort },
-    });
+  getLinks: async (paramsOrPage = 1, limit = 50, sort = '-createdAt') => {
+    const params = typeof paramsOrPage === 'object' && paramsOrPage !== null
+      ? paramsOrPage
+      : { page: paramsOrPage, limit, sort };
+    const response = await api.get('/links', { params });
     return response.data;
   },
 

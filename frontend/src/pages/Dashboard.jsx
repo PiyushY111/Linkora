@@ -1,32 +1,115 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Plus, Link2 } from 'lucide-react';
-import { AnimatePresence } from 'framer-motion';
+import {
+  Plus,
+  Link2,
+  Search,
+  Filter,
+  LayoutGrid,
+  Table as TableIcon,
+  Download,
+  ArrowUpDown,
+  Sparkles,
+  Layers,
+  Activity,
+  ShieldCheck,
+  MousePointerClick,
+  X,
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import Papa from 'papaparse';
 import AppShell from '../components/layout/AppShell';
 import LinkCard from '../components/LinkCard';
 import CreateLinkModal from '../components/CreateLinkModal';
+import QuickShortenBar from '../components/links/QuickShortenBar';
+import LinkTableView from '../components/links/LinkTableView';
+import LinkDrawer from '../components/links/LinkDrawer';
+import BulkActionBar from '../components/links/BulkActionBar';
 import Skeleton from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
 import useAuthStore from '../context/authStore';
 
-const Dashboard = () => {
-  const { user } = useAuthStore();
-  const { links, setLinks, currentPage } = useLinkStore();
-  const [isLoading, setIsLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+const CATEGORY_OPTIONS = [
+  { value: 'all', label: 'All Categories' },
+  { value: 'marketing', label: 'Marketing' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'product', label: 'Product' },
+  { value: 'social', label: 'Social' },
+  { value: 'personal', label: 'Personal' },
+  { value: 'other', label: 'Other' },
+];
 
+const SORT_OPTIONS = [
+  { value: '-createdAt', label: 'Newest First' },
+  { value: '-clicks', label: 'Most Clicks' },
+  { value: 'createdAt', label: 'Oldest First' },
+  { value: 'title', label: 'Title (A–Z)' },
+];
+
+export default function Dashboard() {
+  const { user } = useAuthStore();
+  const { links, setLinks } = useLinkStore();
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Modals & Panels
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [inspectedLink, setInspectedLink] = useState(null);
+
+  // View preferences
+  const [viewMode, setViewMode] = useState(() => {
+    return localStorage.getItem('linkly_view_mode') || 'table';
+  });
+
+  // Filters & Search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'disabled' | 'flagged'
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('-createdAt');
+
+  // Multi-selection
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  const searchInputRef = useRef(null);
+
+  // Persist view mode preference
   useEffect(() => {
-    fetchLinks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    localStorage.setItem('linkly_view_mode', viewMode);
+  }, [viewMode]);
+
+  // Global Keyboard Shortcuts: ⌘K to create link, / to search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCreateModal(true);
+      } else if (
+        e.key === '/' &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA'
+      ) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Fetch links from backend
   const fetchLinks = async () => {
     setIsLoading(true);
     try {
-      const data = await linkService.getLinks(currentPage);
+      const data = await linkService.getLinks({
+        page: 1,
+        limit: 100,
+        sort: sortBy,
+        search: searchQuery || undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        category: categoryFilter !== 'all' ? categoryFilter : undefined,
+      });
       setLinks(data.links);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to fetch links');
@@ -35,55 +118,362 @@ const Dashboard = () => {
     }
   };
 
+  // Re-fetch whenever filters change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchLinks();
+    }, 200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, statusFilter, categoryFilter, sortBy]);
+
+  // Executive Metrics Calculations
+  const stats = useMemo(() => {
+    const total = links.length;
+    const totalClicks = links.reduce((sum, l) => sum + (l.clicks || 0), 0);
+    const active = links.filter((l) => l.isActive && !l.abuseFlag).length;
+    const avgClicks = total > 0 ? (totalClicks / total).toFixed(1) : 0;
+    return { total, totalClicks, active, avgClicks };
+  }, [links]);
+
+  // Multi-select handlers
+  const handleToggleSelect = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === links.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(links.map((l) => l._id));
+    }
+  };
+
+  // Export full catalog to CSV
+  const handleExportAllCsv = () => {
+    if (links.length === 0) {
+      toast.error('No links to export');
+      return;
+    }
+    try {
+      const data = links.map((l) => ({
+        'Short Code': l.shortCode,
+        'Short URL': l.shortUrl,
+        'Original Destination': l.originalUrl,
+        'Title': l.title || '',
+        'Clicks': l.clicks || 0,
+        'Status': l.abuseFlag ? 'Flagged' : l.isActive ? 'Active' : 'Disabled',
+        'Category': l.category || 'other',
+        'Created At': l.createdAt,
+      }));
+
+      const csv = Papa.unparse(data);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `linkly-catalog-${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success(`Exported ${links.length} links to CSV`);
+    } catch {
+      toast.error('Failed to export CSV');
+    }
+  };
+
   return (
     <>
       <Helmet>
-        <title>Links — Linkly</title>
+        <title>Enterprise Links — Linkly</title>
       </Helmet>
+
       <AppShell>
-        <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        {/* Page Header */}
+        <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-paper-100">Links</h1>
-            <p className="mt-1 text-sm text-paper-500">
-              {user?.name ? `Welcome back, ${user.name.split(' ')[0]}.` : 'Manage and track your shortened links.'}
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight text-paper-100">Link Management</h1>
+              <span className="badge-accent text-xs">Enterprise Engine</span>
+            </div>
+            <p className="mt-1 text-xs text-paper-500">
+              High-throughput routing, zero-latency caching, and live telemetry across all endpoints.
             </p>
           </div>
-          <button type="button" onClick={() => setShowCreateModal(true)} className="btn-primary">
-            <Plus size={16} /> New link
-          </button>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={handleExportAllCsv}
+              className="btn-secondary btn-sm hidden sm:flex"
+              title="Download link catalog as CSV"
+            >
+              <Download size={14} />
+              <span>Export CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="btn-primary"
+            >
+              <Plus size={16} />
+              <span>New Link</span>
+              <kbd className="ml-1.5 hidden rounded bg-ink-950/20 px-1.5 py-0.5 text-[10px] font-semibold text-ink-950/80 sm:inline-block">
+                ⌘K
+              </kbd>
+            </button>
+          </div>
         </div>
 
+        {/* Executive Stats Strip */}
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="panel p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-500">
+                Total Links
+              </span>
+              <Layers size={15} className="text-paper-400" />
+            </div>
+            <p className="mt-2 font-mono text-2xl font-bold text-paper-100">{stats.total}</p>
+          </div>
+
+          <div className="panel p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-500">
+                Live Clicks
+              </span>
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-400 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-accent-400" />
+              </span>
+            </div>
+            <p className="mt-2 font-mono text-2xl font-bold text-accent-400">
+              {stats.totalClicks.toLocaleString()}
+            </p>
+          </div>
+
+          <div className="panel p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-500">
+                Active Routing
+              </span>
+              <ShieldCheck size={15} className="text-success" />
+            </div>
+            <p className="mt-2 font-mono text-2xl font-bold text-paper-100">{stats.active}</p>
+          </div>
+
+          <div className="panel p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-500">
+                Avg Clicks / Link
+              </span>
+              <MousePointerClick size={15} className="text-paper-400" />
+            </div>
+            <p className="mt-2 font-mono text-2xl font-bold text-paper-100">{stats.avgClicks}</p>
+          </div>
+        </div>
+
+        {/* Frictionless Quick Shortener Bar */}
+        <QuickShortenBar onOpenAdvanced={() => setShowCreateModal(true)} />
+
+        {/* Enterprise Control Bar: Search, Status Filter, Category, Sort & Layout Toggle */}
+        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          {/* Status Tabs */}
+          <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-ink-700 bg-ink-900 p-1">
+            {[
+              { id: 'all', label: 'All Links' },
+              { id: 'active', label: 'Active' },
+              { id: 'disabled', label: 'Paused' },
+              { id: 'flagged', label: 'Flagged' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all whitespace-nowrap ${
+                  statusFilter === tab.id
+                    ? 'bg-ink-750 text-paper-100 shadow-sm border border-ink-600'
+                    : 'text-paper-500 hover:text-paper-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Search & Tooling */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-[240px] sm:w-72 lg:w-80 sm:flex-initial">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-paper-500"
+              />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search links, aliases, URLs... (/)"
+                className="w-full rounded-lg border border-ink-700 bg-ink-900 py-1.5 pl-8 pr-7 text-xs text-paper-100 placeholder:text-paper-500 focus:border-accent-400/80 focus:ring-1 focus:ring-accent-400/30"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-paper-500 hover:text-paper-200"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Category Dropdown */}
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1.5 text-xs font-medium text-paper-300 outline-none focus:border-ink-500"
+            >
+              {CATEGORY_OPTIONS.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+
+            {/* Sort Dropdown */}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1.5 text-xs font-medium text-paper-300 outline-none focus:border-ink-500"
+            >
+              {SORT_OPTIONS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+
+            {/* View Mode Toggle: Table ⇄ Cards */}
+            <div className="flex items-center rounded-lg border border-ink-700 bg-ink-900 p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`rounded-md p-1.5 transition-colors ${
+                  viewMode === 'table'
+                    ? 'bg-ink-750 text-accent-400 shadow-sm'
+                    : 'text-paper-500 hover:text-paper-300'
+                }`}
+                title="Table View (Dense)"
+              >
+                <TableIcon size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`rounded-md p-1.5 transition-colors ${
+                  viewMode === 'grid'
+                    ? 'bg-ink-750 text-accent-400 shadow-sm'
+                    : 'text-paper-500 hover:text-paper-300'
+                }`}
+                title="Card Grid View"
+              >
+                <LayoutGrid size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Content Area */}
         {isLoading ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-52" />
+          <div className="space-y-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full rounded-xl" />
             ))}
           </div>
         ) : links.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <AnimatePresence>
-              {links.map((link) => (
-                <LinkCard key={link._id} link={link} />
-              ))}
-            </AnimatePresence>
+          <div>
+            {viewMode === 'table' ? (
+              <LinkTableView
+                links={links}
+                selectedIds={selectedIds}
+                onToggleSelect={handleToggleSelect}
+                onSelectAll={handleSelectAll}
+                onInspectLink={(link) => setInspectedLink(link)}
+              />
+            ) : (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <AnimatePresence>
+                  {links.map((link) => (
+                    <LinkCard
+                      key={link._id}
+                      link={link}
+                      isSelected={selectedIds.includes(link._id)}
+                      onToggleSelect={handleToggleSelect}
+                      onInspectLink={(l) => setInspectedLink(l)}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
         ) : (
           <EmptyState
             icon={Link2}
-            title="No links yet"
-            description="Create your first shortened link to start tracking clicks."
+            title="No matching links found"
+            description={
+              searchQuery || statusFilter !== 'all' || categoryFilter !== 'all'
+                ? 'Try resetting your search query or filter criteria.'
+                : 'Create your first enterprise short link to start tracking high-performance redirects.'
+            }
             action={
-              <button type="button" onClick={() => setShowCreateModal(true)} className="btn-primary">
-                <Plus size={16} /> Create a link
-              </button>
+              searchQuery || statusFilter !== 'all' || categoryFilter !== 'all' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setStatusFilter('all');
+                    setCategoryFilter('all');
+                  }}
+                  className="btn-secondary"
+                >
+                  Clear Filters
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(true)}
+                  className="btn-primary"
+                >
+                  <Plus size={16} /> Create Link
+                </button>
+              )
             }
           />
         )}
+
+        {/* Bulk Actions Floating Bar */}
+        <BulkActionBar
+          selectedIds={selectedIds}
+          links={links}
+          onClearSelection={() => setSelectedIds([])}
+        />
+
+        {/* Slide-Over Link Inspector Drawer */}
+        <LinkDrawer
+          link={inspectedLink}
+          open={Boolean(inspectedLink)}
+          onClose={() => setInspectedLink(null)}
+        />
       </AppShell>
 
-      <CreateLinkModal open={showCreateModal} onClose={() => setShowCreateModal(false)} />
+      {/* Enterprise Link Creator Modal */}
+      <CreateLinkModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+      />
     </>
   );
-};
-
-export default Dashboard;
+}

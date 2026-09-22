@@ -12,6 +12,9 @@ import {
   setNegativeCache,
   invalidateLinkMeta,
   incrementClickCounter,
+  checkAndIncrementUsage,
+  getCurrentUsage,
+  seedLinkUsage,
 } from '../services/cacheService.js';
 import { emitClickEvent } from '../services/eventStreamService.js';
 
@@ -90,28 +93,114 @@ export const redirectLink = async (req, res) => {
       passwordHash: link.password || '',
       linkId: String(link._id),
       userId: String(link.user),
+      maxClicks: link.maxClicks || 0,
+      iosRedirect: link.iosRedirect || '',
+      androidRedirect: link.androidRedirect || '',
+      expiredRedirectUrl: link.expiredRedirectUrl || '',
     };
 
+    seedLinkUsage(meta.linkId, link.clicks || 0).catch((err) =>
+      logger.error({ err, linkId: meta.linkId }, 'Failed to seed link usage counter')
+    );
     setLinkMeta(shortCode, meta).catch((err) => logger.error({ err, shortCode }, 'Failed to populate link cache'));
   }
 
   if (!meta.isActive) {
-    return res.status(410).json({ success: false, message: 'Link has been disabled' });
+    if (meta.expiredRedirectUrl) {
+      return res.redirect(307, meta.expiredRedirectUrl);
+    }
+    const isLimit = meta.maxClicks && meta.maxClicks > 0;
+    if (req.headers.accept?.includes('text/html')) {
+      return res.redirect(302, `${env.FRONTEND_URL}/${shortCode}${isLimit ? '?limit=1' : ''}`);
+    }
+    return res.status(410).json({
+      success: false,
+      limitReached: isLimit,
+      message: isLimit
+        ? 'This link has reached its maximum allowed number of clicks'
+        : 'Link has been disabled',
+    });
   }
 
   if (meta.expiryDate && Date.now() > meta.expiryDate) {
-    return res.status(410).json({ success: false, message: 'Link has expired' });
+    if (meta.expiredRedirectUrl) {
+      return res.redirect(307, meta.expiredRedirectUrl);
+    }
+    if (req.headers.accept?.includes('text/html')) {
+      return res.redirect(302, `${env.FRONTEND_URL}/${shortCode}?expired=1`);
+    }
+    return res.status(410).json({ success: false, expired: true, message: 'Link has expired' });
+  }
+
+  // Enforce Click / Usage Limit if configured
+  if (meta.maxClicks && meta.maxClicks > 0) {
+    const isProbe = req.query.probe === '1';
+    if (isProbe) {
+      const current = await getCurrentUsage(meta.linkId);
+      if (current >= meta.maxClicks) {
+        return res.status(410).json({
+          success: false,
+          limitReached: true,
+          message: 'This link has reached its maximum allowed number of clicks',
+        });
+      }
+    } else {
+      const usage = await checkAndIncrementUsage(meta.linkId, meta.maxClicks);
+      if (!usage.allowed) {
+        if (meta.expiredRedirectUrl) {
+          return res.redirect(307, meta.expiredRedirectUrl);
+        }
+        if (req.headers.accept?.includes('text/html')) {
+          return res.redirect(302, `${env.FRONTEND_URL}/${shortCode}?limit=1`);
+        }
+        return res.status(410).json({
+          success: false,
+          limitReached: true,
+          message: 'This link has reached its maximum allowed number of clicks',
+        });
+      }
+
+      if (usage.reached) {
+        // Link has just served its final allowable click; disable in DB & invalidate cache asynchronously
+        Link.findByIdAndUpdate(meta.linkId, { isActive: false }).catch((err) =>
+          logger.error({ err, linkId: meta.linkId }, 'Failed to auto-disable link after reaching maxClicks')
+        );
+        invalidateLinkMeta(shortCode).catch((err) =>
+          logger.error({ err, shortCode }, 'Failed to invalidate link meta after reaching maxClicks')
+        );
+      }
+    }
   }
 
   if (meta.passwordHash) {
     const passwordOk = await verifyLinkPassword(meta.passwordHash, pwd, meta.linkId, shortCode);
     if (!passwordOk) {
-      return res.status(403).json({ success: false, message: 'Invalid password' });
+      if (req.headers.accept?.includes('text/html') && !pwd) {
+        return res.redirect(302, `${env.FRONTEND_URL}/${shortCode}`);
+      }
+      return res.status(403).json({
+        success: false,
+        requiresPassword: true,
+        message: pwd ? 'Invalid password' : 'Password required to access this link',
+      });
     }
   }
 
+  // Determine device-specific target URL if configured
+  const ua = getUserAgent(req);
+  let destinationUrl = meta.originalUrl;
+  if (/iphone|ipad|ipod/i.test(ua) && meta.iosRedirect) {
+    destinationUrl = meta.iosRedirect;
+  } else if (/android/i.test(ua) && meta.androidRedirect) {
+    destinationUrl = meta.androidRedirect;
+  }
+
+  if (req.query.probe === '1') {
+    return res.status(200).json({ success: true, originalUrl: destinationUrl });
+  }
+
   res.set('Cache-Control', 'private, max-age=60');
-  res.redirect(307, meta.originalUrl);
+  res.redirect(307, destinationUrl);
 
   // Fire-and-forget: never await Mongo writes or streaming on the hot path.
   incrementClickCounter(meta.linkId).catch((err) =>
