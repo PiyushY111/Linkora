@@ -3,6 +3,16 @@ import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { redisCacheHitsTotal, redisCacheMissesTotal } from '../middleware/metrics.js';
 
+/**
+ * Sizing guidance (Phase 4.3): each link:meta:{shortCode} hash is roughly
+ * 250 bytes (6 fields incl. a URL). At 10M active links that's ~2.5GB of
+ * cache footprint. Provision Redis with headroom on top of that for the
+ * link:link_sequence counter, per-day link:counters:{date} hashes,
+ * stream:clicks (trimmed by the consumer's XACK+XAUTOCLAIM cycle), and the
+ * Phase 5 sliding-window rate-limit keys — 4-6GB maxmemory is a reasonable
+ * starting point for that scale, with maxmemory-policy allkeys-lru so cold
+ * entries evict before hot ones under pressure.
+ */
 export const redis = new Redis(env.REDIS_URL, {
   maxRetriesPerRequest: 3,
   lazyConnect: false,

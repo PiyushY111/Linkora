@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 
@@ -6,27 +5,18 @@ const NotFound = () => {
   return (
     <>
       <Helmet>
-        <title>Page Not Found - Linkly</title>
+        <title>Page not found — Linkly</title>
       </Helmet>
 
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center px-4">
-        <div className="text-center">
-          <h1 className="text-6xl font-bold text-gray-900 dark:text-white mb-2">404</h1>
-          <p className="text-2xl font-semibold text-gray-600 dark:text-gray-400 mb-4">
-            Page Not Found
-          </p>
-          <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md">
-            The page you're looking for doesn't exist or has been moved.
-          </p>
-
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/" className="btn btn-primary">
-              Go Home
-            </Link>
-            <Link to="/dashboard" className="btn btn-secondary">
-              Dashboard
-            </Link>
-          </div>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-ink-950 bg-grid px-4 text-center">
+        <p className="font-mono text-sm text-accent-400">404</p>
+        <h1 className="mt-3 text-3xl font-bold text-paper-100">Page not found</h1>
+        <p className="mt-2 max-w-sm text-sm text-paper-500">
+          The page you&apos;re looking for doesn&apos;t exist, or the link has been moved.
+        </p>
+        <div className="mt-7 flex gap-3">
+          <Link to="/" className="btn-primary">Go home</Link>
+          <Link to="/dashboard" className="btn-secondary">Dashboard</Link>
         </div>
       </div>
     </>

@@ -10,10 +10,16 @@ const linkSchema = new mongoose.Schema(
       required: [true, 'Please provide original URL'],
       trim: true,
     },
+    // Case-sensitive, deliberately: the sequence generator's Base62
+    // alphabet (0-9a-zA-Z) needs the full 62 symbols for its
+    // collision-resistance guarantee. Lowercasing here would silently fold
+    // that down to 36 effective symbols post-storage and reintroduce
+    // collisions between case-varying permutations of different sequence
+    // values. customAlias is unaffected in practice — validateCreateLink
+    // already restricts it to [a-z0-9-].
     shortCode: {
       type: String,
       required: true,
-      lowercase: true,
     },
     shortUrl: {
       type: String,
@@ -22,7 +28,6 @@ const linkSchema = new mongoose.Schema(
     },
     customAlias: {
       type: String,
-      lowercase: true,
     },
     user: {
       type: mongoose.Schema.Types.ObjectId,
@@ -59,6 +64,10 @@ const linkSchema = new mongoose.Schema(
       default: true,
     },
     abuseFlag: {
+      type: Boolean,
+      default: false,
+    },
+    expiryNotified: {
       type: Boolean,
       default: false,
     },

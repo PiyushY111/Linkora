@@ -9,10 +9,20 @@ import {
 } from '../controllers/linkController.js';
 import { protect } from '../middleware/auth.js';
 import { validateCreateLink, handleValidationErrors } from '../middleware/validation.js';
+import { ssrfValidationMiddleware } from '../middleware/ssrfValidator.js';
+import { linkCreationRateLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
-router.post('/', protect, validateCreateLink, handleValidationErrors, createLink);
+router.post(
+  '/',
+  protect,
+  linkCreationRateLimiter,
+  validateCreateLink,
+  handleValidationErrors,
+  ssrfValidationMiddleware,
+  createLink
+);
 router.get('/', protect, getUserLinks);
 router.get('/:id', protect, getLink);
 router.put('/:id', protect, updateLink);

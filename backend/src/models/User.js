@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 const userSchema = new mongoose.Schema(
   {
@@ -46,6 +47,16 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    plan: {
+      type: String,
+      enum: ['free', 'pro', 'enterprise'],
+      default: 'free',
+    },
+    // Custom hourly link-creation quota for enterprise plans; ignored otherwise.
+    rateLimitOverride: {
+      type: Number,
+      default: null,
+    },
     apiKey: {
       type: String,
       default: null,
@@ -87,11 +98,12 @@ const userSchema = new mongoose.Schema(
 // Hash password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  next();
 });
 
 // Method to compare password
@@ -101,7 +113,7 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 
 // Generate API Key
 userSchema.methods.generateApiKey = function () {
-  const apiKey = require('nanoid').nanoid(32);
+  const apiKey = `lnk_${crypto.randomBytes(24).toString('hex')}`;
   this.apiKey = apiKey;
   return apiKey;
 };

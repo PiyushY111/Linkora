@@ -1,75 +1,77 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
-import Navbar from '../components/Navbar';
-import { ChevronRight } from 'lucide-react';
+import { Copy, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
+import AppShell from '../components/layout/AppShell';
 import { authService } from '../services';
 import useAuthStore from '../context/authStore';
 
 const Settings = () => {
   const { user, setUser } = useAuthStore();
-  const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    name: user?.name || '',
-    bio: user?.bio || '',
-  });
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [formData, setFormData] = useState({ name: user?.name || '', bio: user?.bio || '' });
   const [apiKey, setApiKey] = useState(null);
+
+  // user hydrates asynchronously (see ProtectedRoute) and can arrive after
+  // this component's initial render, so the form fields need to pick up
+  // the value once it lands rather than only reading it at mount.
+  useEffect(() => {
+    if (user) setFormData({ name: user.name || '', bio: user.bio || '' });
+  }, [user]);
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
+    setIsSaving(true);
     try {
       const data = await authService.updateProfile(formData);
       setUser(data.user);
-      toast.success('Profile updated successfully');
+      toast.success('Profile updated');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update profile');
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
   const handleGenerateApiKey = async () => {
-    if (window.confirm('Generate a new API key? Old keys will be invalidated.')) {
-      setIsLoading(true);
-      try {
-        const data = await authService.generateApiKey();
-        setApiKey(data.apiKey);
-        toast.success('API key generated successfully');
-      } catch (error) {
-        toast.error('Failed to generate API key');
-      } finally {
-        setIsLoading(false);
-      }
+    if (!window.confirm('Generate a new API key? Any previous key stops working immediately.')) return;
+    setIsGenerating(true);
+    try {
+      const data = await authService.generateApiKey();
+      setApiKey(data.apiKey);
+      toast.success('API key generated');
+    } catch {
+      toast.error('Failed to generate API key');
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   const copyApiKey = () => {
-    if (apiKey) {
-      navigator.clipboard.writeText(apiKey);
-      toast.success('API key copied to clipboard');
-    }
+    if (!apiKey) return;
+    navigator.clipboard.writeText(apiKey);
+    toast.success('Copied to clipboard');
   };
 
   return (
     <>
       <Helmet>
-        <title>Settings - Linkly</title>
+        <title>Settings — Linkly</title>
       </Helmet>
-      <Navbar />
+      <AppShell>
+        <h1 className="mb-8 text-2xl font-bold tracking-tight text-paper-100">Settings</h1>
 
-      <main className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-8">Settings</h1>
+        <div className="max-w-2xl space-y-6">
+          <div className="panel p-6">
+            <h2 className="text-base font-semibold text-paper-100">Profile</h2>
+            <p className="mt-1 text-sm text-paper-500">Update your name and bio.</p>
 
-          {/* Profile Settings */}
-          <div className="card mb-8">
-            <h2 className="text-2xl font-bold mb-6">Profile Settings</h2>
-            <form onSubmit={handleUpdateProfile} className="space-y-4">
+            <form onSubmit={handleUpdateProfile} className="mt-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Name</label>
+                <label className="field-label" htmlFor="name">Name</label>
                 <input
+                  id="name"
                   type="text"
                   className="input"
                   value={formData.name}
@@ -78,102 +80,70 @@ const Settings = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Email</label>
-                <input
-                  type="email"
-                  className="input bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
-                  value={user?.email}
-                  disabled
-                />
+                <label className="field-label" htmlFor="email">Email</label>
+                <input id="email" type="email" className="input opacity-60" value={user?.email || ''} disabled />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Bio</label>
+                <label className="field-label" htmlFor="bio">Bio</label>
                 <textarea
+                  id="bio"
                   className="input"
-                  rows="4"
-                  placeholder="Tell us about yourself..."
+                  rows="3"
+                  placeholder="Tell us about yourself"
                   value={formData.bio}
                   onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                 />
               </div>
 
-              <button type="submit" className="btn btn-primary" disabled={isLoading}>
-                {isLoading ? 'Saving...' : 'Save Changes'}
+              <button type="submit" className="btn-primary" disabled={isSaving}>
+                {isSaving ? 'Saving…' : 'Save changes'}
               </button>
             </form>
           </div>
 
-          {/* API Key */}
-          <div className="card mb-8">
-            <h2 className="text-2xl font-bold mb-6">API Key</h2>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Use your API key to programmatically create and manage links
+          <div className="panel p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-paper-100">Plan</h2>
+                <p className="mt-1 text-sm text-paper-500">Determines your hourly link-creation quota.</p>
+              </div>
+              <span className="badge-accent capitalize">{user?.plan || 'free'}</span>
+            </div>
+          </div>
+
+          <div className="panel p-6">
+            <div className="flex items-center gap-2">
+              <KeyRound size={16} className="text-paper-400" />
+              <h2 className="text-base font-semibold text-paper-100">API key</h2>
+            </div>
+            <p className="mt-1 text-sm text-paper-500">
+              Use this key with the <code className="font-mono text-xs text-paper-300">x-api-key</code> header on
+              the public API (see the Developer page).
             </p>
 
             {apiKey ? (
-              <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
-                <div className="flex items-center gap-2">
-                  <input
-                    type={showApiKey ? 'text' : 'password'}
-                    value={apiKey}
-                    readOnly
-                    className="flex-1 bg-transparent font-mono text-sm outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={copyApiKey}
-                    className="btn btn-secondary text-sm"
-                  >
-                    Copy
-                  </button>
-                </div>
+              <div className="mt-4 flex items-center gap-2 rounded-lg border border-ink-600 bg-ink-950 px-3 py-2.5">
+                <span className="flex-1 truncate font-mono text-sm text-accent-400">{apiKey}</span>
+                <button type="button" onClick={copyApiKey} className="btn-ghost btn-sm">
+                  <Copy size={13} /> Copy
+                </button>
               </div>
             ) : (
-              <p className="text-gray-600 dark:text-gray-400 mb-4">No API key generated yet</p>
+              <p className="mt-4 text-sm text-paper-500">No API key generated yet.</p>
             )}
 
             <button
               type="button"
               onClick={handleGenerateApiKey}
-              className="btn btn-primary"
-              disabled={isLoading}
+              className="btn-secondary mt-4"
+              disabled={isGenerating}
             >
-              {isLoading ? 'Generating...' : 'Generate New API Key'}
+              {isGenerating ? 'Generating…' : apiKey ? 'Regenerate key' : 'Generate API key'}
             </button>
           </div>
-
-          {/* Preferences */}
-          <div className="card">
-            <h2 className="text-2xl font-bold mb-6">Preferences</h2>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                <div>
-                  <p className="font-medium">Dark Mode</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Enable dark theme</p>
-                </div>
-                <input type="checkbox" className="w-5 h-5" />
-              </div>
-
-              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                <div>
-                  <p className="font-medium">Email Notifications</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Get updates on link activity</p>
-                </div>
-                <input type="checkbox" className="w-5 h-5" defaultChecked />
-              </div>
-
-              <div className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                <div>
-                  <p className="font-medium">Public Profile</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Make your profile public</p>
-                </div>
-                <input type="checkbox" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
         </div>
-      </main>
+      </AppShell>
     </>
   );
 };

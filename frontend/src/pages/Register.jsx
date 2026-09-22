@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
+import { ArrowRight } from 'lucide-react';
 import { authService } from '../services';
 import useAuthStore from '../context/authStore';
-import { ArrowRight, Zap } from 'lucide-react';
 
 const Register = () => {
   const navigate = useNavigate();
-  const { setToken, setUser } = useAuthStore();
+  const { setSession, setUser } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -29,9 +29,9 @@ const Register = () => {
 
     try {
       const data = await authService.register(formData.name, formData.email, formData.password);
-      setToken(data.token);
+      setSession({ token: data.token, refreshToken: data.refreshToken });
       setUser(data.user);
-      toast.success('Account created successfully!');
+      toast.success('Account created');
       navigate('/dashboard');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Registration failed');
@@ -43,85 +43,86 @@ const Register = () => {
   return (
     <>
       <Helmet>
-        <title>Sign Up - Linkly</title>
+        <title>Create account — Linkly</title>
       </Helmet>
 
-      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center px-4">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 w-full max-w-md">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-            <Zap className="text-blue-600" /> Linkly
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">Create your account</p>
+      <div className="relative flex min-h-screen items-center justify-center bg-ink-950 bg-grid px-4 py-10">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink-950 via-transparent to-ink-950" />
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Name
-              </label>
-              <input
-                type="text"
-                className="input"
-                placeholder="Your name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-              />
-            </div>
+        <div className="relative w-full max-w-sm animate-fade-up">
+          <Link to="/" className="mb-8 flex items-center justify-center gap-2">
+            <img src="/logo.svg" alt="" width={30} height={30} />
+            <span className="text-lg font-bold text-paper-100">Linkly</span>
+          </Link>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                className="input"
-                placeholder="your@email.com"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                required
-              />
-            </div>
+          <div className="panel p-7">
+            <h1 className="text-xl font-bold text-paper-100">Create your account</h1>
+            <p className="mt-1 text-sm text-paper-500">Start shortening in under a minute.</p>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Password
-              </label>
-              <input
-                type="password"
-                className="input"
-                placeholder="••••••••"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
-              />
-            </div>
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              <div>
+                <label className="field-label" htmlFor="name">Name</label>
+                <input
+                  id="name"
+                  type="text"
+                  className="input"
+                  placeholder="Ada Lovelace"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                  autoFocus
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                className="input"
-                placeholder="••••••••"
-                value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                required
-              />
-            </div>
+              <div>
+                <label className="field-label" htmlFor="email">Email</label>
+                <input
+                  id="email"
+                  type="email"
+                  className="input"
+                  placeholder="you@company.com"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  required
+                />
+              </div>
 
-            <button
-              type="submit"
-              className="btn btn-primary w-full flex items-center justify-center gap-2"
-              disabled={isLoading}
-            >
-              {isLoading ? 'Creating account...' : 'Sign Up'} <ArrowRight size={18} />
-            </button>
-          </form>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="field-label" htmlFor="password">Password</label>
+                  <input
+                    id="password"
+                    type="password"
+                    className="input"
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="confirmPassword">Confirm</label>
+                  <input
+                    id="confirmPassword"
+                    type="password"
+                    className="input"
+                    placeholder="••••••••"
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
 
-          <p className="text-center text-gray-600 dark:text-gray-400 mt-6">
+              <button type="submit" className="btn-primary w-full" disabled={isLoading}>
+                {isLoading ? 'Creating account…' : 'Create account'} <ArrowRight size={16} />
+              </button>
+            </form>
+          </div>
+
+          <p className="mt-6 text-center text-sm text-paper-500">
             Already have an account?{' '}
-            <Link to="/login" className="text-blue-600 font-semibold hover:underline">
+            <Link to="/login" className="font-semibold text-accent-400 hover:text-accent-300">
               Sign in
             </Link>
           </p>
