@@ -11,7 +11,6 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Analytics from './pages/Analytics';
-import Workspaces from './pages/Workspaces';
 import Webhooks from './pages/Webhooks';
 import Developer from './pages/Developer';
 import Settings from './pages/Settings';
@@ -34,7 +33,7 @@ function App() {
           <Route path="/dashboard" element={<ProtectedRoute component={Dashboard} />} />
           <Route path="/analytics" element={<Navigate to="/analytics/all" replace />} />
           <Route path="/analytics/:linkId" element={<ProtectedRoute component={Analytics} />} />
-          <Route path="/workspaces" element={<ProtectedRoute component={Workspaces} />} />
+          <Route path="/workspaces" element={<Navigate to="/dashboard" replace />} />
           <Route path="/webhooks" element={<ProtectedRoute component={Webhooks} />} />
           <Route path="/developer" element={<ProtectedRoute component={Developer} />} />
           <Route path="/settings" element={<ProtectedRoute component={Settings} />} />

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Menu, X, Link2, BarChart3, Building2, Webhook, Terminal, Settings, LogOut } from 'lucide-react';
+import { Menu, X, Link2, BarChart3, Webhook, Terminal, Settings, LogOut } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from './Sidebar';
 import useAuthStore from '../../context/authStore';
@@ -9,7 +9,6 @@ import { authService } from '../../services';
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Links', icon: Link2 },
   { to: '/analytics/all', label: 'Analytics', icon: BarChart3 },
-  { to: '/workspaces', label: 'Workspaces', icon: Building2 },
   { to: '/webhooks', label: 'Webhooks', icon: Webhook },
   { to: '/developer', label: 'Developer', icon: Terminal },
   { to: '/settings', label: 'Settings', icon: Settings },
