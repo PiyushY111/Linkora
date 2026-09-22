@@ -4,12 +4,14 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
+import QRCodeModal from '../qr/QRCodeModal';
 
 export default function QuickShortenBar({ onOpenAdvanced }) {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [lastCreated, setLastCreated] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const { addLink } = useLinkStore();
 
   const handleQuickShorten = async (e) => {
@@ -150,6 +152,15 @@ export default function QuickShortenBar({ onOpenAdvanced }) {
                 {copied ? <Check size={14} /> : <Copy size={14} />}
                 <span>{copied ? 'Copied!' : 'Copy Link'}</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setShowQrModal(true)}
+                className="btn-secondary btn-sm"
+                title="Customize QR code"
+              >
+                <QrCode size={14} />
+                <span className="hidden sm:inline">Custom QR</span>
+              </button>
               <a
                 href={lastCreated.shortUrl}
                 target="_blank"
@@ -170,6 +181,12 @@ export default function QuickShortenBar({ onOpenAdvanced }) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <QRCodeModal
+        open={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        link={lastCreated}
+      />
     </div>
   );
 }

@@ -20,10 +20,13 @@ import {
   Users,
   Smartphone,
   Sliders,
+  Sparkles,
+  QrCode,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link as RouterLink } from 'react-router-dom';
+import QRCodeModal from '../qr/QRCodeModal';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -36,6 +39,7 @@ export default function LinkDrawer({ link, open, onClose }) {
   const [copied, setCopied] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
 
   // Form State
   const [originalUrl, setOriginalUrl] = useState('');
@@ -266,7 +270,8 @@ export default function LinkDrawer({ link, open, onClose }) {
   const isExpired = link.expiryDate && new Date(link.expiryDate) < new Date();
 
   return (
-    <AnimatePresence>
+    <>
+      <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-50 overflow-hidden">
           {/* Backdrop */}
@@ -487,31 +492,56 @@ export default function LinkDrawer({ link, open, onClose }) {
                 </div>
 
                 {/* QR Code Section */}
-                {link.qrCode && (
-                  <div className="panel p-4 flex items-center gap-4">
-                    <img
-                      src={link.qrCode}
-                      alt="QR Code"
-                      className="h-20 w-20 rounded-lg bg-white p-1 ring-1 ring-ink-600 shrink-0"
-                    />
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-paper-300">
-                        QR Asset Ready
-                      </h4>
-                      <p className="text-xs text-paper-500">
-                        Instant scan code for posters, packaging, and marketing collateral.
+                <div className="panel p-4 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div
+                      onClick={() => setShowQrModal(true)}
+                      className="relative group cursor-pointer shrink-0"
+                      title="Click to customize QR code"
+                    >
+                      <img
+                        src={link.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(link.shortUrl)}`}
+                        alt="QR Code"
+                        className="h-20 w-20 rounded-xl bg-ink-950 p-1.5 ring-1 ring-ink-600 transition-transform group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-ink-950/70 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Sparkles size={18} className="text-accent-400" />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-paper-300">
+                          Dynamic QR Asset
+                        </h4>
+                        <span className="badge-accent text-[10px]">Editable Target</span>
+                        {link.qrConfig && (
+                          <span className="badge-neutral text-[10px]">Customized</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-paper-400 truncate">
+                        Redirects to: <span className="font-mono text-paper-200">{link.originalUrl}</span>. Change target anytime without reprinting.
                       </p>
-                      <button
-                        type="button"
-                        onClick={downloadQr}
-                        className="btn-secondary btn-sm"
-                      >
-                        <Download size={13} />
-                        <span>Download PNG</span>
-                      </button>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowQrModal(true)}
+                          className="btn-primary btn-sm"
+                        >
+                          <Sparkles size={12} />
+                          <span>Customize QR</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={downloadQr}
+                          className="btn-secondary btn-sm"
+                        >
+                          <Download size={12} />
+                          <span>Download</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* Metadata, Security & Routing Options */}
                 <div className="panel p-4 space-y-3">
@@ -1088,5 +1118,12 @@ export default function LinkDrawer({ link, open, onClose }) {
         </div>
       )}
     </AnimatePresence>
+
+    <QRCodeModal
+      open={showQrModal}
+      onClose={() => setShowQrModal(false)}
+      link={link}
+    />
+  </>
   );
 }

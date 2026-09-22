@@ -17,9 +17,13 @@ import {
   Users,
   Smartphone,
   Globe,
+  QrCode,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from './ui/Modal';
+import QRCodeModal from './qr/QRCodeModal';
+import QRCodeCustomizer from './qr/QRCodeCustomizer';
+import { DEFAULT_QR_CONFIG } from '../utils/qrPresets';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
 import useAuthStore from '../context/authStore';
@@ -63,6 +67,7 @@ const EMPTY_FORM = {
   expiredRedirectUrl: '',
   iosRedirect: '',
   androidRedirect: '',
+  qrConfig: DEFAULT_QR_CONFIG,
   tags: [],
   tagInput: '',
   utmSource: '',
@@ -81,6 +86,7 @@ export default function CreateLinkModal({ open, onClose }) {
   const [isLoading, setIsLoading] = useState(false);
   const [createdResult, setCreatedResult] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
 
   // Pre-fill user's default category and UTM parameters when opening modal
   useEffect(() => {
@@ -217,6 +223,7 @@ export default function CreateLinkModal({ open, onClose }) {
         originalUrl: finalUrl,
         category: formData.category,
         tags: formData.tags,
+        qrConfig: formData.qrConfig || DEFAULT_QR_CONFIG,
       };
 
       if (formData.customAlias.trim()) payload.customAlias = formData.customAlias.trim();
@@ -276,8 +283,9 @@ export default function CreateLinkModal({ open, onClose }) {
   };
 
   return (
-    <Modal
-      open={open}
+    <>
+      <Modal
+        open={open}
       onClose={handleClose}
       title={createdResult ? 'Link Created Successfully' : 'Create Enterprise Link'}
       maxWidth="max-w-2xl"
@@ -345,14 +353,24 @@ export default function CreateLinkModal({ open, onClose }) {
                     QR Code Asset
                   </p>
                   <p className="text-xs text-paper-500">Ready for print and collateral packaging.</p>
-                  <button
-                    type="button"
-                    onClick={() => downloadQr('png')}
-                    className="btn-secondary btn-sm"
-                  >
-                    <Download size={13} />
-                    <span>Download PNG</span>
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowQrModal(true)}
+                      className="btn-primary btn-sm"
+                    >
+                      <Sparkles size={13} />
+                      <span>Customize QR</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => downloadQr('png')}
+                      className="btn-secondary btn-sm"
+                    >
+                      <Download size={13} />
+                      <span>PNG</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -469,6 +487,18 @@ export default function CreateLinkModal({ open, onClose }) {
                 {(formData.iosRedirect || formData.androidRedirect) && (
                   <span className="h-1.5 w-1.5 rounded-full bg-accent-400" />
                 )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('qr')}
+                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                  activeTab === 'qr'
+                    ? 'border-accent-400 text-accent-400'
+                    : 'border-transparent text-paper-500 hover:text-paper-300'
+                }`}
+              >
+                <QrCode size={14} />
+                <span>Custom QR</span>
               </button>
             </div>
 
@@ -1132,6 +1162,34 @@ export default function CreateLinkModal({ open, onClose }) {
               </div>
             )}
 
+            {/* TAB 5: CUSTOM QR DESIGN */}
+            {activeTab === 'qr' && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-ink-700 bg-ink-950 p-3.5 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={14} className="text-accent-400" />
+                    <span className="text-xs font-semibold text-paper-100">
+                      Pre-configure Link QR Code Style
+                    </span>
+                  </div>
+                  <p className="text-xs text-paper-500">
+                    Apply designer presets, custom colors, gradients, logos, or callout frames before creating the link.
+                  </p>
+                </div>
+
+                <QRCodeCustomizer
+                  config={formData.qrConfig || DEFAULT_QR_CONFIG}
+                  onChange={(updater) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      qrConfig: typeof updater === 'function' ? updater(prev.qrConfig || DEFAULT_QR_CONFIG) : updater,
+                    }));
+                  }}
+                  onReset={() => setFormData((prev) => ({ ...prev, qrConfig: DEFAULT_QR_CONFIG }))}
+                />
+              </div>
+            )}
+
             {/* Actions */}
             <div className="flex items-center justify-between border-t border-ink-700 pt-4">
               <span className="text-xs text-paper-500">
@@ -1157,5 +1215,13 @@ export default function CreateLinkModal({ open, onClose }) {
         )}
       </AnimatePresence>
     </Modal>
+
+    <QRCodeModal
+      open={showQrModal}
+      onClose={() => setShowQrModal(false)}
+      link={createdResult}
+      onSaveSuccess={(updated) => setCreatedResult(updated)}
+    />
+  </>
   );
 }

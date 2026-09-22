@@ -15,6 +15,7 @@ import {
 import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
 import { Link as RouterLink } from 'react-router-dom';
+import QRCodeModal from './qr/QRCodeModal';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
 import { useConfirm } from '../context/ConfirmContext';
@@ -40,6 +41,7 @@ export default function LinkCard({
   const [isLoading, setIsLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const { removeLink, updateLink } = useLinkStore();
 
   const domain = getDomain(link.originalUrl);
@@ -91,7 +93,8 @@ export default function LinkCard({
   };
 
   return (
-    <motion.div
+    <>
+      <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
@@ -179,6 +182,16 @@ export default function LinkCard({
                 >
                   <BarChart3 size={14} /> Analytics
                 </RouterLink>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowQrModal(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-paper-200 hover:bg-ink-700"
+                >
+                  <QrCode size={14} /> Customize QR
+                </button>
                 <a
                   href={link.originalUrl}
                   target="_blank"
@@ -248,13 +261,36 @@ export default function LinkCard({
           )}
         </div>
 
-        {link.qrCode && (
-          <img
-            src={link.qrCode}
-            alt="QR code"
-            className="h-10 w-10 rounded-md bg-white p-0.5 ring-1 ring-ink-600 shrink-0"
-            title="Scan QR"
-          />
+        {link.qrCode ? (
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowQrModal(true);
+            }}
+            className="group/qr relative cursor-pointer shrink-0"
+            title="Click to customize QR code"
+          >
+            <img
+              src={link.qrCode}
+              alt="QR code"
+              className="h-10 w-10 rounded-lg bg-ink-950 p-0.5 ring-1 ring-ink-600 transition-transform group-hover/qr:scale-110"
+            />
+            <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-ink-950/70 opacity-0 group-hover/qr:opacity-100 transition-opacity">
+              <Sparkles size={12} className="text-accent-400" />
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowQrModal(true);
+            }}
+            className="rounded-lg p-1.5 text-paper-500 hover:bg-ink-700 hover:text-accent-400 transition-colors"
+            title="Create Custom QR"
+          >
+            <QrCode size={16} />
+          </button>
         )}
       </div>
 
@@ -269,5 +305,12 @@ export default function LinkCard({
         </div>
       )}
     </motion.div>
+
+    <QRCodeModal
+      open={showQrModal}
+      onClose={() => setShowQrModal(false)}
+      link={link}
+    />
+  </>
   );
 }

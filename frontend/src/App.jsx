@@ -14,6 +14,7 @@ import Analytics from './pages/Analytics';
 import Webhooks from './pages/Webhooks';
 import Developer from './pages/Developer';
 import Settings from './pages/Settings';
+import QRCodeStudio from './pages/QRCodeStudio';
 import NotFound from './pages/NotFound';
 import Redirect from './pages/Redirect';
 
@@ -33,6 +34,7 @@ function App() {
             <Route path="/register" element={!token ? <Register /> : <Navigate to="/dashboard" />} />
 
             <Route path="/dashboard" element={<ProtectedRoute component={Dashboard} />} />
+            <Route path="/qr-codes" element={<ProtectedRoute component={QRCodeStudio} />} />
             <Route path="/analytics" element={<Navigate to="/analytics/all" replace />} />
             <Route path="/analytics/:linkId" element={<ProtectedRoute component={Analytics} />} />
             <Route path="/workspaces" element={<Navigate to="/dashboard" replace />} />

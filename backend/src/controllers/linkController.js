@@ -36,6 +36,8 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
     androidRedirect,
     expiredRedirectUrl,
     utm,
+    qrCode: initialQrCode,
+    qrConfig: initialQrConfig,
   } = payload;
 
   if (!validateUrl(originalUrl)) {
@@ -75,6 +77,8 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
       androidRedirect: androidRedirect ? androidRedirect.trim() : null,
       expiredRedirectUrl: expiredRedirectUrl ? expiredRedirectUrl.trim() : null,
       ...(utm && typeof utm === 'object' ? { utm } : {}),
+      ...(initialQrCode ? { qrCode: initialQrCode } : {}),
+      ...(initialQrConfig ? { qrConfig: initialQrConfig } : {}),
     });
   } catch (createError) {
     if (createError.code === 11000) {
@@ -85,7 +89,7 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
 
   await Analytics.create({ link: link._id, user: userId });
 
-  if (generateQr) {
+  if (generateQr && !link.qrCode) {
     try {
       const qrCode = await generateQRCode(link.shortUrl);
       link.qrCode = qrCode;
@@ -234,6 +238,8 @@ export const updateLink = async (req, res) => {
       expiredRedirectUrl,
       removeExpiredRedirectUrl,
       utm,
+      qrCode,
+      qrConfig,
     } = req.body;
 
     let link = await Link.findById(req.params.id);
@@ -305,6 +311,9 @@ export const updateLink = async (req, res) => {
     if (utm && typeof utm === 'object') {
       updateFields.utm = utm;
     }
+
+    if (qrCode !== undefined) updateFields.qrCode = qrCode;
+    if (qrConfig !== undefined) updateFields.qrConfig = qrConfig;
 
     link = await Link.findByIdAndUpdate(
       req.params.id,

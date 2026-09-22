@@ -1,10 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Link2, BarChart3, Webhook, Terminal, Settings, LogOut } from 'lucide-react';
+import { Link2, BarChart3, QrCode, Webhook, Terminal, Settings, LogOut } from 'lucide-react';
 import useAuthStore from '../../context/authStore';
 import { authService } from '../../services';
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Links', icon: Link2 },
+  { to: '/qr-codes', label: 'QR Studio', icon: QrCode },
   { to: '/analytics/all', label: 'Analytics', icon: BarChart3 },
   { to: '/webhooks', label: 'Webhooks', icon: Webhook },
   { to: '/developer', label: 'Developer', icon: Terminal },

@@ -10,9 +10,11 @@ import {
   Power,
   Trash2,
   SlidersHorizontal,
+  QrCode,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Link as RouterLink } from 'react-router-dom';
+import QRCodeModal from '../qr/QRCodeModal';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -37,6 +39,7 @@ export default function LinkTableView({
   const { updateLink, removeLink } = useLinkStore();
   const [copiedId, setCopiedId] = useState(null);
   const [menuOpenId, setMenuOpenId] = useState(null);
+  const [selectedQrLink, setSelectedQrLink] = useState(null);
 
   const allSelected = links.length > 0 && selectedIds.length === links.length;
 
@@ -84,7 +87,8 @@ export default function LinkTableView({
   };
 
   return (
-    <div className="rounded-xl border border-ink-700 bg-ink-900 shadow-panel">
+    <>
+      <div className="rounded-xl border border-ink-700 bg-ink-900 shadow-panel">
       <div className="overflow-x-auto rounded-xl">
         <table className="w-full min-w-[760px] text-left text-sm text-paper-300">
           <thead className="border-b border-ink-700 bg-ink-950/80 text-[11px] font-semibold uppercase tracking-wider text-paper-400 select-none">
@@ -268,6 +272,16 @@ export default function LinkTableView({
                         <ExternalLink size={15} />
                       </a>
 
+                      {/* Inline Quick Action: QR Code */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedQrLink(link)}
+                        className="rounded-lg p-1.5 text-paper-400 hover:bg-ink-800 hover:text-accent-400 transition-colors"
+                        title="Customize & Download QR"
+                      >
+                        <QrCode size={15} />
+                      </button>
+
                       {/* Inline Quick Action: Inspect Drawer */}
                       <button
                         type="button"
@@ -312,6 +326,16 @@ export default function LinkTableView({
                               </button>
                               <button
                                 type="button"
+                                onClick={() => {
+                                  setMenuOpenId(null);
+                                  setSelectedQrLink(link);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
+                              >
+                                <QrCode size={13} /> Customize QR
+                              </button>
+                              <button
+                                type="button"
                                 onClick={(e) => handleToggle(link, e)}
                                 className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
                               >
@@ -348,5 +372,12 @@ export default function LinkTableView({
         </table>
       </div>
     </div>
+
+    <QRCodeModal
+      open={Boolean(selectedQrLink)}
+      onClose={() => setSelectedQrLink(null)}
+      link={selectedQrLink}
+    />
+  </>
   );
 }

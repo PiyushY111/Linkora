@@ -57,6 +57,18 @@ const linkSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    qrConfig: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    widgetSettings: {
+      enabled: { type: Boolean, default: true },
+      allowedDomains: [{ type: String, trim: true }],
+      theme: { type: String, default: 'dark' },
+      showScans: { type: Boolean, default: true },
+      showBranding: { type: Boolean, default: true },
+      impressions: { type: Number, default: 0 },
+    },
     expiryDate: Date,
     password: String, // Optional password protection; bcrypt-hashed (see pre-save hook below)
     isActive: {
