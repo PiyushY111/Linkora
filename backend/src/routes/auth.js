@@ -1,5 +1,16 @@
 import express from 'express';
-import { register, login, refresh, getCurrentUser, updateProfile, generateApiKey, logout } from '../controllers/authController.js';
+import {
+  register,
+  login,
+  refresh,
+  getCurrentUser,
+  updateProfile,
+  generateApiKey,
+  changePassword,
+  exportAccountData,
+  deleteAccount,
+  logout,
+} from '../controllers/authController.js';
 import { protect } from '../middleware/auth.js';
 import { validateRegister, validateLogin, handleValidationErrors } from '../middleware/validation.js';
 import { authRateLimitMiddleware } from '../middleware/rateLimiter.js';
@@ -15,6 +26,9 @@ router.post('/refresh', refresh);
 router.post('/logout', protect, logout);
 router.get('/me', protect, getCurrentUser);
 router.put('/profile', protect, updateProfile);
+router.put('/password', protect, changePassword);
+router.get('/export-data', protect, exportAccountData);
+router.delete('/account', protect, deleteAccount);
 router.post('/generate-api-key', protect, generateApiKey);
 
 export default router;

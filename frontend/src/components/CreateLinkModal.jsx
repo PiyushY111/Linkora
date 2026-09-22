@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import {
   Sparkles,
@@ -22,6 +22,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Modal from './ui/Modal';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
+import useAuthStore from '../context/authStore';
 
 const CATEGORIES = [
   { id: 'marketing', label: 'Marketing' },
@@ -73,12 +74,28 @@ const EMPTY_FORM = {
 
 export default function CreateLinkModal({ open, onClose }) {
   const { addLink } = useLinkStore();
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState('general'); // 'general' | 'utm' | 'enterprise'
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [createdResult, setCreatedResult] = useState(null);
   const [copied, setCopied] = useState(false);
+
+  // Pre-fill user's default category and UTM parameters when opening modal
+  useEffect(() => {
+    if (open) {
+      setFormData({
+        ...EMPTY_FORM,
+        category: user?.defaultLinkCategory || 'marketing',
+        utmSource: user?.defaultUtm?.source || '',
+        utmMedium: user?.defaultUtm?.medium || '',
+        utmCampaign: user?.defaultUtm?.campaign || '',
+      });
+      setCreatedResult(null);
+      setActiveTab('general');
+    }
+  }, [open, user]);
 
   // Auto-generate random alias
   const generateRandomAlias = () => {

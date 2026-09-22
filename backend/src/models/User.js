@@ -74,11 +74,38 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
     twoFactorSecret: String,
+    avatarColor: {
+      type: String,
+      default: 'accent', // 'accent' | 'indigo' | 'violet' | 'cyan' | 'rose'
+    },
+    defaultLinkCategory: {
+      type: String,
+      enum: ['marketing', 'sales', 'product', 'social', 'personal', 'other'],
+      default: 'marketing',
+    },
+    defaultExpirationDays: {
+      type: Number,
+      default: 0, // 0 means no expiration
+    },
+    defaultUtm: {
+      source: { type: String, default: '' },
+      medium: { type: String, default: '' },
+      campaign: { type: String, default: '' },
+    },
+    defaultAnalyticsRange: {
+      type: String,
+      enum: ['24h', '7d', '30d', 'all'],
+      default: '7d',
+    },
+    anonymizeVisitorIps: {
+      type: Boolean,
+      default: false,
+    },
     preferences: {
       theme: {
         type: String,
         enum: ['light', 'dark'],
-        default: 'light',
+        default: 'dark',
       },
       emailNotifications: {
         type: Boolean,

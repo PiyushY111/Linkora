@@ -1,4 +1,7 @@
 import User from '../models/User.js';
+import Link from '../models/Link.js';
+import ApiKey from '../models/ApiKey.js';
+import Webhook from '../models/Webhook.js';
 import { generateToken, issueRefreshToken, consumeRefreshToken, revokeRefreshToken } from '../utils/jwt.js';
 import { getClientIp } from '../utils/helpers.js';
 import { recordAuthFailure, resetAuthFailures } from '../middleware/rateLimiter.js';
@@ -126,14 +129,37 @@ export const getCurrentUser = async (req, res) => {
   }
 };
 
-// Update user profile
+// Update user profile and configuration preferences
 export const updateProfile = async (req, res) => {
   try {
-    const { name, bio } = req.body;
+    const {
+      name,
+      bio,
+      avatarColor,
+      defaultLinkCategory,
+      defaultExpirationDays,
+      defaultUtm,
+      defaultAnalyticsRange,
+      anonymizeVisitorIps,
+      preferences,
+      twoFactorEnabled,
+    } = req.body;
+
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (bio !== undefined) updates.bio = bio;
+    if (avatarColor !== undefined) updates.avatarColor = avatarColor;
+    if (defaultLinkCategory !== undefined) updates.defaultLinkCategory = defaultLinkCategory;
+    if (defaultExpirationDays !== undefined) updates.defaultExpirationDays = defaultExpirationDays;
+    if (defaultUtm !== undefined) updates.defaultUtm = defaultUtm;
+    if (defaultAnalyticsRange !== undefined) updates.defaultAnalyticsRange = defaultAnalyticsRange;
+    if (anonymizeVisitorIps !== undefined) updates.anonymizeVisitorIps = anonymizeVisitorIps;
+    if (twoFactorEnabled !== undefined) updates.twoFactorEnabled = twoFactorEnabled;
+    if (preferences !== undefined) updates.preferences = preferences;
 
     const user = await User.findByIdAndUpdate(
       req.user.id,
-      { name, bio },
+      updates,
       { new: true, runValidators: true }
     );
 
@@ -142,12 +168,180 @@ export const updateProfile = async (req, res) => {
       actorUserId: req.user.id,
       targetResourceId: req.user.id,
       ipAddress: getClientIp(req),
-      diff: { name, bio },
+      diff: updates,
     });
 
     res.status(200).json({
       success: true,
       user,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Change user password
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide both current and new password',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long',
+      });
+    }
+
+    const user = await User.findById(req.user.id).select('+password');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const isMatch = await user.matchPassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect',
+      });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    logAudit({
+      action: 'user.password.change',
+      actorUserId: req.user.id,
+      targetResourceId: req.user.id,
+      ipAddress: getClientIp(req),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Password updated successfully',
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Export all account data (JSON archive of profile, links, tags, settings)
+export const exportAccountData = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).lean();
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const [links, webhooks, apiKeys] = await Promise.all([
+      Link.find({ user: user._id }).lean(),
+      Webhook.find({ user: user._id }).select('-secret').lean(),
+      ApiKey.find({ user: user._id }).select('-keyHash').lean(),
+    ]);
+
+    const archive = {
+      exportVersion: '1.0',
+      exportedAt: new Date().toISOString(),
+      account: {
+        name: user.name,
+        email: user.email,
+        bio: user.bio,
+        totalClicks: user.totalClicks,
+        createdAt: user.createdAt,
+        preferences: {
+          avatarColor: user.avatarColor,
+          defaultLinkCategory: user.defaultLinkCategory,
+          defaultExpirationDays: user.defaultExpirationDays,
+          defaultUtm: user.defaultUtm,
+          defaultAnalyticsRange: user.defaultAnalyticsRange,
+          anonymizeVisitorIps: user.anonymizeVisitorIps,
+          preferences: user.preferences,
+        },
+      },
+      summary: {
+        totalLinks: links.length,
+        totalWebhooks: webhooks.length,
+        totalApiKeys: apiKeys.length,
+      },
+      links: links.map((l) => ({
+        id: l._id,
+        shortCode: l.shortCode,
+        originalUrl: l.originalUrl,
+        title: l.title,
+        description: l.description,
+        tags: l.tags,
+        category: l.category,
+        clicks: l.clicks,
+        uniqueVisitors: l.uniqueVisitors,
+        isActive: l.isActive,
+        expiryDate: l.expiryDate,
+        createdAt: l.createdAt,
+      })),
+      webhooks: webhooks.map((w) => ({
+        id: w._id,
+        url: w.url,
+        description: w.description,
+        events: w.events,
+        isActive: w.isActive,
+        createdAt: w.createdAt,
+      })),
+      apiKeys: apiKeys.map((k) => ({
+        id: k._id,
+        name: k.name,
+        prefix: k.prefix,
+        maskedKey: k.maskedKey,
+        environment: k.environment,
+        scopes: k.scopes,
+        createdAt: k.createdAt,
+      })),
+    };
+
+    res.status(200).json(archive);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Permanently delete user account and cascade delete all associated resources
+export const deleteAccount = async (req, res) => {
+  try {
+    const { password } = req.body;
+    const user = await User.findById(req.user.id).select('+password');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (password) {
+      const isMatch = await user.matchPassword(password);
+      if (!isMatch) {
+        return res.status(400).json({ success: false, message: 'Incorrect password' });
+      }
+    }
+
+    // Cascade deletion of all user records
+    await Promise.all([
+      Link.deleteMany({ user: user._id }),
+      ApiKey.deleteMany({ user: user._id }),
+      Webhook.deleteMany({ user: user._id }),
+      User.findByIdAndDelete(user._id),
+    ]);
+
+    logAudit({
+      action: 'user.account.delete',
+      actorUserId: req.user.id,
+      targetResourceId: req.user.id,
+      ipAddress: getClientIp(req),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Account and all associated links, webhooks, and API keys permanently deleted',
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

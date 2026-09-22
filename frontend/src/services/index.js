@@ -26,6 +26,21 @@ export const authService = {
     return response.data;
   },
 
+  changePassword: async (currentPassword, newPassword) => {
+    const response = await api.put('/auth/password', { currentPassword, newPassword });
+    return response.data;
+  },
+
+  exportAccountData: async () => {
+    const response = await api.get('/auth/export-data');
+    return response.data;
+  },
+
+  deleteAccount: async (password) => {
+    const response = await api.delete('/auth/account', { data: { password } });
+    return response.data;
+  },
+
   logout: async (refreshToken) => {
     const response = await api.post('/auth/logout', { refreshToken });
     return response.data;
