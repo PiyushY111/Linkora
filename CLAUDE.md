@@ -1,7 +1,7 @@
 # Linkora – Engineering Rules
 
 ## Project
-URL shortener: Express (ESM) + MongoDB + Redis (cache, streams, rate limits) + ClickHouse (analytics), React/Vite frontend. A separate click-consumer worker reads the Redis stream.
+URL shortener: Express (ESM) + MongoDB (including analytics: time-series raw clicks + rollups) + one Redis database (cache, streams, rate limits), React/Vite frontend, all on free tiers. A click-consumer worker reads the Redis stream, as its own process or embedded in the API (`WORKER_MODE`).
 
 ## Goals
 Production-grade security and architecture. Correctness over features. Every claim in the README must be true and verifiable in code.

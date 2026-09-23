@@ -40,7 +40,7 @@ The rollup design, indexes and query plans are in [docs/architecture.md](../arch
 
 ## Adding ClickHouse back later
 
-1. Implement `ClickHouseAnalyticsRepository` with the same four methods: `recordClicks`, `getLinkAnalytics`, `getUserSummary`, `exportEvents`. Rows in `click_events` keyed by `eventId`, with `ReplacingMergeTree(eventId)` or insert deduplication tokens for idempotency, and the dashboard queries run directly over raw rows.
+1. Implement `ClickHouseAnalyticsRepository` with the same methods: `ensureReady`, `recordClicks`, `getLinkAnalytics`, `getUserSummary`, `exportEvents`, `deleteAnalytics`. Rows in `click_events` keyed by `eventId`, with `ReplacingMergeTree(eventId)` or insert deduplication tokens for idempotency, and the dashboard queries run directly over raw rows.
 2. Select it in `getAnalyticsRepository()` from an env flag.
 3. Backfill ClickHouse from the MongoDB time-series collection, which the `ClickEventRecord` shape maps onto directly, and run both implementations in parallel through a dual-writing repository for one retention window before switching reads.
 4. Keep the endpoint tests in `backend/test/integration/analyticsEndpoints.test.js` as the contract both implementations must pass.
