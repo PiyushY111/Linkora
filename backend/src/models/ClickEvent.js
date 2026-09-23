@@ -37,6 +37,13 @@ const clickEventSchema = new mongoose.Schema(
     utmSource: String,
     utmMedium: String,
     utmCampaign: String,
+    variantId: String,
+    variantName: String,
+    isBot: {
+      type: Boolean,
+      default: false,
+    },
+    botName: String,
   },
   {
     timestamps: false,

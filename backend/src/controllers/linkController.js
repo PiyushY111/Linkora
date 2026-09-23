@@ -38,6 +38,11 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
     utm,
     qrCode: initialQrCode,
     qrConfig: initialQrConfig,
+    routingType,
+    variants,
+    ogTitle,
+    ogDescription,
+    ogImage,
   } = payload;
 
   if (!validateUrl(originalUrl)) {
@@ -76,6 +81,19 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
       iosRedirect: iosRedirect ? iosRedirect.trim() : null,
       androidRedirect: androidRedirect ? androidRedirect.trim() : null,
       expiredRedirectUrl: expiredRedirectUrl ? expiredRedirectUrl.trim() : null,
+      routingType: routingType === 'ab_test' ? 'ab_test' : 'direct',
+      variants: Array.isArray(variants)
+        ? variants.map((v, i) => ({
+            id: v.id || `var_${String.fromCharCode(97 + i)}_${Date.now()}`,
+            name: v.name || `Variant ${String.fromCharCode(65 + i)}`,
+            url: v.url,
+            weight: Number(v.weight) || 50,
+            clicks: v.clicks || 0,
+          }))
+        : [],
+      ogTitle: ogTitle ? ogTitle.trim() : null,
+      ogDescription: ogDescription ? ogDescription.trim() : null,
+      ogImage: ogImage ? ogImage.trim() : null,
       ...(utm && typeof utm === 'object' ? { utm } : {}),
       ...(initialQrCode ? { qrCode: initialQrCode } : {}),
       ...(initialQrConfig ? { qrConfig: initialQrConfig } : {}),
@@ -240,6 +258,11 @@ export const updateLink = async (req, res) => {
       utm,
       qrCode,
       qrConfig,
+      routingType,
+      variants,
+      ogTitle,
+      ogDescription,
+      ogImage,
     } = req.body;
 
     let link = await Link.findById(req.params.id);
@@ -259,6 +282,19 @@ export const updateLink = async (req, res) => {
     if (description !== undefined) updateFields.description = description;
     if (tags !== undefined) updateFields.tags = tags;
     if (category !== undefined) updateFields.category = category;
+    if (routingType !== undefined) updateFields.routingType = routingType;
+    if (variants !== undefined && Array.isArray(variants)) {
+      updateFields.variants = variants.map((v, i) => ({
+        id: v.id || `var_${String.fromCharCode(97 + i)}_${Date.now()}`,
+        name: v.name || `Variant ${String.fromCharCode(65 + i)}`,
+        url: v.url,
+        weight: Number(v.weight) || 50,
+        clicks: v.clicks || 0,
+      }));
+    }
+    if (ogTitle !== undefined) updateFields.ogTitle = ogTitle;
+    if (ogDescription !== undefined) updateFields.ogDescription = ogDescription;
+    if (ogImage !== undefined) updateFields.ogImage = ogImage;
 
     if (originalUrl && originalUrl.trim() && originalUrl.trim() !== link.originalUrl) {
       const trimmedUrl = originalUrl.trim();

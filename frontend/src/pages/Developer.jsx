@@ -16,6 +16,7 @@ import {
   Copy,
   Check,
   AlertTriangle,
+  Cpu,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppShell from '../components/layout/AppShell';
@@ -27,6 +28,7 @@ import ApiPlayground from '../components/developer/ApiPlayground';
 import ApiCodeSnippets from '../components/developer/ApiCodeSnippets';
 import ApiLogsViewer from '../components/developer/ApiLogsViewer';
 import LinklyCliTerminal from '../components/developer/LinklyCliTerminal';
+import CacheArchitectureViewer from '../components/developer/CacheArchitectureViewer';
 import { useConfirm } from '../context/ConfirmContext';
 import { developerService, authService } from '../services';
 
@@ -249,6 +251,7 @@ const Developer = () => {
             { id: 'keys', label: 'API Keys', icon: Key },
             { id: 'playground', label: 'Interactive Playground', icon: Play },
             { id: 'cli', label: 'Interactive CLI (linkly-cli)', icon: Terminal },
+            { id: 'cache', label: 'Cache & XFetch Defense', icon: Cpu },
             { id: 'snippets', label: 'SDK Quickstarts', icon: Code2 },
             { id: 'logs', label: 'Request Logs & Audit', icon: Activity },
           ].map((tab) => {
@@ -365,7 +368,10 @@ const Developer = () => {
           </div>
         )}
 
-        {/* Tab 4: Code Snippets */}
+        {/* Tab 4: Cache Architecture & XFetch Stampede Defense */}
+        {activeTab === 'cache' && <CacheArchitectureViewer />}
+
+        {/* Tab 5: Code Snippets */}
         {activeTab === 'snippets' && (
           <ApiCodeSnippets
             apiKey={

@@ -42,7 +42,10 @@ const SCHEMA_STATEMENTS = [
       referrer_domain String,
       utm_source LowCardinality(String),
       utm_medium LowCardinality(String),
-      utm_campaign LowCardinality(String)
+      utm_campaign LowCardinality(String),
+      variant_id LowCardinality(String),
+      is_bot UInt8,
+      bot_name LowCardinality(String)
   ) ENGINE = MergeTree()
   PARTITION BY toYYYYMM(timestamp)
   ORDER BY (user_id, link_id, timestamp)`,

@@ -90,6 +90,9 @@ async function enrichEvent(fields) {
       utm_source: fields.utmSource || '',
       utm_medium: fields.utmMedium || '',
       utm_campaign: fields.utmCampaign || '',
+      variant_id: fields.variantId || '',
+      is_bot: fields.isBot === 'true' || fields.isBot === true ? 1 : 0,
+      bot_name: fields.botName || '',
     },
     mongoDoc: {
       link: fields.linkId,
@@ -107,6 +110,10 @@ async function enrichEvent(fields) {
       utmSource: fields.utmSource,
       utmMedium: fields.utmMedium,
       utmCampaign: fields.utmCampaign,
+      variantId: fields.variantId || null,
+      variantName: fields.variantName || null,
+      isBot: fields.isBot === 'true' || fields.isBot === true,
+      botName: fields.botName || null,
     },
   };
 }

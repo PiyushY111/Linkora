@@ -18,6 +18,8 @@ import {
 } from '../services/cacheService.js';
 import { emitClickEvent } from '../services/eventStreamService.js';
 import { dispatchEvent } from '../services/webhookService.js';
+import { detectBot } from '../utils/botDetector.js';
+import { calculateAbTestStatistics } from '../services/statisticsService.js';
 
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$/;
 
@@ -62,6 +64,9 @@ export const redirectLink = async (req, res) => {
   // Case-sensitive on purpose — see the comment on Link.shortCode.
   const shortCode = (req.params.shortCode || '').trim();
   const { pwd } = req.query;
+  const ua = getUserAgent(req);
+  const clientIp = getClientIp(req);
+  const botInfo = detectBot(ua);
 
   if (!shortCode) {
     return res.status(404).json({ success: false, message: 'Link not found' });
@@ -71,6 +76,35 @@ export const redirectLink = async (req, res) => {
 
   if (cached.status === 'negative') {
     return res.status(404).json({ success: false, message: 'Link not found' });
+  }
+
+  // Feature 4: XFetch Probabilistic Early Expiration recomputation
+  if (cached.status === 'hit' && cached.shouldRecomputeEarly) {
+    Link.findOne({ $or: [{ shortCode }, { customAlias: shortCode }] })
+      .read('nearest')
+      .lean()
+      .then((fresh) => {
+        if (fresh) {
+          setLinkMeta(shortCode, {
+            originalUrl: fresh.originalUrl,
+            isActive: fresh.isActive,
+            expiryDate: fresh.expiryDate ? new Date(fresh.expiryDate).getTime() : 0,
+            passwordHash: fresh.password || '',
+            linkId: String(fresh._id),
+            userId: String(fresh.user),
+            maxClicks: fresh.maxClicks || 0,
+            iosRedirect: fresh.iosRedirect || '',
+            androidRedirect: fresh.androidRedirect || '',
+            expiredRedirectUrl: fresh.expiredRedirectUrl || '',
+            routingType: fresh.routingType || 'direct',
+            variants: fresh.variants || [],
+            ogTitle: fresh.ogTitle || null,
+            ogDescription: fresh.ogDescription || null,
+            ogImage: fresh.ogImage || null,
+          }).catch(() => {});
+        }
+      })
+      .catch((err) => logger.warn({ err, shortCode }, 'Background XFetch refresh failed'));
   }
 
   let meta = cached.status === 'hit' ? cached.meta : null;
@@ -98,6 +132,11 @@ export const redirectLink = async (req, res) => {
       iosRedirect: link.iosRedirect || '',
       androidRedirect: link.androidRedirect || '',
       expiredRedirectUrl: link.expiredRedirectUrl || '',
+      routingType: link.routingType || 'direct',
+      variants: link.variants || [],
+      ogTitle: link.ogTitle || null,
+      ogDescription: link.ogDescription || null,
+      ogImage: link.ogImage || null,
     };
 
     seedLinkUsage(meta.linkId, link.clicks || 0).catch((err) =>
@@ -196,17 +235,106 @@ export const redirectLink = async (req, res) => {
     }
   }
 
-  // Determine device-specific target URL if configured
-  const ua = getUserAgent(req);
+  // Feature 3: Social Crawler OpenGraph SSR Interception (Slack, Twitter, Discord, iMessage, etc.)
+  if (botInfo.isSocialCrawler && req.query.probe !== '1') {
+    const title = meta.ogTitle || shortCode;
+    const description = meta.ogDescription || 'Shortened link by Linkora';
+    const image = meta.ogImage || '';
+    const dest = meta.originalUrl;
+
+    const escapeHtml = (str) =>
+      String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(title)}</title>
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${escapeHtml(title)}" />
+  <meta property="og:description" content="${escapeHtml(description)}" />
+  ${image ? `<meta property="og:image" content="${escapeHtml(image)}" />` : ''}
+  <meta property="og:url" content="${escapeHtml(dest)}" />
+  <meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}" />
+  <meta name="twitter:title" content="${escapeHtml(title)}" />
+  <meta name="twitter:description" content="${escapeHtml(description)}" />
+  ${image ? `<meta name="twitter:image" content="${escapeHtml(image)}" />` : ''}
+  <meta http-equiv="refresh" content="0;url=${escapeHtml(dest)}" />
+</head>
+<body style="font-family: system-ui, sans-serif; background: #0A0A0B; color: #F5F5F7; padding: 2rem;">
+  <p>Redirecting to <a href="${escapeHtml(dest)}" style="color: #C6FF3D;">${escapeHtml(dest)}</a>...</p>
+</body>
+</html>`;
+
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.status(200).send(html);
+
+    // Emit crawler click tagged as bot without incrementing user usage limit
+    emitClickEvent({
+      linkId: meta.linkId,
+      shortCode,
+      userId: meta.userId,
+      destinationUrl: dest,
+      ip: clientIp,
+      ua,
+      referer: req.headers.referer || 'social-preview',
+      timestamp: Date.now(),
+      isBot: true,
+      botName: botInfo.botName,
+    });
+    return;
+  }
+
+  // Feature 2: A/B Split & Sticky Routing vs Device Targeting
   let destinationUrl = meta.originalUrl;
-  if (/iphone|ipad|ipod/i.test(ua) && meta.iosRedirect) {
-    destinationUrl = meta.iosRedirect;
-  } else if (/android/i.test(ua) && meta.androidRedirect) {
-    destinationUrl = meta.androidRedirect;
+  let variantId = null;
+  let variantName = null;
+
+  if (meta.routingType === 'ab_test' && Array.isArray(meta.variants) && meta.variants.length > 0) {
+    // Deterministic Sticky Session Hashing: (Client IP + UA) -> bucket [0..99]
+    const seed = `${clientIp}-${ua.slice(0, 50)}`;
+    let hash = 2166136261;
+    for (let i = 0; i < seed.length; i++) {
+      hash ^= seed.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    const bucket = Math.abs(hash) % 100;
+
+    let cumulative = 0;
+    let selected = meta.variants[0];
+    for (const v of meta.variants) {
+      cumulative += Number(v.weight) || 0;
+      if (bucket < cumulative) {
+        selected = v;
+        break;
+      }
+    }
+
+    destinationUrl = selected.url;
+    variantId = selected.id;
+    variantName = selected.name;
+
+    // Increment variant clicks asynchronously in MongoDB
+    Link.updateOne(
+      { _id: meta.linkId, 'variants.id': selected.id },
+      { $inc: { 'variants.$.clicks': 1 } }
+    ).catch((err) => logger.warn({ err, linkId: meta.linkId }, 'Failed to bump variant clicks'));
+  } else {
+    // Standard device targeting
+    if (/iphone|ipad|ipod/i.test(ua) && meta.iosRedirect) {
+      destinationUrl = meta.iosRedirect;
+    } else if (/android/i.test(ua) && meta.androidRedirect) {
+      destinationUrl = meta.androidRedirect;
+    }
   }
 
   if (req.query.probe === '1') {
-    return res.status(200).json({ success: true, originalUrl: destinationUrl });
+    return res.status(200).json({ success: true, originalUrl: destinationUrl, variantId, variantName });
   }
 
   res.set('Cache-Control', 'private, max-age=60');
@@ -220,14 +348,18 @@ export const redirectLink = async (req, res) => {
     linkId: meta.linkId,
     shortCode,
     userId: meta.userId,
-    destinationUrl: meta.originalUrl,
-    ip: getClientIp(req),
-    ua: getUserAgent(req),
+    destinationUrl,
+    ip: clientIp,
+    ua,
     referer: req.headers.referer || 'direct',
     timestamp: Date.now(),
     utmSource: req.query.utm_source,
     utmMedium: req.query.utm_medium,
     utmCampaign: req.query.utm_campaign,
+    variantId,
+    variantName,
+    isBot: botInfo.isBot,
+    botName: botInfo.botName,
   });
 };
 
@@ -366,17 +498,19 @@ function fillTimeSeries(rows, start, end, granularity) {
 /**
  * Mongo/ClickEvent-backed fallback for link analytics.
  */
-async function getLinkAnalyticsFromMongo(linkId, timeInfo) {
+async function getLinkAnalyticsFromMongo(linkId, timeInfo, excludeBots = false) {
   const matchStage = {
     link: linkId,
     timestamp: { $gte: timeInfo.start, $lte: timeInfo.end },
+    ...(excludeBots ? { isBot: { $ne: true } } : {}),
   };
   const priorMatchStage = {
     link: linkId,
     timestamp: { $gte: timeInfo.priorStart, $lte: timeInfo.priorEnd },
+    ...(excludeBots ? { isBot: { $ne: true } } : {}),
   };
 
-  const [totalClicks, priorClicks, byCountry, byDevice, byBrowser, byDay, recentClicks] =
+  const [totalClicks, priorClicks, byCountry, byDevice, byBrowser, byDay, recentClicks, botBreakdownAgg] =
     await Promise.all([
       ClickEvent.countDocuments(matchStage).read('secondaryPreferred'),
       ClickEvent.countDocuments(priorMatchStage).read('secondaryPreferred'),
@@ -409,12 +543,25 @@ async function getLinkAnalyticsFromMongo(linkId, timeInfo) {
         },
         { $sort: { _id: 1 } },
       ]).read('secondaryPreferred'),
-      ClickEvent.find({ link: linkId })
+      ClickEvent.find(matchStage)
         .sort({ timestamp: -1 })
         .limit(50)
         .read('secondaryPreferred')
         .lean(),
+      ClickEvent.aggregate([
+        { $match: { link: linkId, timestamp: { $gte: timeInfo.start, $lte: timeInfo.end } } },
+        { $group: { _id: '$isBot', clicks: { $sum: 1 } } },
+      ]).read('secondaryPreferred'),
     ]);
+
+  let botClicks = 0;
+  let humanClicks = 0;
+  for (const b of botBreakdownAgg) {
+    if (b._id === true) botClicks = b.clicks;
+    else humanClicks += b.clicks;
+  }
+  const totalAll = humanClicks + botClicks;
+  const botPercentage = totalAll > 0 ? Number(((botClicks / totalAll) * 100).toFixed(1)) : 0;
 
   return {
     analytics: {
@@ -437,6 +584,13 @@ async function getLinkAnalyticsFromMongo(linkId, timeInfo) {
       utmCampaigns: [],
       utmSources: [],
       utmMediums: [],
+      botBreakdown: {
+        humanClicks,
+        botClicks,
+        totalClicks: totalAll,
+        botPercentage,
+        isFiltered: Boolean(excludeBots),
+      },
       timeRange: timeInfo.timeRange,
       granularity: timeInfo.granularity,
     },
@@ -538,9 +692,19 @@ export const getLinkAnalytics = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
+    const excludeBots = req.query.excludeBots === 'true';
+    const abTestAnalysis = link.routingType === 'ab_test'
+      ? calculateAbTestStatistics(link.variants || [])
+      : null;
+
     if (!env.CLICKHOUSE_ENABLED) {
-      const result = await getLinkAnalyticsFromMongo(linkId, timeInfo);
-      return res.status(200).json({ success: true, ...result });
+      const result = await getLinkAnalyticsFromMongo(linkId, timeInfo, excludeBots);
+      return res.status(200).json({
+        success: true,
+        routingType: link.routingType || 'direct',
+        abTestAnalysis,
+        ...result,
+      });
     }
 
     const db = env.CLICKHOUSE_DATABASE;
@@ -678,6 +842,8 @@ export const getLinkAnalytics = async (req, res) => {
 
     res.status(200).json({
       success: true,
+      routingType: link.routingType || 'direct',
+      abTestAnalysis,
       analytics: {
         totalClicks,
         uniqueVisitors,

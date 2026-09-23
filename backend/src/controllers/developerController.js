@@ -302,6 +302,35 @@ export const listApiLogs = async (req, res) => {
   }
 };
 
+/**
+ * Returns Redis cache diagnostics & XFetch early expiration telemetry.
+ */
+export const getCacheDiagnosticsHandler = async (req, res) => {
+  try {
+    const { getCacheDiagnostics } = await import('../services/cacheService.js');
+    const diagnostics = await getCacheDiagnostics();
+    res.status(200).json({ success: true, diagnostics });
+  } catch (error) {
+    logger.error({ err: error }, 'Error in getCacheDiagnosticsHandler');
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Executes an in-memory thundering-herd benchmark to demonstrate XFetch protection.
+ */
+export const simulateStampedeHandler = async (req, res) => {
+  try {
+    const concurrency = Math.min(100, Math.max(10, parseInt(req.body.concurrency || 50, 10)));
+    const { simulateThunderingHerd } = await import('../services/cacheService.js');
+    const result = await simulateThunderingHerd(concurrency);
+    res.status(200).json({ success: true, result });
+  } catch (error) {
+    logger.error({ err: error }, 'Error in simulateStampedeHandler');
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export default {
   listApiKeys,
   createApiKey,
@@ -310,4 +339,7 @@ export default {
   revokeApiKey,
   getDeveloperMetrics,
   listApiLogs,
+  getCacheDiagnosticsHandler,
+  simulateStampedeHandler,
 };
+

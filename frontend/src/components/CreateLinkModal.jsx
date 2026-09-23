@@ -18,6 +18,10 @@ import {
   Smartphone,
   Globe,
   QrCode,
+  Split,
+  Share2,
+  Trash2,
+  Plus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from './ui/Modal';
@@ -75,6 +79,14 @@ const EMPTY_FORM = {
   utmCampaign: '',
   utmTerm: '',
   utmContent: '',
+  routingType: 'direct', // 'direct' | 'ab_test'
+  variants: [
+    { id: 'var_a', name: 'Variant A (Control)', url: '', weight: 50 },
+    { id: 'var_b', name: 'Variant B (Challenger)', url: '', weight: 50 },
+  ],
+  ogTitle: '',
+  ogDescription: '',
+  ogImage: '',
 };
 
 export default function CreateLinkModal({ open, onClose }) {
@@ -252,6 +264,28 @@ export default function CreateLinkModal({ open, onClose }) {
           content: formData.utmContent.trim(),
         };
       }
+
+      if (formData.routingType === 'ab_test') {
+        const totalWeight = formData.variants.reduce((acc, v) => acc + (Number(v.weight) || 0), 0);
+        if (totalWeight !== 100) {
+          toast.error(`Variant weights must sum to exactly 100% (currently ${totalWeight}%)`);
+          setIsLoading(false);
+          return;
+        }
+        for (const v of formData.variants) {
+          if (!v.url || !v.url.trim()) {
+            toast.error(`Please provide a destination URL for ${v.name}`);
+            setIsLoading(false);
+            return;
+          }
+        }
+        payload.routingType = 'ab_test';
+        payload.variants = formData.variants;
+      }
+
+      if (formData.ogTitle?.trim()) payload.ogTitle = formData.ogTitle.trim();
+      if (formData.ogDescription?.trim()) payload.ogDescription = formData.ogDescription.trim();
+      if (formData.ogImage?.trim()) payload.ogImage = formData.ogImage.trim();
 
       const result = await linkService.createLink(payload);
       addLink(result.link);
@@ -485,6 +519,36 @@ export default function CreateLinkModal({ open, onClose }) {
                 <Smartphone size={14} />
                 <span>Device Targeting</span>
                 {(formData.iosRedirect || formData.androidRedirect) && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent-400" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('ab_test')}
+                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                  activeTab === 'ab_test'
+                    ? 'border-accent-400 text-accent-400'
+                    : 'border-transparent text-paper-500 hover:text-paper-300'
+                }`}
+              >
+                <Split size={14} />
+                <span>A/B Split</span>
+                {formData.routingType === 'ab_test' && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent-400" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('opengraph')}
+                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                  activeTab === 'opengraph'
+                    ? 'border-accent-400 text-accent-400'
+                    : 'border-transparent text-paper-500 hover:text-paper-300'
+                }`}
+              >
+                <Share2 size={14} />
+                <span>Social Preview</span>
+                {(formData.ogTitle || formData.ogImage) && (
                   <span className="h-1.5 w-1.5 rounded-full bg-accent-400" />
                 )}
               </button>
@@ -1187,6 +1251,249 @@ export default function CreateLinkModal({ open, onClose }) {
                   }}
                   onReset={() => setFormData((prev) => ({ ...prev, qrConfig: DEFAULT_QR_CONFIG }))}
                 />
+              </div>
+            )}
+
+            {/* TAB 6: A/B SPLIT TESTING */}
+            {activeTab === 'ab_test' && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-ink-700 bg-ink-950 p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Split size={16} className="text-accent-400" />
+                      <h4 className="text-sm font-semibold text-paper-100">
+                        A/B Split Testing & Traffic Routing
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = formData.routingType === 'ab_test' ? 'direct' : 'ab_test';
+                        setFormData({ ...formData, routingType: next });
+                      }}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        formData.routingType === 'ab_test'
+                          ? 'bg-accent-400 text-ink-950 shadow-glow'
+                          : 'border border-ink-600 bg-ink-800 text-paper-300 hover:text-paper-100'
+                      }`}
+                    >
+                      {formData.routingType === 'ab_test' ? 'A/B Split Active' : 'Enable A/B Test'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-paper-400 leading-relaxed">
+                    Direct a percentage of visitors to different destination URLs. Uses deterministic sticky hashing (IP + User-Agent) so the same visitor consistently lands on the exact same variant.
+                  </p>
+                </div>
+
+                {formData.routingType === 'ab_test' ? (
+                  <div className="space-y-4">
+                    {/* Total weight check */}
+                    {(() => {
+                      const sum = formData.variants.reduce((acc, v) => acc + (Number(v.weight) || 0), 0);
+                      return (
+                        <div className={`flex items-center justify-between rounded-lg px-3.5 py-2 text-xs font-mono font-medium ${
+                          sum === 100
+                            ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                            : 'border border-amber-500/30 bg-amber-500/10 text-amber-400'
+                        }`}>
+                          <span>Total Traffic Allocation: {sum}%</span>
+                          <span>{sum === 100 ? '✓ Balanced (100%)' : `Need ${100 - sum}% to reach 100%`}</span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Variant Rows */}
+                    <div className="space-y-3">
+                      {formData.variants.map((variant, index) => (
+                        <div
+                          key={variant.id || index}
+                          className="rounded-xl border border-ink-700 bg-ink-900/60 p-3.5 space-y-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <input
+                              type="text"
+                              value={variant.name}
+                              onChange={(e) => {
+                                const newVariants = [...formData.variants];
+                                newVariants[index].name = e.target.value;
+                                setFormData({ ...formData, variants: newVariants });
+                              }}
+                              className="bg-transparent font-semibold text-xs text-paper-100 outline-none border-b border-dashed border-ink-600 focus:border-accent-400 pb-0.5"
+                              placeholder={`Variant ${String.fromCharCode(65 + index)}`}
+                            />
+
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5 font-mono text-xs text-accent-400 font-bold">
+                                <span>{variant.weight}%</span>
+                              </div>
+                              {formData.variants.length > 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newVariants = formData.variants.filter((_, i) => i !== index);
+                                    setFormData({ ...formData, variants: newVariants });
+                                  }}
+                                  className="rounded p-1 text-paper-500 hover:text-rose-400 transition-colors"
+                                  title="Remove variant"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <input
+                              type="url"
+                              placeholder="https://yourlandingpage-v1.com"
+                              value={variant.url}
+                              onChange={(e) => {
+                                const newVariants = [...formData.variants];
+                                newVariants[index].url = e.target.value;
+                                setFormData({ ...formData, variants: newVariants });
+                              }}
+                              className="input font-mono text-xs"
+                            />
+                          </div>
+
+                          {/* Slider for weight */}
+                          <div className="space-y-1">
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              step="5"
+                              value={variant.weight}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                const newVariants = [...formData.variants];
+                                newVariants[index].weight = val;
+                                setFormData({ ...formData, variants: newVariants });
+                              }}
+                              className="w-full accent-accent-400 cursor-pointer h-1.5 rounded-lg bg-ink-800"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {formData.variants.length < 4 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const char = String.fromCharCode(65 + formData.variants.length);
+                          setFormData({
+                            ...formData,
+                            variants: [
+                              ...formData.variants,
+                              {
+                                id: `var_${char.toLowerCase()}_${Date.now()}`,
+                                name: `Variant ${char}`,
+                                url: '',
+                                weight: 20,
+                              },
+                            ],
+                          });
+                        }}
+                        className="btn-secondary btn-sm w-full"
+                      >
+                        <Plus size={13} />
+                        <span>Add Challenger Variant</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-ink-800 p-6 text-center text-xs text-paper-500">
+                    Direct routing is active. Click <strong>Enable A/B Test</strong> above to split incoming visitors across multiple target URLs.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 7: SOCIAL OPENGRAPH PREVIEW */}
+            {activeTab === 'opengraph' && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-ink-700 bg-ink-950 p-3.5 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Share2 size={15} className="text-accent-400" />
+                    <span className="text-xs font-semibold text-paper-100">
+                      Social Preview & OpenGraph Customization
+                    </span>
+                  </div>
+                  <p className="text-xs text-paper-500">
+                    When social bots (Slack, Twitter, Discord, iMessage) crawl your short link, Linkora returns these custom tags for rich unfurling before redirecting.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="field-label" htmlFor="ogTitle">Social Card Title</label>
+                    <input
+                      id="ogTitle"
+                      type="text"
+                      placeholder="e.g. Exclusive Launch: Linkora Developer Platform"
+                      value={formData.ogTitle}
+                      onChange={(e) => setFormData({ ...formData, ogTitle: e.target.value })}
+                      className="input text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="field-label" htmlFor="ogDescription">Social Card Description</label>
+                    <textarea
+                      id="ogDescription"
+                      rows={2}
+                      placeholder="Short compelling summary for Twitter cards, Slack unfurling, and LinkedIn preview..."
+                      value={formData.ogDescription}
+                      onChange={(e) => setFormData({ ...formData, ogDescription: e.target.value })}
+                      className="input text-xs resize-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="field-label" htmlFor="ogImage">Custom Preview Image URL (og:image)</label>
+                    <input
+                      id="ogImage"
+                      type="url"
+                      placeholder="https://yourbrand.com/images/hero-card.png"
+                      value={formData.ogImage}
+                      onChange={(e) => setFormData({ ...formData, ogImage: e.target.value })}
+                      className="input font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Live Social Preview Mock Card */}
+                <div className="space-y-2 pt-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-paper-400">
+                    Live Social Card Unfurl Preview
+                  </span>
+                  <div className="overflow-hidden rounded-xl border border-ink-700 bg-ink-900 shadow-md">
+                    {formData.ogImage ? (
+                      <img
+                        src={formData.ogImage}
+                        alt="Preview"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        className="h-36 w-full object-cover border-b border-ink-800"
+                      />
+                    ) : (
+                      <div className="flex h-24 w-full items-center justify-center border-b border-ink-800 bg-ink-950 text-xs text-paper-500 font-mono">
+                        [No Image URL Specified — Standard Card]
+                      </div>
+                    )}
+                    <div className="p-3.5 space-y-1">
+                      <div className="text-[10px] uppercase font-mono text-paper-500">
+                        {domain || 'linkora.dev'}
+                      </div>
+                      <h5 className="font-bold text-xs text-paper-100 truncate">
+                        {formData.ogTitle || formData.title || 'Linkora Short Link'}
+                      </h5>
+                      <p className="text-[11px] text-paper-400 line-clamp-2">
+                        {formData.ogDescription || formData.description || 'High-performance link infrastructure and intelligence.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

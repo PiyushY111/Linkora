@@ -7,6 +7,8 @@ import {
   revokeApiKey,
   getDeveloperMetrics,
   listApiLogs,
+  getCacheDiagnosticsHandler,
+  simulateStampedeHandler,
 } from '../controllers/developerController.js';
 import { protect } from '../middleware/auth.js';
 
@@ -23,5 +25,9 @@ router.delete('/keys/:id', revokeApiKey);
 
 router.get('/metrics', getDeveloperMetrics);
 router.get('/logs', listApiLogs);
+
+// Cache Architecture & XFetch Stampede Simulation
+router.get('/cache/diagnostics', getCacheDiagnosticsHandler);
+router.post('/cache/simulate-stampede', simulateStampedeHandler);
 
 export default router;

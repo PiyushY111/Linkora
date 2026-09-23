@@ -9,8 +9,8 @@
     "dev": "nodemon src/index.js",
     "consumer": "node src/consumers/clickConsumer.js",
     "consumer:dev": "nodemon src/consumers/clickConsumer.js",
-    "test": "jest --detectOpenHandles",
-    "test:watch": "jest --watch"
+    "test": "node --test src/__tests__/*.test.js",
+    "test:jest": "jest --detectOpenHandles"
   },
   "keywords": [
     "url-shortener",

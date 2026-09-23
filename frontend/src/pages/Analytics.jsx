@@ -13,6 +13,9 @@ import {
   ArrowRight,
   Globe,
   ChevronDown,
+  ShieldCheck,
+  Split,
+  Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppShell from '../components/layout/AppShell';
@@ -42,6 +45,7 @@ const Analytics = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [excludeBots, setExcludeBots] = useState(false);
 
   // Fetch analytics dataset
   const fetchAnalytics = useCallback(
@@ -54,6 +58,7 @@ const Analytics = () => {
           timeRange,
           startDate: customStart || undefined,
           endDate: customEnd || undefined,
+          excludeBots: excludeBots ? 'true' : undefined,
         };
 
         if (linkId === 'all') {
@@ -62,7 +67,11 @@ const Analytics = () => {
           setRecentClicks(data.summary?.recentClicks || []);
         } else {
           const data = await analyticsService.getLinkAnalytics(linkId, queryParams);
-          setAnalytics(data.analytics);
+          setAnalytics({
+            ...data.analytics,
+            abTestAnalysis: data.abTestAnalysis,
+            routingType: data.routingType,
+          });
           setRecentClicks(data.recentClicks || []);
         }
       } catch (err) {
@@ -74,7 +83,7 @@ const Analytics = () => {
         setIsRefreshing(false);
       }
     },
-    [linkId, timeRange, customStart, customEnd]
+    [linkId, timeRange, customStart, customEnd, excludeBots]
   );
 
   // Initial and reactive fetch
@@ -185,6 +194,26 @@ const Analytics = () => {
                 ))}
               </select>
             </div>
+
+            {/* Bot Shield Filter Toggle */}
+            <button
+              type="button"
+              onClick={() => setExcludeBots((prev) => !prev)}
+              className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition-all cursor-pointer ${
+                excludeBots
+                  ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20'
+                  : 'border-ink-700 bg-ink-850/90 text-paper-400 hover:border-ink-600 hover:text-paper-200'
+              }`}
+              title="Filter out automated social crawlers (Twitterbot, Slackbot) and scrapers"
+            >
+              <ShieldCheck size={14} className={excludeBots ? 'text-emerald-400' : 'text-paper-400'} />
+              <span>{excludeBots ? 'Bot Filter On' : 'Filter Bots'}</span>
+              {analytics?.botBreakdown?.botClicks > 0 && (
+                <span className="rounded-full bg-ink-800 px-1.5 py-0.5 text-[10px] font-mono text-paper-400">
+                  {analytics.botBreakdown.botClicks}
+                </span>
+              )}
+            </button>
 
             {/* Export CSV Button */}
             <button
@@ -324,6 +353,150 @@ const Analytics = () => {
                 icon={Compass}
               />
             </div>
+
+            {/* Feature 3: Bot Shield & Traffic Quality Breakdown Banner */}
+            {analytics?.botBreakdown && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-800 bg-ink-900/60 px-4 py-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck size={16} className="text-emerald-400 shrink-0" />
+                  <span className="font-semibold text-paper-200">Traffic Quality & Bot Telemetry:</span>
+                  <span className="text-paper-400">
+                    <strong className="text-paper-100 font-mono">{analytics.botBreakdown.humanClicks ?? analytics.totalClicks}</strong> Human clicks ({(100 - (analytics.botBreakdown.botPercentage || 0)).toFixed(1)}%) vs{' '}
+                    <strong className="text-paper-100 font-mono">{analytics.botBreakdown.botClicks ?? 0}</strong> Crawlers/Scrapers ({analytics.botBreakdown.botPercentage || 0}%)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] font-mono text-paper-400">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" /> Human
+                  </span>
+                  <span className="inline-flex items-center gap-1 ml-2">
+                    <span className="h-2 w-2 rounded-full bg-ink-600" /> Bot/Crawler
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Feature 2: A/B Experimentation Studio Card */}
+            {analytics?.abTestAnalysis?.hasTest && (
+              <div className="panel p-6 space-y-5 border-accent-400/25">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-ink-700 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-400/10 text-accent-400 ring-1 ring-accent-400/25">
+                      <Split size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-paper-100">
+                          A/B Traffic Split & Statistical Significance
+                        </h3>
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-mono font-semibold ${
+                            analytics.abTestAnalysis.isSignificant
+                              ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                              : analytics.abTestAnalysis.status === 'inconclusive'
+                              ? 'border border-indigo-500/30 bg-indigo-500/10 text-indigo-400'
+                              : 'border border-amber-500/30 bg-amber-500/10 text-amber-400'
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              analytics.abTestAnalysis.isSignificant ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                            }`}
+                          />
+                          {analytics.abTestAnalysis.statusText}
+                        </span>
+                      </div>
+                      <p className="text-xs text-paper-400 mt-0.5">
+                        Two-Proportion Z-Test & Chi-Square (χ²) evaluation with deterministic sticky hashing.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs font-mono">
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase text-paper-500">Confidence</div>
+                      <div className="text-sm font-bold text-accent-400">
+                        {analytics.abTestAnalysis.confidence}%
+                      </div>
+                    </div>
+                    <div className="text-right border-l border-ink-700 pl-4">
+                      <div className="text-[10px] uppercase text-paper-500">p-value</div>
+                      <div className="text-sm font-bold text-paper-200">
+                        {analytics.abTestAnalysis.pValue}
+                      </div>
+                    </div>
+                    <div className="text-right border-l border-ink-700 pl-4">
+                      <div className="text-[10px] uppercase text-paper-500">χ² Score</div>
+                      <div className="text-sm font-bold text-paper-200">
+                        {analytics.abTestAnalysis.chiSquare}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Side-by-Side Variant Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {analytics.abTestAnalysis.variants.map((variant) => (
+                    <div
+                      key={variant.id}
+                      className={`relative rounded-xl border p-4 transition-all ${
+                        variant.isLeading && analytics.abTestAnalysis.isSignificant
+                          ? 'border-emerald-500/40 bg-emerald-500/5 ring-1 ring-emerald-500/20'
+                          : 'border-ink-700 bg-ink-900/60'
+                      }`}
+                    >
+                      {variant.isLeading && (
+                        <span className="absolute -top-2.5 right-4 rounded-full border border-emerald-500/30 bg-emerald-500/20 px-2 py-0.5 text-[9px] font-mono font-bold text-emerald-300">
+                          Leading Variant
+                        </span>
+                      )}
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h4 className="text-sm font-bold text-paper-100">{variant.name}</h4>
+                          <p className="text-xs text-paper-400 truncate max-w-xs mt-0.5 font-mono">
+                            {variant.url}
+                          </p>
+                        </div>
+                        <span className="rounded-lg bg-ink-800 px-2 py-1 text-xs font-mono font-semibold text-paper-300">
+                          Target: {variant.weight}%
+                        </span>
+                      </div>
+
+                      <div className="mt-4 flex items-end justify-between border-t border-ink-800/80 pt-3">
+                        <div>
+                          <div className="text-[10px] font-mono uppercase text-paper-500">Recorded Clicks</div>
+                          <div className="text-xl font-bold font-mono text-paper-100 mt-0.5">
+                            {variant.clicks.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[10px] font-mono uppercase text-paper-500">Actual Share</div>
+                          <div className="text-sm font-bold font-mono text-accent-400 mt-0.5">
+                            {variant.trafficShare}%
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Share progress bar */}
+                      <div className="mt-3 h-1.5 w-full rounded-full bg-ink-800 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            variant.isLeading ? 'bg-emerald-400' : 'bg-accent-400'
+                          }`}
+                          style={{ width: `${Math.min(100, variant.trafficShare)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Summary Note */}
+                <div className="rounded-lg border border-ink-800 bg-ink-950/70 p-3 text-xs text-paper-300 flex items-start gap-2.5">
+                  <Sparkles size={16} className="text-accent-400 shrink-0 mt-0.5" />
+                  <span>{analytics.abTestAnalysis.summary}</span>
+                </div>
+              </div>
+            )}
 
             {/* Row 1: Clicks Over Time Chart & Top Referrers */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

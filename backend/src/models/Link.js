@@ -106,6 +106,37 @@ const linkSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // Feature 2: A/B Split & Canary Routing
+    routingType: {
+      type: String,
+      enum: ['direct', 'ab_test'],
+      default: 'direct',
+    },
+    variants: [
+      {
+        id: {
+          type: String,
+          default: () => `var_${Math.random().toString(36).substring(2, 9)}`,
+        },
+        name: { type: String, required: true },
+        url: { type: String, required: true },
+        weight: { type: Number, default: 50 },
+        clicks: { type: Number, default: 0 },
+      },
+    ],
+    // Feature 3: Custom OpenGraph Social Card Preview
+    ogTitle: {
+      type: String,
+      default: null,
+    },
+    ogDescription: {
+      type: String,
+      default: null,
+    },
+    ogImage: {
+      type: String,
+      default: null,
+    },
     lastAccessedAt: Date,
   },
   {
