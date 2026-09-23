@@ -8,7 +8,7 @@ import useAuthStore from '../context/authStore';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { setSession, setUser } = useAuthStore();
+  const { setToken, setUser } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({ email: '', password: '' });
 
@@ -18,7 +18,7 @@ const Login = () => {
 
     try {
       const data = await authService.login(formData.email, formData.password);
-      setSession({ token: data.token, refreshToken: data.refreshToken });
+      setToken(data.token);
       setUser(data.user);
       toast.success('Welcome back');
       navigate('/dashboard');

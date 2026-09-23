@@ -1,8 +1,10 @@
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { Toaster } from 'react-hot-toast';
 
 import useAuthStore from './context/authStore';
+import { bootstrapSession } from './services/api';
 import ProtectedRoute from './components/ProtectedRoute';
 
 // Pages
@@ -22,7 +24,22 @@ import { ConfirmProvider } from './context/ConfirmContext';
 import './styles/globals.css';
 
 function App() {
-  const { token } = useAuthStore();
+  const { token, isBootstrapping } = useAuthStore();
+
+  // Exchange the httpOnly refresh cookie (if any) for an in-memory access
+  // token before any route renders, so a hard refresh doesn't briefly look
+  // logged-out while that exchange is in flight.
+  useEffect(() => {
+    bootstrapSession();
+  }, []);
+
+  if (isBootstrapping) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-ink-950">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-ink-700 border-t-accent-400" />
+      </div>
+    );
+  }
 
   return (
     <HelmetProvider>

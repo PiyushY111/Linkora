@@ -13,17 +13,18 @@ import {
 } from '../controllers/authController.js';
 import { protect } from '../middleware/auth.js';
 import { validateRegister, validateLogin, handleValidationErrors } from '../middleware/validation.js';
-import { authRateLimitMiddleware } from '../middleware/rateLimiter.js';
+import { authRateLimitMiddleware, registerRateLimiter, refreshRateLimiter } from '../middleware/rateLimiter.js';
+import { verifyOriginForCsrf } from '../middleware/csrf.js';
 import ssoRoutes from './sso.js';
 
 const router = express.Router();
 
 router.use('/sso', ssoRoutes);
 
-router.post('/register', validateRegister, handleValidationErrors, register);
+router.post('/register', registerRateLimiter, validateRegister, handleValidationErrors, register);
 router.post('/login', authRateLimitMiddleware, validateLogin, handleValidationErrors, login);
-router.post('/refresh', refresh);
-router.post('/logout', protect, logout);
+router.post('/refresh', refreshRateLimiter, verifyOriginForCsrf, refresh);
+router.post('/logout', verifyOriginForCsrf, logout);
 router.get('/me', protect, getCurrentUser);
 router.put('/profile', protect, updateProfile);
 router.put('/password', protect, changePassword);

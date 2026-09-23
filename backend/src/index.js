@@ -3,6 +3,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
 import { logger, httpLogger } from './config/logger.js';
@@ -23,12 +24,6 @@ import webhookRoutes from './routes/webhooks.js';
 import publicApiRoutes from './routes/publicApi.js';
 import developerRoutes from './routes/developer.js';
 
-// Connect to database
-connectDB();
-ensureClickHouseSchema().catch((err) => logger.error({ err }, 'Failed to ensure ClickHouse schema'));
-scheduleAbuseRescan();
-scheduleExpiryWebhookCheck();
-
 const app = express();
 
 app.set('trust proxy', env.TRUST_PROXY_HOPS);
@@ -42,6 +37,7 @@ app.use(cors({
   origin: env.FRONTEND_URL,
   credentials: true,
 }));
+app.use(cookieParser());
 
 app.use(metricsMiddleware);
 
@@ -56,8 +52,14 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+// The bulk link-creation endpoint (up to 1,000 URLs per request) needs a
+// larger body allowance than every other route. This must be registered
+// before the general parser below: body-parser skips re-parsing once
+// `req._body` is set, so the first matching parser in the chain wins.
+app.use('/api/public/v1/links/bulk', express.json({ limit: '2mb' }));
+
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ limit: '100kb', extended: true }));
 
 // Health check (kept for backward compatibility)
 app.get('/health', (req, res) => {
@@ -125,49 +127,61 @@ app.use('/api/developer', developerRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
-const server = app.listen(env.PORT, () => {
-  logger.info({ port: env.PORT, env: env.NODE_ENV }, 'Server started');
-});
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-  logger.error({ err }, 'Unhandled promise rejection');
-  server.close(() => process.exit(1));
-});
-
-const SHUTDOWN_DRAIN_MS = 15000;
-let shuttingDown = false;
-
-async function closeConnections() {
-  // redis.quit() (unlike disconnect()) waits for in-flight commands —
-  // including any XADD click events still in the pipeline — to complete
-  // before closing the connection.
-  await Promise.allSettled([
-    mongoose.connection.close().catch((err) => logger.error({ err }, 'Error closing MongoDB connection')),
-    redis.quit().catch((err) => logger.error({ err }, 'Error closing Redis connection')),
-  ]);
-}
-
-async function gracefulShutdown(signal) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info({ signal }, 'Shutdown signal received; draining in-flight requests');
-
-  const drainTimer = setTimeout(() => {
-    logger.warn('Drain window expired; forcing shutdown');
-    closeConnections().finally(() => process.exit(0));
-  }, SHUTDOWN_DRAIN_MS);
-  drainTimer.unref();
-
-  server.close(async () => {
-    logger.info('HTTP server closed; no longer accepting new connections');
-    clearTimeout(drainTimer);
-    await closeConnections();
-    process.exit(0);
-  });
-}
-
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
 export default app;
+
+// Everything below only runs when this file is executed directly (`node
+// src/index.js`), not when a test suite imports `app` via supertest — that
+// import must never bind the real port or start background cron jobs.
+const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+
+if (isMainModule) {
+  connectDB();
+  ensureClickHouseSchema().catch((err) => logger.error({ err }, 'Failed to ensure ClickHouse schema'));
+  scheduleAbuseRescan();
+  scheduleExpiryWebhookCheck();
+
+  const server = app.listen(env.PORT, () => {
+    logger.info({ port: env.PORT, env: env.NODE_ENV }, 'Server started');
+  });
+
+  // Handle unhandled promise rejections
+  process.on('unhandledRejection', (err) => {
+    logger.error({ err }, 'Unhandled promise rejection');
+    server.close(() => process.exit(1));
+  });
+
+  const SHUTDOWN_DRAIN_MS = 15000;
+  let shuttingDown = false;
+
+  const closeConnections = async () => {
+    // redis.quit() (unlike disconnect()) waits for in-flight commands —
+    // including any XADD click events still in the pipeline — to complete
+    // before closing the connection.
+    await Promise.allSettled([
+      mongoose.connection.close().catch((err) => logger.error({ err }, 'Error closing MongoDB connection')),
+      redis.quit().catch((err) => logger.error({ err }, 'Error closing Redis connection')),
+    ]);
+  };
+
+  const gracefulShutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info({ signal }, 'Shutdown signal received; draining in-flight requests');
+
+    const drainTimer = setTimeout(() => {
+      logger.warn('Drain window expired; forcing shutdown');
+      closeConnections().finally(() => process.exit(0));
+    }, SHUTDOWN_DRAIN_MS);
+    drainTimer.unref();
+
+    server.close(async () => {
+      logger.info('HTTP server closed; no longer accepting new connections');
+      clearTimeout(drainTimer);
+      await closeConnections();
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+}

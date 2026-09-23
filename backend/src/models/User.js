@@ -69,11 +69,6 @@ const userSchema = new mongoose.Schema(
     verificationTokenExpire: Date,
     passwordResetToken: String,
     passwordResetExpire: Date,
-    twoFactorEnabled: {
-      type: Boolean,
-      default: false,
-    },
-    twoFactorSecret: String,
     avatarColor: {
       type: String,
       default: 'accent', // 'accent' | 'indigo' | 'violet' | 'cyan' | 'rose'

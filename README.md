@@ -85,7 +85,6 @@
 * **Security Center**:
   * Real bcrypt password change with an interactive password strength indicator.
   * Active Browser Session monitor with client OS and User-Agent tracking.
-  * Two-Factor Authentication (2FA) toggle.
 * **Analytics Privacy & GDPR Mode**: Option to mask the last octet of visitor IP addresses (`192.168.1.xxx`) before storing click records.
 * **Data Management**:
   * **Export Account Archive (JSON)**: Complete backup of all shortened links, tags, and profile metadata.

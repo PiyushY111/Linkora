@@ -85,7 +85,6 @@ export default function Settings() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showCurrentPass, setShowCurrentPass] = useState(false);
   const [showNewPass, setShowNewPass] = useState(false);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   // Analytics & Privacy State
@@ -112,7 +111,6 @@ export default function Settings() {
       setDefaultUtmMedium(user.defaultUtm?.medium || '');
       setDefaultUtmCampaign(user.defaultUtm?.campaign || '');
 
-      setTwoFactorEnabled(!!user.twoFactorEnabled);
       setAnalyticsRange(user.defaultAnalyticsRange || '7d');
       setAnonymizeIps(!!user.anonymizeVisitorIps);
       setEmailNotifications(user.preferences?.emailNotifications ?? true);
@@ -185,19 +183,6 @@ export default function Settings() {
       toast.error(err.response?.data?.message || 'Failed to update password');
     } finally {
       setIsUpdatingPassword(false);
-    }
-  };
-
-  // Toggle 2FA Handler
-  const handleToggle2Fa = async () => {
-    const nextState = !twoFactorEnabled;
-    try {
-      const res = await authService.updateProfile({ twoFactorEnabled: nextState });
-      setTwoFactorEnabled(nextState);
-      setUser(res.user);
-      toast.success(nextState ? '2FA protection enabled' : '2FA protection disabled');
-    } catch {
-      toast.error('Failed to update 2FA status');
     }
   };
 
@@ -791,30 +776,6 @@ export default function Settings() {
                   className="btn-secondary btn-sm self-start sm:self-center"
                 >
                   Sign Out
-                </button>
-              </div>
-            </div>
-
-            {/* Two-Factor Authentication Card */}
-            <div className="panel p-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="text-base font-semibold text-paper-100 flex items-center gap-2">
-                    <Shield size={18} className="text-indigo-400" />
-                    <span>Two-Factor Authentication (2FA)</span>
-                  </h2>
-                  <p className="mt-1 text-xs text-paper-500">
-                    Require an authentication code in addition to your password for extra security.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleToggle2Fa}
-                  className={`btn btn-sm ${
-                    twoFactorEnabled ? 'btn-secondary text-rose-400' : 'btn-primary'
-                  }`}
-                >
-                  {twoFactorEnabled ? 'Disable 2FA' : 'Enable 2FA'}
                 </button>
               </div>
             </div>

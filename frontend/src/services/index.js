@@ -41,8 +41,10 @@ export const authService = {
     return response.data;
   },
 
-  logout: async (refreshToken) => {
-    const response = await api.post('/auth/logout', { refreshToken });
+  logout: async () => {
+    // No body needed: the refresh token is an httpOnly cookie the server
+    // reads (and revokes) directly.
+    const response = await api.post('/auth/logout');
     return response.data;
   },
 };

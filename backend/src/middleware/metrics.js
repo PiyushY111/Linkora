@@ -1,5 +1,6 @@
 import client from 'prom-client';
 import { env } from '../config/env.js';
+import { constantTimeEqual } from '../utils/constantTimeEqual.js';
 
 export const registry = new client.Registry();
 client.collectDefaultMetrics({ register: registry });
@@ -58,14 +59,22 @@ export const metricsMiddleware = (req, res, next) => {
 };
 
 /**
- * Protects /metrics with a bearer token when METRICS_TOKEN is configured.
- * With no token configured, access is restricted to loopback only.
+ * Protects /metrics with a bearer token when METRICS_TOKEN is configured
+ * (compared in constant time). With no token configured, access falls back
+ * to a loopback-only check — but only outside production, since behind a
+ * reverse proxy `req.socket.remoteAddress` is the proxy's address, not the
+ * real client's, making that fallback unreliable. In production with no
+ * token set, /metrics fails closed instead.
  */
 export const metricsAuth = (req, res, next) => {
   if (env.METRICS_TOKEN) {
-    const provided = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-    if (provided === env.METRICS_TOKEN) return next();
+    const provided = req.headers.authorization?.replace(/^Bearer\s+/i, '') || '';
+    if (constantTimeEqual(provided, env.METRICS_TOKEN)) return next();
     return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  if (env.NODE_ENV === 'production') {
+    return res.status(403).json({ success: false, message: 'Forbidden' });
   }
 
   const ip = req.socket.remoteAddress || '';

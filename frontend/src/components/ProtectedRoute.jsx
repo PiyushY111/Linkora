@@ -6,10 +6,10 @@ import { authService } from '../services';
 const ProtectedRoute = ({ component: Component }) => {
   const { token, user, setUser } = useAuthStore();
 
-  // Zustand state isn't persisted across a hard reload/direct navigation —
-  // only the tokens are (localStorage). Rehydrate the user once per
-  // protected page so the sidebar/pages don't show a blank account on
-  // refresh or on any route other than the one that originally fetched it.
+  // Zustand state isn't persisted across a hard reload — App's bootstrap
+  // exchanges the httpOnly refresh cookie for a token before this route
+  // ever mounts, but `user` still needs a fetch. Rehydrate it once per
+  // protected page so the sidebar/pages don't show a blank account.
   useEffect(() => {
     if (token && !user) {
       authService.getCurrentUser().then((data) => setUser(data.user)).catch(() => {});

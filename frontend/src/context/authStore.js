@@ -1,33 +1,29 @@
 import { create } from 'zustand';
 
+// The access token lives in memory only (never localStorage/sessionStorage)
+// so it isn't readable by an XSS payload that persists across reloads. The
+// refresh token never reaches JavaScript at all — it's an httpOnly cookie
+// set by the server. Losing the in-memory token on a hard refresh is
+// expected and handled by bootstrapSession() (see services/api.js), which
+// exchanges the refresh cookie for a fresh access token on app load.
 const useAuthStore = create((set) => ({
   user: null,
-  token: localStorage.getItem('token') || null,
-  refreshToken: localStorage.getItem('refreshToken') || null,
+  token: null,
   isLoading: false,
+  // True until the initial silent-refresh attempt (via the refresh cookie)
+  // has resolved, so routing decisions never fire on a stale/absent token.
+  isBootstrapping: true,
   error: null,
 
   setUser: (user) => set({ user }),
-
-  /** Persists both tokens from a login/register/refresh response. */
-  setSession: ({ token, refreshToken }) => {
-    if (token) localStorage.setItem('token', token);
-    if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
-    set({ token, refreshToken });
-  },
-
-  setToken: (token) => {
-    localStorage.setItem('token', token);
-    set({ token });
-  },
+  setToken: (token) => set({ token }),
 
   setLoading: (isLoading) => set({ isLoading }),
+  setBootstrapped: () => set({ isBootstrapping: false }),
   setError: (error) => set({ error }),
 
   logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    set({ user: null, token: null, refreshToken: null });
+    set({ user: null, token: null });
   },
 
   clearError: () => set({ error: null }),

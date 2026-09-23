@@ -63,17 +63,23 @@ export default function Redirect() {
     setErrorMessage('');
 
     try {
-      const res = await axios.get(
-        `/api/r/${shortCode}?probe=1&pwd=${encodeURIComponent(password.trim())}`
-      );
-      if (res.data?.success) {
+      // The password is exchanged for a short-lived, single-use unlock
+      // token out-of-band, over a POST body — it never appears in a URL,
+      // so it never lands in access logs, browser history, or a Referer
+      // header. Only the resulting token travels on the redirect itself.
+      const res = await axios.post(`/api/r/${shortCode}/unlock`, {
+        password: password.trim(),
+      });
+      const { unlockToken } = res.data || {};
+      if (unlockToken) {
         setState('redirecting');
-        // Full browser navigation with password param to trigger 307 redirect and click tracking
-        window.location.href = `/api/r/${shortCode}?pwd=${encodeURIComponent(password.trim())}`;
+        window.location.href = `/api/r/${shortCode}?unlockToken=${encodeURIComponent(unlockToken)}`;
       }
     } catch (err) {
-      if (err.response?.status === 403) {
+      if (err.response?.status === 401) {
         setErrorMessage('Incorrect password. Please try again.');
+      } else if (err.response?.status === 429) {
+        setErrorMessage('Too many attempts. Please try again in a few minutes.');
       } else {
         setErrorMessage(err.response?.data?.message || 'Verification failed. Please try again.');
       }

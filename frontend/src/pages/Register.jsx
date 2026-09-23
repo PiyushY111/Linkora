@@ -8,7 +8,7 @@ import useAuthStore from '../context/authStore';
 
 const Register = () => {
   const navigate = useNavigate();
-  const { setSession, setUser } = useAuthStore();
+  const { setToken, setUser } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -29,7 +29,7 @@ const Register = () => {
 
     try {
       const data = await authService.register(formData.name, formData.email, formData.password);
-      setSession({ token: data.token, refreshToken: data.refreshToken });
+      setToken(data.token);
       setUser(data.user);
       toast.success('Account created');
       navigate('/dashboard');

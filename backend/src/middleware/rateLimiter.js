@@ -229,6 +229,31 @@ export function createTokenBucketLimiter({ capacity, refillPerSecond, keyPrefix,
   };
 }
 
+// Registration: 10 accounts per hour per IP (spam/enumeration deterrent).
+export const registerRateLimiter = createSlidingWindowLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyPrefix: 'register',
+});
+
+// Refresh rotation: 30 per 15 min per IP. Legitimate clients refresh once
+// per access-token lifetime (15m), so this comfortably covers multiple tabs
+// or devices while bounding abuse of the rotation endpoint.
+export const refreshRateLimiter = createSlidingWindowLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyPrefix: 'refresh',
+});
+
+// Link-unlock attempts: 5 per 15 min per IP+shortCode, so a wrong-password
+// guessing loop against one link can't be retried indefinitely.
+export const unlockRateLimiter = createSlidingWindowLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyPrefix: 'link-unlock',
+  keyFn: (req) => `${getClientIp(req)}:${req.params.shortCode}`,
+});
+
 export const authRateLimitMiddleware = async (req, res, next) => {
   const ip = getClientIp(req);
   try {
@@ -241,4 +266,12 @@ export const authRateLimitMiddleware = async (req, res, next) => {
   next();
 };
 
-export default { createSlidingWindowLimiter, redirectRateLimiter, linkCreationRateLimiter, authRateLimitMiddleware };
+export default {
+  createSlidingWindowLimiter,
+  redirectRateLimiter,
+  linkCreationRateLimiter,
+  registerRateLimiter,
+  refreshRateLimiter,
+  unlockRateLimiter,
+  authRateLimitMiddleware,
+};

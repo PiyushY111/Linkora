@@ -13,12 +13,12 @@ const NAV_ITEMS = [
 ];
 
 const Sidebar = () => {
-  const { user, refreshToken, logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     try {
-      await authService.logout(refreshToken);
+      await authService.logout();
     } catch {
       // Best-effort server-side revocation; always clear local state.
     }

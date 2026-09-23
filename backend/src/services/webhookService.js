@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import dns from 'dns';
 import cron from 'node-cron';
+import { Agent, fetch as undiciFetch } from 'undici';
 import Webhook from '../models/Webhook.js';
 import WebhookDelivery from '../models/WebhookDelivery.js';
 import Link from '../models/Link.js';
@@ -10,6 +11,33 @@ import { logger } from '../config/logger.js';
 
 // Exponential backoff delays: 10s, 1m, 5m, 30m, 2h
 const RETRY_DELAYS_MS = [10000, 60000, 300000, 1800000, 7200000];
+
+const WEBHOOK_METADATA_IPS = new Set(['169.254.169.254']);
+
+function isPrivateOrLoopbackIp(ip) {
+  return (
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.') ||
+    ip.startsWith('169.254.') ||
+    ip.startsWith('127.') ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)
+  );
+}
+
+/**
+ * The single source of truth for "is this IP okay to send a webhook to",
+ * shared by registration-time validation (isSafeEndpointUrl) and the
+ * delivery-time re-check below — so the two can never drift apart. Cloud
+ * metadata is blocked unconditionally; private/loopback ranges are blocked
+ * only in production, preserving the local-testing convenience of pointing
+ * a webhook at this app's own built-in echo endpoint in development.
+ */
+function isBlockedWebhookAddress(ip) {
+  if (WEBHOOK_METADATA_IPS.has(ip)) return true;
+  return env.NODE_ENV === 'production' && isPrivateOrLoopbackIp(ip);
+}
 
 /**
  * Validates endpoint URL and guards against Server-Side Request Forgery (SSRF).
@@ -24,7 +52,8 @@ export async function isSafeEndpointUrl(urlStr) {
 
     const host = parsed.hostname.toLowerCase();
 
-    // Block cloud metadata services unconditionally
+    // Block cloud metadata services unconditionally (by hostname, ahead of
+    // the DNS lookup below which only checks the resolved IP).
     if (
       host === '169.254.169.254' ||
       host === 'metadata.google.internal' ||
@@ -33,34 +62,49 @@ export async function isSafeEndpointUrl(urlStr) {
       return { safe: false, reason: 'Access to cloud metadata endpoints is forbidden' };
     }
 
-    // Resolve IP address
     const lookupResult = await dns.promises.lookup(host);
-    const ip = lookupResult.address;
-
-    // Block metadata IP
-    if (ip === '169.254.169.254') {
-      return { safe: false, reason: 'Access to metadata IP is forbidden' };
+    if (isBlockedWebhookAddress(lookupResult.address)) {
+      return { safe: false, reason: 'This destination resolves to a blocked/private address' };
     }
 
-    // In production, block private and loopback networks
-    if (env.NODE_ENV === 'production') {
-      if (
-        ip === '127.0.0.1' ||
-        ip === '::1' ||
-        ip.startsWith('10.') ||
-        ip.startsWith('192.168.') ||
-        ip.startsWith('169.254.') ||
-        ip.startsWith('127.') ||
-        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)
-      ) {
-        return { safe: false, reason: 'Private/Internal network endpoints are forbidden in production' };
-      }
-    }
-
-    return { safe: true, ip };
+    return { safe: true, ip: lookupResult.address };
   } catch (err) {
     return { safe: false, reason: `URL resolution failed: ${err.message}` };
   }
+}
+
+/**
+ * Re-resolves `hostname` and returns the first address that passes the same
+ * SSRF policy as isSafeEndpointUrl, throwing if none do. isSafeEndpointUrl
+ * only runs at registration time; without a second check *immediately*
+ * before each delivery, an attacker can point DNS at a safe IP during
+ * registration and then repoint it at an internal address before the next
+ * delivery — a classic DNS-rebinding bypass of a validate-then-fetch
+ * pattern.
+ */
+async function resolveSafeDeliveryAddress(hostname) {
+  const addresses = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+  const safe = addresses.find((addr) => !isBlockedWebhookAddress(addr.address));
+  if (!safe) {
+    throw new Error(`Destination "${hostname}" resolves only to blocked/private addresses`);
+  }
+  return safe;
+}
+
+/**
+ * Builds an undici Agent whose connector ignores whatever DNS says at
+ * connect time and always dials the single, already-validated address —
+ * closing the gap between "we checked this hostname" and "we connected to
+ * this hostname" that a plain re-check-then-fetch still leaves open.
+ */
+function buildPinnedDispatcher(address) {
+  return new Agent({
+    connect: {
+      lookup: (_hostname, _options, callback) => {
+        callback(null, address.address, address.family);
+      },
+    },
+  });
 }
 
 /**
@@ -116,13 +160,26 @@ export async function executeDelivery(webhook, event, data, attempt = 1, existin
   let errorMsg = null;
   let isSuccess = false;
   const startTime = Date.now();
+  let pinnedDispatcher = null;
 
   try {
-    const response = await fetch(webhook.url, {
+    const targetHostname = new URL(webhook.url).hostname;
+    const safeAddress = await resolveSafeDeliveryAddress(targetHostname);
+    pinnedDispatcher = buildPinnedDispatcher(safeAddress);
+
+    // Uses undici's own fetch (not Node's global fetch) so it always shares
+    // an undici version with the Agent/dispatcher below — a version
+    // mismatch between Node's bundled undici and a globally-fetched
+    // dispatcher throws (UND_ERR_INVALID_ARG) rather than pinning anything.
+    const response = await undiciFetch(webhook.url, {
       method: 'POST',
       headers,
       body: payloadString,
       signal: AbortSignal.timeout(10000), // 10 second timeout
+      dispatcher: pinnedDispatcher,
+      // A malicious endpoint could otherwise 3xx this request to an
+      // internal address after passing the SSRF check on its own URL.
+      redirect: 'manual',
     });
 
     responseStatus = response.status;
@@ -133,7 +190,10 @@ export async function executeDelivery(webhook, event, data, attempt = 1, existin
     const rawText = await response.text();
     responseBody = rawText ? rawText.slice(0, 2048) : ''; // Store up to 2KB preview
 
-    if (response.ok) {
+    const isRedirect = response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400);
+    if (isRedirect) {
+      errorMsg = 'Endpoint attempted to redirect the webhook request, which is not permitted';
+    } else if (response.ok) {
       isSuccess = true;
     } else {
       errorMsg = `Endpoint returned HTTP status ${response.status} (${response.statusText || 'Error'})`;
@@ -154,6 +214,10 @@ export async function executeDelivery(webhook, event, data, attempt = 1, existin
       errorMsg = `DNS resolution failed (ENOTFOUND): Hostname could not be found`;
     } else {
       errorMsg = detail ? `${err.message}: ${detail}` : err.message || 'Network request failed';
+    }
+  } finally {
+    if (pinnedDispatcher) {
+      await pinnedDispatcher.close().catch(() => {});
     }
   }
 

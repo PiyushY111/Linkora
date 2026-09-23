@@ -16,12 +16,12 @@ const NAV_ITEMS = [
 
 const MobileNav = () => {
   const [open, setOpen] = useState(false);
-  const { refreshToken, logout } = useAuthStore();
+  const { logout } = useAuthStore();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     try {
-      await authService.logout(refreshToken);
+      await authService.logout();
     } catch {
       // Best-effort; always clear local state.
     }
