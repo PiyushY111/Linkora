@@ -10,20 +10,26 @@ const REFRESH_COOKIE_PATH = '/api/auth';
  * read or exfiltrate it and CSRF exposure is limited to the auth endpoints.
  */
 export function setRefreshTokenCookie(res, token) {
+  const isProd = env.NODE_ENV === 'production';
+  const sameSite = env.COOKIE_SAMESITE || (isProd ? 'none' : 'lax');
+  const secure = env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : isProd;
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure,
+    sameSite,
     path: REFRESH_COOKIE_PATH,
     maxAge: env.JWT_REFRESH_TOKEN_TTL_SECONDS * 1000,
   });
 }
 
 export function clearRefreshTokenCookie(res) {
+  const isProd = env.NODE_ENV === 'production';
+  const sameSite = env.COOKIE_SAMESITE || (isProd ? 'none' : 'lax');
+  const secure = env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : isProd;
   res.clearCookie(REFRESH_COOKIE_NAME, {
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure,
+    sameSite,
     path: REFRESH_COOKIE_PATH,
   });
 }
