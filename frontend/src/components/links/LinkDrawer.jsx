@@ -29,6 +29,7 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link as RouterLink } from 'react-router-dom';
 import QRCodeModal from '../qr/QRCodeModal';
+import QRCodeViewer from '../qr/QRCodeViewer';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -501,11 +502,22 @@ export default function LinkDrawer({ link, open, onClose }) {
                       className="relative group cursor-pointer shrink-0"
                       title="Click to customize QR code"
                     >
-                      <img
-                        src={link.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(link.shortUrl)}`}
-                        alt="QR Code"
-                        className="h-20 w-20 rounded-xl bg-ink-950 p-1.5 ring-1 ring-ink-600 transition-transform group-hover:scale-105"
-                      />
+                      {link.qrConfig ? (
+                        <div className="h-20 w-20 rounded-xl bg-ink-950 p-1 ring-1 ring-ink-600 transition-transform group-hover:scale-105 flex items-center justify-center overflow-hidden">
+                          <QRCodeViewer
+                            data={link.shortUrl}
+                            config={link.qrConfig}
+                            size={72}
+                            showFrame={false}
+                          />
+                        </div>
+                      ) : (
+                        <img
+                          src={link.qrCode || `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(link.shortUrl)}`}
+                          alt="QR Code"
+                          className="h-20 w-20 rounded-xl bg-ink-950 p-1.5 ring-1 ring-ink-600 transition-transform group-hover:scale-105"
+                        />
+                      )}
                       <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-ink-950/70 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Sparkles size={18} className="text-accent-400" />
                       </div>

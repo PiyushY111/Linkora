@@ -26,7 +26,7 @@ import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import { useConfirm } from '../../context/ConfirmContext';
 
-export default function QRDrawer({ link, open, onClose }) {
+export default function QRDrawer({ link, open, onClose, onUpdate }) {
   const confirm = useConfirm();
   const { updateLink, removeLink } = useLinkStore();
 
@@ -69,6 +69,7 @@ export default function QRDrawer({ link, open, onClose }) {
       const res = await linkService.updateLink(link._id, { originalUrl: normalized });
       if (res?.link) {
         updateLink(res.link);
+        if (onUpdate) onUpdate(res.link);
       }
       toast.success('Destination updated! All future scans will redirect to this link.');
     } catch (err) {
@@ -81,13 +82,22 @@ export default function QRDrawer({ link, open, onClose }) {
   const handleSaveStyle = async () => {
     setIsSavingStyle(true);
     try {
-      const dataUrl = await qrViewerRef.current.getDataUrl(512);
-      const res = await linkService.updateLink(link._id, {
-        qrConfig: config,
-        qrCode: dataUrl,
-      });
+      let dataUrl = null;
+      if (qrViewerRef.current?.getDataUrl) {
+        try {
+          dataUrl = await qrViewerRef.current.getDataUrl(512);
+        } catch (canvasErr) {
+          console.warn('Canvas export warning:', canvasErr);
+        }
+      }
+
+      const payload = { qrConfig: config };
+      if (dataUrl) payload.qrCode = dataUrl;
+
+      const res = await linkService.updateLink(link._id, payload);
       if (res?.link) {
         updateLink(res.link);
+        if (onUpdate) onUpdate(res.link);
       }
       toast.success('QR Code styling saved!');
     } catch (err) {

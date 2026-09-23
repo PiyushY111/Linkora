@@ -19,6 +19,11 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
 
   // Compute qr-code-styling options from config
   const getOptions = (targetSize = size) => {
+    // QR codes require sufficient pixel density to render matrix dots without zeroing modules.
+    // At small dimensions (< 160px), render at 160px canvas resolution and let CSS scale it smoothly.
+    const renderSize = Math.max(targetSize, 160);
+    const renderMargin = renderSize < 80 ? 2 : renderSize < 140 ? 4 : 8;
+
     const dotsOptions = {
       type: config.dotsType || 'rounded',
       color: config.dotsColor || '#C6FF3D',
@@ -36,11 +41,11 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
     }
 
     return {
-      width: targetSize,
-      height: targetSize,
+      width: renderSize,
+      height: renderSize,
       type: 'canvas',
       data: data || 'https://linkora.io',
-      margin: 8,
+      margin: renderMargin,
       qrOptions: {
         typeNumber: 0,
         mode: 'Byte',
@@ -158,7 +163,7 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
         {/* QR Canvas Container */}
         <div
           ref={containerRef}
-          className="flex items-center justify-center overflow-hidden rounded-xl"
+          className="flex items-center justify-center overflow-hidden rounded-xl [&>canvas]:w-full [&>canvas]:h-full [&>canvas]:object-contain"
           style={{ width: size, height: size }}
         />
       </div>

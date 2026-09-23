@@ -21,6 +21,8 @@ export function createRedisClient(url = env.REDIS_URL, options = {}) {
     maxRetriesPerRequest: 3,
     lazyConnect: false,
     enableAutoPipelining: false,
+    keepAlive: 15000,
+    connectTimeout: 5000,
     ...options,
   });
   client.on('error', (err) => logger.error({ err, url: redactRedisUrl(url) }, 'Redis connection error'));

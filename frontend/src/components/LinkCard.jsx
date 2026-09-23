@@ -16,6 +16,7 @@ import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
 import { Link as RouterLink } from 'react-router-dom';
 import QRCodeModal from './qr/QRCodeModal';
+import QRCodeViewer from './qr/QRCodeViewer';
 import ActionDropdown from './ui/ActionDropdown';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
@@ -274,7 +275,7 @@ export default function LinkCard({
           )}
         </div>
 
-        {link.qrCode ? (
+        {link.qrCode || link.qrConfig ? (
           <div
             onClick={(e) => {
               e.stopPropagation();
@@ -283,11 +284,22 @@ export default function LinkCard({
             className="group/qr relative cursor-pointer shrink-0"
             title="Click to customize QR code"
           >
-            <img
-              src={link.qrCode}
-              alt="QR code"
-              className="h-10 w-10 rounded-lg bg-ink-950 p-0.5 ring-1 ring-ink-600 transition-transform group-hover/qr:scale-110"
-            />
+            {link.qrCode ? (
+              <img
+                src={link.qrCode}
+                alt="QR code"
+                className="h-10 w-10 rounded-lg bg-ink-950 p-0.5 ring-1 ring-ink-600 transition-transform group-hover/qr:scale-110 object-contain"
+              />
+            ) : link.qrConfig ? (
+              <div className="h-10 w-10 overflow-hidden rounded-lg bg-ink-950 p-0.5 ring-1 ring-ink-600 transition-transform group-hover/qr:scale-110 flex items-center justify-center">
+                <QRCodeViewer
+                  data={link.shortUrl}
+                  config={link.qrConfig}
+                  size={36}
+                  showFrame={false}
+                />
+              </div>
+            ) : null}
             <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-ink-950/70 opacity-0 group-hover/qr:opacity-100 transition-opacity">
               <Sparkles size={12} className="text-accent-400" />
             </div>

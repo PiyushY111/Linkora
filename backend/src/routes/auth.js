@@ -21,9 +21,16 @@ const router = express.Router();
 
 router.use('/sso', ssoRoutes);
 
+function requireRefreshTokenCookie(req, res, next) {
+  if (!req.cookies?.refreshToken) {
+    return res.status(401).json({ success: false, message: 'No refresh token provided' });
+  }
+  next();
+}
+
 router.post('/register', registerRateLimiter, validateRegister, handleValidationErrors, register);
 router.post('/login', authRateLimitMiddleware, validateLogin, handleValidationErrors, login);
-router.post('/refresh', refreshRateLimiter, verifyOriginForCsrf, refresh);
+router.post('/refresh', verifyOriginForCsrf, requireRefreshTokenCookie, refreshRateLimiter, refresh);
 router.post('/logout', verifyOriginForCsrf, logout);
 router.get('/me', protect, getCurrentUser);
 router.put('/profile', protect, updateProfile);

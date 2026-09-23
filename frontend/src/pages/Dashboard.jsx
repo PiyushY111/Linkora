@@ -207,7 +207,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={handleExportAllCsv}
-              className="btn-secondary btn-sm hidden sm:flex"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-ink-600 bg-ink-800 px-3.5 text-xs font-semibold text-paper-100 transition-all hover:border-ink-500 hover:bg-ink-700 active:bg-ink-750 hidden sm:inline-flex"
               title="Download link catalog as CSV"
             >
               <Download size={14} />
@@ -216,11 +216,11 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => setShowCreateModal(true)}
-              className="btn-primary"
+              className="btn-primary inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-xs font-semibold"
             >
-              <Plus size={16} />
+              <Plus size={14} />
               <span>New Link</span>
-              <kbd className="ml-1.5 hidden rounded bg-ink-950/20 px-1.5 py-0.5 text-[10px] font-semibold text-ink-950/80 sm:inline-block">
+              <kbd className="ml-1 hidden rounded bg-ink-950/20 px-1.5 py-0.5 text-[10px] font-semibold text-ink-950/80 sm:inline-block">
                 ⌘K
               </kbd>
             </button>

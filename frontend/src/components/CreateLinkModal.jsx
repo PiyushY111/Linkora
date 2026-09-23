@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import {
   Sparkles,
@@ -22,12 +22,15 @@ import {
   Share2,
   Trash2,
   Plus,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from './ui/Modal';
 import QRCodeModal from './qr/QRCodeModal';
 import QRCodeCustomizer from './qr/QRCodeCustomizer';
-import { DEFAULT_QR_CONFIG } from '../utils/qrPresets';
+import QRCodeViewer from './qr/QRCodeViewer';
+import { DEFAULT_QR_CONFIG, QR_DESIGNER_PRESETS } from '../utils/qrPresets';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
 import useAuthStore from '../context/authStore';
@@ -99,6 +102,9 @@ export default function CreateLinkModal({ open, onClose }) {
   const [createdResult, setCreatedResult] = useState(null);
   const [copied, setCopied] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [lightBackdrop, setLightBackdrop] = useState(false);
+  const qrViewerRef = useRef(null);
+  const successQrViewerRef = useRef(null);
 
   // Pre-fill user's default category and UTM parameters when opening modal
   useEffect(() => {
@@ -231,11 +237,20 @@ export default function CreateLinkModal({ open, onClose }) {
         }
       }
 
+      // If live preview is active, capture styled dataUrl for backend storage
+      let styledQrDataUrl = null;
+      if (qrViewerRef.current) {
+        try {
+          styledQrDataUrl = await qrViewerRef.current.getDataUrl(512);
+        } catch {}
+      }
+
       const payload = {
         originalUrl: finalUrl,
         category: formData.category,
         tags: formData.tags,
         qrConfig: formData.qrConfig || DEFAULT_QR_CONFIG,
+        ...(styledQrDataUrl ? { qrCode: styledQrDataUrl } : {}),
       };
 
       if (formData.customAlias.trim()) payload.customAlias = formData.customAlias.trim();
@@ -308,7 +323,15 @@ export default function CreateLinkModal({ open, onClose }) {
     toast.success('Copied to clipboard');
   };
 
-  const downloadQr = (format = 'png') => {
+  const downloadQr = async (format = 'png') => {
+    if (successQrViewerRef.current) {
+      await successQrViewerRef.current.download(
+        `${createdResult?.shortCode || 'link'}-qr`,
+        format,
+        1024
+      );
+      return;
+    }
     if (!createdResult?.qrCode) return;
     const a = document.createElement('a');
     a.href = createdResult.qrCode;
@@ -322,7 +345,7 @@ export default function CreateLinkModal({ open, onClose }) {
         open={open}
         onClose={handleClose}
         title={createdResult ? 'Link Created Successfully' : 'Create Enterprise Link'}
-        maxWidth="max-w-3xl"
+        maxWidth="max-w-4xl"
       >
       <AnimatePresence mode="wait">
         {createdResult ? (
@@ -371,21 +394,22 @@ export default function CreateLinkModal({ open, onClose }) {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {/* QR Code Card */}
               <div className="panel p-4 flex items-center gap-4">
-                {createdResult.qrCode ? (
-                  <img
-                    src={createdResult.qrCode}
-                    alt="QR code"
-                    className="h-24 w-24 rounded-lg bg-white p-1 ring-1 ring-ink-600"
+                <div className="flex h-24 w-24 items-center justify-center rounded-xl bg-ink-950 p-1 ring-1 ring-ink-600 overflow-hidden shrink-0">
+                  <QRCodeViewer
+                    ref={successQrViewerRef}
+                    data={createdResult.shortUrl}
+                    config={createdResult.qrConfig || formData.qrConfig || DEFAULT_QR_CONFIG}
+                    size={84}
+                    showFrame={false}
                   />
-                ) : (
-                  <div className="flex h-24 w-24 items-center justify-center rounded-lg bg-ink-800 text-paper-500">
-                    No QR
+                </div>
+                <div className="space-y-2 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-paper-300">
+                      QR Code Asset
+                    </p>
+                    <span className="badge-accent text-[10px]">Customized</span>
                   </div>
-                )}
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-paper-300">
-                    QR Code Asset
-                  </p>
                   <p className="text-xs text-paper-500">Ready for print and collateral packaging.</p>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -402,7 +426,7 @@ export default function CreateLinkModal({ open, onClose }) {
                       className="btn-secondary btn-sm"
                     >
                       <Download size={13} />
-                      <span>PNG</span>
+                      <span>High-Res PNG</span>
                     </button>
                   </div>
                 </div>
@@ -648,145 +672,6 @@ export default function CreateLinkModal({ open, onClose }) {
                       ))}
                     </select>
                   </div>
-                </div>
-
-                {/* Direct Password Option on Tab 1 so user never misses it */}
-                <div className="rounded-xl border border-ink-700 bg-ink-950/70 p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Lock size={15} className={formData.enablePassword ? 'text-accent-400' : 'text-paper-500'} />
-                      <div>
-                        <span className="text-xs font-semibold text-paper-100">
-                          Password Protection
-                        </span>
-                        <p className="text-[11px] text-paper-500">
-                          Require visitors to enter a password to unlock this destination.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = !formData.enablePassword;
-                        setFormData({
-                          ...formData,
-                          enablePassword: next,
-                          password: next ? formData.password : '',
-                        });
-                      }}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
-                        formData.enablePassword
-                          ? 'bg-accent-400 text-ink-950'
-                          : 'border border-ink-600 bg-ink-800 text-paper-300 hover:text-paper-100'
-                      }`}
-                    >
-                      {formData.enablePassword ? 'Password Enabled' : 'Add Password'}
-                    </button>
-                  </div>
-
-                  {formData.enablePassword && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="pt-1.5"
-                    >
-                      <div className="relative">
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          required={formData.enablePassword}
-                          placeholder="Type secret password for this link..."
-                          value={formData.password}
-                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                          className="input font-mono pr-10"
-                          autoFocus
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-paper-500 hover:text-paper-200"
-                          tabIndex={-1}
-                        >
-                          {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                        </button>
-                      </div>
-                      <p className="mt-1 text-[11px] text-paper-500">
-                        Encrypted with bcrypt (10 rounds) before being saved.
-                      </p>
-                    </motion.div>
-                  )}
-                </div>
-
-                {/* Direct Usage / Click Limit (Max Opens) on Tab 1 */}
-                <div className="rounded-xl border border-ink-700 bg-ink-950/70 p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Users size={15} className={formData.enableMaxClicks ? 'text-accent-400' : 'text-paper-500'} />
-                      <div>
-                        <span className="text-xs font-semibold text-paper-100">
-                          Click Limit (Max Opens)
-                        </span>
-                        <p className="text-[11px] text-paper-500">
-                          Deactivate this link after a set number of users open it.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = !formData.enableMaxClicks;
-                        setFormData({
-                          ...formData,
-                          enableMaxClicks: next,
-                          maxClicks: next ? formData.maxClicks || '25' : '',
-                        });
-                      }}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
-                        formData.enableMaxClicks
-                          ? 'bg-accent-400 text-ink-950'
-                          : 'border border-ink-600 bg-ink-800 text-paper-300 hover:text-paper-100'
-                      }`}
-                    >
-                      {formData.enableMaxClicks ? 'Limit Active' : 'Add Limit'}
-                    </button>
-                  </div>
-
-                  {formData.enableMaxClicks && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="pt-1.5 space-y-2"
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min="1"
-                          required={formData.enableMaxClicks}
-                          placeholder="e.g. 50"
-                          value={formData.maxClicks}
-                          onChange={(e) => setFormData({ ...formData, maxClicks: e.target.value })}
-                          className="input font-mono"
-                        />
-                        <span className="text-xs text-paper-400 whitespace-nowrap">max clicks</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-paper-500">Presets:</span>
-                        {[5, 25, 100, 500].map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => setFormData({ ...formData, maxClicks: String(preset) })}
-                            className={`rounded px-2 py-0.5 text-xs font-mono transition-colors ${
-                              formData.maxClicks === String(preset)
-                                ? 'bg-accent-400 text-ink-950 font-bold'
-                                : 'bg-ink-800 text-paper-300 hover:text-paper-100'
-                            }`}
-                          >
-                            {preset}
-                          </button>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1226,7 +1111,7 @@ export default function CreateLinkModal({ open, onClose }) {
               </div>
             )}
 
-            {/* TAB 5: CUSTOM QR DESIGN */}
+            {/* TAB 5: CUSTOM QR DESIGN & LIVE PREVIEW */}
             {activeTab === 'qr' && (
               <div className="space-y-4">
                 <div className="rounded-xl border border-ink-700 bg-ink-950 p-3.5 space-y-1">
@@ -1237,20 +1122,105 @@ export default function CreateLinkModal({ open, onClose }) {
                     </span>
                   </div>
                   <p className="text-xs text-paper-500">
-                    Apply designer presets, custom colors, gradients, logos, or callout frames before creating the link.
+                    Apply designer presets, custom colors, gradients, logos, or callout frames before creating the link. Changes reflect live below.
                   </p>
                 </div>
 
-                <QRCodeCustomizer
-                  config={formData.qrConfig || DEFAULT_QR_CONFIG}
-                  onChange={(updater) => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      qrConfig: typeof updater === 'function' ? updater(prev.qrConfig || DEFAULT_QR_CONFIG) : updater,
-                    }));
-                  }}
-                  onReset={() => setFormData((prev) => ({ ...prev, qrConfig: DEFAULT_QR_CONFIG }))}
-                />
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                  {/* Left Column: Live Sticky QR Preview Card */}
+                  <div className="lg:col-span-5 flex flex-col items-center rounded-2xl border border-ink-700 bg-ink-900/90 p-4 shadow-panel lg:sticky lg:top-2">
+                    <div className="flex w-full items-center justify-between pb-3 border-b border-ink-800">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-accent-400 animate-pulse" />
+                        <span className="text-xs font-semibold text-paper-200">Live Preview</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setLightBackdrop(!lightBackdrop)}
+                        className="flex items-center gap-1.5 rounded-lg border border-ink-600 bg-ink-800 px-2 py-1 text-[11px] font-medium text-paper-300 hover:text-paper-100 transition-colors"
+                        title="Toggle canvas backdrop for contrast testing"
+                      >
+                        {lightBackdrop ? <Moon size={12} /> : <Sun size={12} />}
+                        <span>{lightBackdrop ? 'Dark' : 'Light'} Test</span>
+                      </button>
+                    </div>
+
+                    {/* QR Canvas Container */}
+                    <div
+                      className={`relative mt-4 flex min-h-[220px] w-full items-center justify-center rounded-2xl border p-4 transition-colors ${
+                        lightBackdrop
+                          ? 'border-ink-300 bg-paper-100 shadow-inner'
+                          : 'border-ink-800 bg-ink-950 shadow-2xl'
+                      }`}
+                    >
+                      <QRCodeViewer
+                        ref={qrViewerRef}
+                        data={computedDestinationUrl || 'https://linkora.io'}
+                        config={formData.qrConfig || DEFAULT_QR_CONFIG}
+                        size={180}
+                        lightBackdrop={lightBackdrop}
+                      />
+                    </div>
+
+                    {/* Target preview label */}
+                    <div className="mt-3 w-full text-center">
+                      <p className="text-[11px] text-paper-500 truncate">
+                        Target:{' '}
+                        <span className="font-mono text-paper-300">
+                          {computedDestinationUrl || 'https://linkora.io'}
+                        </span>
+                      </p>
+                    </div>
+
+                    {/* Quick Designer Presets */}
+                    <div className="mt-4 w-full border-t border-ink-800 pt-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-semibold text-paper-400">Quick Styles</span>
+                        <span className="text-[10px] text-paper-500 font-mono">
+                          {formData.qrConfig?.dotsType || 'rounded'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {QR_DESIGNER_PRESETS.slice(0, 4).map((preset) => (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                qrConfig: {
+                                  ...(prev.qrConfig || DEFAULT_QR_CONFIG),
+                                  ...preset.config,
+                                },
+                              }))
+                            }
+                            className="rounded-lg border border-ink-700 bg-ink-950 p-2 text-left text-[11px] font-medium text-paper-300 hover:border-accent-400/50 hover:text-accent-400 transition-colors"
+                          >
+                            <p className="font-semibold">{preset.name}</p>
+                            <p className="text-[10px] text-paper-500 truncate">{preset.description}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Customizer Controls */}
+                  <div className="lg:col-span-7">
+                    <QRCodeCustomizer
+                      config={formData.qrConfig || DEFAULT_QR_CONFIG}
+                      onChange={(updater) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          qrConfig:
+                            typeof updater === 'function'
+                              ? updater(prev.qrConfig || DEFAULT_QR_CONFIG)
+                              : updater,
+                        }));
+                      }}
+                      onReset={() => setFormData((prev) => ({ ...prev, qrConfig: DEFAULT_QR_CONFIG }))}
+                    />
+                  </div>
+                </div>
               </div>
             )}
 

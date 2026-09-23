@@ -31,7 +31,11 @@ api.interceptors.request.use((config) => {
 let refreshPromise = null;
 
 async function refreshAccessToken() {
-  const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
+  const response = await axios.post(
+    `${API_BASE_URL}/auth/refresh`,
+    {},
+    { withCredentials: true, timeout: 2500 }
+  );
   const { token, user } = response.data;
   useAuthStore.getState().setToken(token);
   if (user) {
