@@ -1,11 +1,9 @@
 import mongoose from 'mongoose';
 
 /**
- * Bounded (30-day TTL) recent-click store. Introduced in Phase 2 as the
- * bridge off the unbounded Analytics.clicks array; from Phase 3 onward it's
- * written alongside ClickHouse by the stream consumer as an operational
- * "recent activity" store, while ClickHouse is the source of truth for
- * historical/aggregate analytics queries.
+ * Raw click events (30-day TTL), written by the stream consumer through the
+ * analytics repository (repositories/analytics/). This is the analytics
+ * source of truth.
  */
 const clickEventSchema = new mongoose.Schema(
   {

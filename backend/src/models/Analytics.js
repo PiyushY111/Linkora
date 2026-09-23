@@ -1,12 +1,10 @@
 import mongoose from 'mongoose';
 
 /**
- * Rolling counters and top-N summaries only. The unbounded per-click
- * `clicks` array (previously embedded here) hit MongoDB's 16MB BSON
- * document ceiling under sustained traffic; raw click events now live in
- * the ClickEvent collection (30-day TTL) and, from Phase 3 onward, in
- * ClickHouse. This document is updated by the async click consumer, never
- * synchronously on the redirect hot path.
+ * Legacy per-link summary document. It is still created alongside each link
+ * and populated on link reads, but nothing updates its counters any more:
+ * click analytics come from the analytics repository instead. Tracked in
+ * docs/KNOWN_BUGS.md.
  */
 const analyticsSchema = new mongoose.Schema(
   {

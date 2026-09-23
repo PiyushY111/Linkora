@@ -23,7 +23,7 @@ const FEATURES = [
   {
     icon: GitBranch,
     title: 'Real-time analytics',
-    description: 'Every click enriched with geo and device data, queryable in ClickHouse in under a second.',
+    description: 'Every click enriched with geo and device data, broken down by country, device, referrer and campaign.',
   },
   {
     icon: ShieldCheck,
@@ -152,7 +152,7 @@ const Landing = () => {
                   Short links that run like <span className="text-accent-400">production infrastructure.</span>
                 </h1>
                 <p className="mt-5 max-w-lg text-balance text-lg text-paper-300">
-                  Redis-cached redirects, ClickHouse-backed analytics, signed webhooks, and workspace RBAC —
+                  Redis-cached redirects, MongoDB-backed analytics, signed webhooks, and workspace RBAC —
                   built for teams who treat their link layer as a real system, not a form.
                 </p>
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -237,7 +237,7 @@ const Landing = () => {
               <img src="/logo.svg" alt="" width={18} height={18} />
               Linkora
             </div>
-            <p className="text-xs text-paper-500">Built on Redis, MongoDB &amp; ClickHouse.</p>
+            <p className="text-xs text-paper-500">Built on Redis &amp; MongoDB.</p>
           </div>
         </footer>
       </div>

@@ -10,7 +10,7 @@
 [![Redis](https://img.shields.io/badge/Redis-7.0+-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 
-**High-Performance URL Infrastructure, Real-Time ClickHouse Analytics, HMAC Webhook Delivery & Developer Platform**
+**URL Infrastructure, Click Analytics on MongoDB, HMAC Webhook Delivery & Developer Platform**
 
 [Features](#-key-features) • [Developer Section & CLI](#-developer-portal--in-browser-cli) • [Webhooks Engine](#-enterprise-webhook-system) • [Architecture](#-architecture) • [Getting Started](#-getting-started) • [API Reference](#-public-api-v1-reference)
 
@@ -20,7 +20,7 @@
 
 ## 🌟 Overview
 
-**Linkora** is an enterprise-grade URL shortening and programmatic link intelligence platform. Designed to rival and surpass systems like Bitly and Dub.co, Linkora provides sub-millisecond cached redirects, asynchronous telemetry ingestion into ClickHouse, automated exponential-backoff webhooks with HMAC-SHA256 signatures, an in-browser interactive developer CLI (`linkora-cli`), and a multi-tab configuration hub.
+**Linkora** is an enterprise-grade URL shortening and programmatic link intelligence platform. Designed to rival and surpass systems like Bitly and Dub.co, Linkora provides sub-millisecond cached redirects, asynchronous click ingestion into MongoDB via a Redis stream, automated exponential-backoff webhooks with HMAC-SHA256 signatures, an in-browser interactive developer CLI (`linkora-cli`), and a multi-tab configuration hub.
 
 ---
 
@@ -68,7 +68,7 @@
 ---
 
 ### 4. 📊 Real-Time Analytics & Telemetry
-* **Distributed Stream Ingestion**: Fast asynchronous logging into Redis stream buffers and ClickHouse columnar storage.
+* **Stream Ingestion**: Redirects append to a Redis stream; a consumer enriches events and writes them to MongoDB (see [docs/architecture.md](docs/architecture.md)).
 * **Multi-Dimensional Metrics**:
   * Total clicks and unique visitor counts.
   * Geolocation breakdown by country and city.
@@ -125,7 +125,7 @@ Inbound Request
                        │
                        ▼
 ┌──────────────────────────────────────────────┐
-│  MongoDB / Redis / ClickHouse DB Cluster     │
+│  MongoDB / Redis                             │
 └──────────────────────────────────────────────┘
 ```
 
@@ -148,7 +148,7 @@ Inbound Request
 | **Backend Runtime** | Node.js (ESM) + Express.js | High-throughput REST API server |
 | **Primary Database** | MongoDB + Mongoose | User records, links, webhooks, and API keys |
 | **Cache & Throttling** | Redis (ioredis) | Sub-millisecond redirects and token-bucket rate limiter |
-| **Analytics Engine** | ClickHouse / MongoDB Aggregation | High-speed columnar analytics stream |
+| **Analytics Engine** | MongoDB (behind an `AnalyticsRepository` interface) | Click storage and aggregation ([ADR 0005](docs/adr/0005-analytics-on-mongodb.md)) |
 | **Validation & Security** | Helmet, bcryptjs, validator | Strict sanitization, hashing, and header protection |
 
 ---

@@ -21,7 +21,6 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "@clickhouse/client": "^1.23.1",
     "@maxmind/geoip2-node": "^7.1.0",
     "axios": "^1.6.2",
     "bcryptjs": "^2.4.3",

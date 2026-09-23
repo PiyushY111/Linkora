@@ -5,8 +5,8 @@ dotenv.config();
 
 /**
  * Strict environment schema. The app refuses to boot if a required variable
- * is missing or malformed. Optional integrations (Redis Streams consumer,
- * ClickHouse, GeoIP, Safe Browsing/VirusTotal, SSO, webhooks) are validated
+ * is missing or malformed. Optional integrations (GeoIP, Safe
+ * Browsing/VirusTotal, SSO, webhooks) are validated
  * only when their corresponding *_ENABLED flag is true, so the app can still
  * boot in a minimal local/dev configuration.
  */
@@ -76,13 +76,6 @@ const envSchema = z
     // Metrics
     METRICS_TOKEN: z.string().optional().default(''),
 
-    // ClickHouse
-    CLICKHOUSE_ENABLED: booleanFromEnv,
-    CLICKHOUSE_URL: z.string().optional(),
-    CLICKHOUSE_DATABASE: z.string().optional().default('linkly'),
-    CLICKHOUSE_USERNAME: z.string().optional().default('default'),
-    CLICKHOUSE_PASSWORD: z.string().optional().default(''),
-
     // GeoIP (MaxMind GeoLite2)
     GEOIP_DB_PATH: z.string().optional().default(''),
     GEOIP_ACCOUNT_ID: z.string().optional().default(''),
@@ -108,13 +101,6 @@ const envSchema = z
     API_KEY_HEADER: z.string().default('x-api-key'),
   })
   .superRefine((env, ctx) => {
-    if (env.CLICKHOUSE_ENABLED && !env.CLICKHOUSE_URL) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['CLICKHOUSE_URL'],
-        message: 'CLICKHOUSE_URL is required when CLICKHOUSE_ENABLED=true',
-      });
-    }
     if (env.SAFE_BROWSING_ENABLED && !env.SAFE_BROWSING_API_KEY) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

@@ -22,7 +22,7 @@ import developerRoutes from './routes/developer.js';
 
 /**
  * Builds and returns the Express app. Importing this file has no side
- * effects — it does not connect to Mongo/Redis/ClickHouse, does not listen
+ * effects — it does not connect to Mongo or Redis, does not listen
  * on a port, and does not schedule any cron jobs. That's server.js's job.
  * Tests import this directly (with supertest) against whatever
  * Mongo/Redis the test's own setup has already pointed cacheService.js /

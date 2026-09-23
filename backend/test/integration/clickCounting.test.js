@@ -4,24 +4,17 @@ import mongoose from 'mongoose';
 import { connectTestDb, disconnectTestDb, createTestUser } from '../helpers/testUtils.js';
 import Link from '../../src/models/Link.js';
 import ClickEvent from '../../src/models/ClickEvent.js';
-import { env } from '../../src/config/env.js';
 import { redis, cacheRedis } from '../../src/services/cacheService.js';
 import { applyClickCounts, processBatch, APPLIED_CLICK_ID_WINDOW } from '../../src/consumers/clickConsumer.js';
 
 let user;
-let originalClickHouseEnabled;
 
 beforeAll(async () => {
   await connectTestDb();
   ({ user } = await createTestUser());
-  // processBatch writes to ClickHouse first; this suite is about the Mongo
-  // counter, so it must not depend on a ClickHouse server being up.
-  originalClickHouseEnabled = env.CLICKHOUSE_ENABLED;
-  env.CLICKHOUSE_ENABLED = false;
 });
 
 afterAll(async () => {
-  env.CLICKHOUSE_ENABLED = originalClickHouseEnabled;
   await ClickEvent.deleteMany({ user: user._id });
   await Link.deleteMany({ user: user._id });
   await mongoose.model('User').deleteOne({ _id: user._id });

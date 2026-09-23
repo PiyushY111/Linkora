@@ -3,19 +3,17 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import connectDB from './config/db.js';
-import { ensureClickHouseSchema } from './config/clickhouse.js';
 import { scheduleAbuseRescan } from './services/threatDetectionService.js';
 import { scheduleExpiryWebhookCheck } from './services/webhookService.js';
 import { redis } from './services/cacheService.js';
 
 /**
- * The real process entrypoint (`node src/server.js`): connects to Mongo/
- * Redis/ClickHouse, schedules the background cron jobs, and starts
+ * The real process entrypoint (`node src/server.js`): connects to Mongo
+ * and Redis, schedules the background cron jobs, and starts
  * listening. Kept separate from app.js so importing the app (e.g. in
  * tests, via supertest) never has any of these side effects.
  */
 connectDB();
-ensureClickHouseSchema().catch((err) => logger.error({ err }, 'Failed to ensure ClickHouse schema'));
 scheduleAbuseRescan();
 scheduleExpiryWebhookCheck();
 
