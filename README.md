@@ -207,6 +207,27 @@ npm run dev
 # Server listening on http://localhost:5001
 ```
 
+#### Worker mode
+
+Clicks are recorded by a click-consumer worker that reads the Redis stream.
+`WORKER_MODE` decides where it runs:
+
+| `WORKER_MODE` | What runs | Use it for |
+|---|---|---|
+| `separate` (default) | The API (`npm run dev` / `npm start`), plus the worker as its own process: `npm run consumer:dev` / `npm run consumer` | Scaling the API and the worker independently. Redirect latency is unaffected by ingestion load. |
+| `embedded` | One process: `server.js` also starts the consumer in-process | **Single-instance free hosting**, where running a second always-on process isn't available |
+
+Both modes shut down the same way on `SIGTERM`/`SIGINT`: stop accepting
+requests, stop polling, let the batch in flight finish and be acknowledged,
+then close MongoDB and Redis. In `separate` mode, without a running worker,
+redirects still work but clicks queue in the stream (capped at
+`CLICK_STREAM_MAXLEN`) until one starts.
+
+Point your platform's health check at `GET /health/liveness`, which sends no
+Redis commands. `GET /health/readiness` checks Redis and MongoDB and costs
+Redis commands on every call, so poll it rarely (see
+[docs/redis-keys.md](docs/redis-keys.md#command-budget)).
+
 ---
 
 ### 3. Configure Frontend

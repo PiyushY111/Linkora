@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'url';
 import crypto from 'crypto';
 import { UAParser } from 'ua-parser-js';
 import mongoose from 'mongoose';
@@ -272,19 +273,20 @@ export function createClickConsumer({
 /**
  * Everything a consumer needs before it can poll, shared by the standalone
  * worker and embedded mode.
+ * @returns {Promise<{ cronTasks: import('node-cron').ScheduledTask[] }>} tasks to stop on shutdown
  */
 export async function prepareClickConsumer() {
   await getAnalyticsRepository().ensureReady();
   await ensureConsumerGroup();
-  scheduleGeoIpUpdates();
+  return { cronTasks: [scheduleGeoIpUpdates()].filter(Boolean) };
 }
 
-const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+const isMainModule = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isMainModule) {
   const run = async () => {
     await connectDB();
-    await prepareClickConsumer();
+    const { cronTasks } = await prepareClickConsumer();
     const consumer = createClickConsumer();
     consumer.start();
 
@@ -293,6 +295,7 @@ if (isMainModule) {
       if (stopping) return;
       stopping = true;
       logger.info({ signal }, 'Stopping click consumer');
+      cronTasks.forEach((task) => task.stop());
       await consumer.stop();
       await Promise.allSettled([mongoose.connection.close(), closeRedis()]);
       process.exit(0);

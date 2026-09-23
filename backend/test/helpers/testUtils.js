@@ -10,7 +10,7 @@ import { getRedis } from '../../src/services/cacheService.js';
  * `<name>_test` database on the same Mongo instance instead, so nothing a
  * developer is looking at locally can be altered by a test run.
  */
-function testDbUri() {
+export function testDbUri() {
   const url = new URL(env.MONGODB_URI);
   url.pathname = `${url.pathname}_test`;
   return url.toString();

@@ -520,8 +520,9 @@ export async function checkExpiredLinks() {
   }
 }
 
+/** @returns {import('node-cron').ScheduledTask} */
 export function scheduleExpiryWebhookCheck() {
-  cron.schedule('*/15 * * * *', () => {
+  return cron.schedule('*/15 * * * *', () => {
     checkExpiredLinks().catch((err) => logger.error({ err }, 'Scheduled expiry check failed'));
   });
 }

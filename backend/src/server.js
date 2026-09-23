@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'url';
 import mongoose from 'mongoose';
 import app from './app.js';
 import { env } from './config/env.js';
@@ -5,67 +6,100 @@ import { logger } from './config/logger.js';
 import connectDB from './config/db.js';
 import { scheduleAbuseRescan } from './services/threatDetectionService.js';
 import { scheduleExpiryWebhookCheck } from './services/webhookService.js';
-import { getRedis } from './services/cacheService.js';
+import { closeRedis } from './services/cacheService.js';
 import { getAnalyticsRepository } from './repositories/analytics/analyticsRepository.js';
-
-/**
- * The real process entrypoint (`node src/server.js`): connects to Mongo
- * and Redis, schedules the background cron jobs, and starts
- * listening. Kept separate from app.js so importing the app (e.g. in
- * tests, via supertest) never has any of these side effects.
- */
-connectDB()
-  .then(() => getAnalyticsRepository().ensureReady())
-  .catch((err) => {
-    logger.error({ err }, 'Failed to prepare analytics collections');
-    process.exit(1);
-  });
-scheduleAbuseRescan();
-scheduleExpiryWebhookCheck();
-
-const server = app.listen(env.PORT, () => {
-  logger.info({ port: env.PORT, env: env.NODE_ENV }, 'Server started');
-});
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-  logger.error({ err }, 'Unhandled promise rejection');
-  server.close(() => process.exit(1));
-});
+import { createClickConsumer, prepareClickConsumer } from './consumers/clickConsumer.js';
 
 const SHUTDOWN_DRAIN_MS = 15000;
-let shuttingDown = false;
 
-const closeConnections = async () => {
-  // getRedis().quit() (unlike disconnect()) waits for in-flight commands —
-  // including any XADD click events still in the pipeline — to complete
-  // before closing the connection.
-  await Promise.allSettled([
-    mongoose.connection.close().catch((err) => logger.error({ err }, 'Error closing MongoDB connection')),
-    getRedis().quit().catch((err) => logger.error({ err }, 'Error closing Redis connection')),
-  ]);
-};
+/**
+ * Starts the API: connects to MongoDB, prepares the analytics collections,
+ * schedules the cron jobs, and listens. With WORKER_MODE=embedded it also
+ * runs the click consumer in this process, which is how a single free
+ * instance can host the whole backend. Kept separate from app.js so
+ * importing the app (e.g. in tests, via supertest) has none of these side
+ * effects.
+ *
+ * @param {{ port?: number, workerMode?: 'separate' | 'embedded', mongoUri?: string }} [options]
+ * @returns {Promise<{ server: import('http').Server, port: number, consumer: object | null, shutdown: () => Promise<void> }>}
+ */
+export async function startServer({ port = env.PORT, workerMode = env.WORKER_MODE, mongoUri = env.MONGODB_URI } = {}) {
+  await connectDB(mongoUri, { exitOnFailure: false });
+  await getAnalyticsRepository().ensureReady();
 
-const gracefulShutdown = async (signal) => {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info({ signal }, 'Shutdown signal received; draining in-flight requests');
+  const cronTasks = [scheduleAbuseRescan(), scheduleExpiryWebhookCheck()].filter(Boolean);
 
-  const drainTimer = setTimeout(() => {
-    logger.warn('Drain window expired; forcing shutdown');
-    closeConnections().finally(() => process.exit(0));
-  }, SHUTDOWN_DRAIN_MS);
-  drainTimer.unref();
+  let consumer = null;
+  if (workerMode === 'embedded') {
+    const prepared = await prepareClickConsumer();
+    cronTasks.push(...prepared.cronTasks);
+    consumer = createClickConsumer();
+    consumer.start();
+  }
 
-  server.close(async () => {
-    logger.info('HTTP server closed; no longer accepting new connections');
-    clearTimeout(drainTimer);
-    await closeConnections();
-    process.exit(0);
+  const server = await new Promise((resolve, reject) => {
+    const s = app.listen(port, () => resolve(s));
+    s.once('error', reject);
   });
-};
+  const boundPort = server.address().port;
+  logger.info({ port: boundPort, env: env.NODE_ENV, workerMode }, 'Server started');
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  let shutdownPromise = null;
 
-export default server;
+  /**
+   * Graceful shutdown for both modes: stop accepting requests and let
+   * in-flight ones finish (bounded by SHUTDOWN_DRAIN_MS), stop the cron jobs,
+   * stop the embedded consumer (its in-flight batch completes and is ACKed),
+   * then close MongoDB and Redis. Idempotent.
+   */
+  function shutdown() {
+    if (!shutdownPromise) {
+      shutdownPromise = (async () => {
+        const httpClosed = new Promise((resolve) => server.close(resolve));
+        server.closeIdleConnections();
+        const drainTimer = setTimeout(() => {
+          logger.warn('Drain window expired; closing remaining connections');
+          server.closeAllConnections();
+        }, SHUTDOWN_DRAIN_MS);
+        drainTimer.unref();
+
+        cronTasks.forEach((task) => task.stop());
+        await Promise.all([httpClosed, consumer?.stop()]);
+        clearTimeout(drainTimer);
+
+        // closeRedis() uses QUIT, which waits for in-flight commands
+        // (including fire-and-forget XADDs) before closing.
+        await Promise.allSettled([
+          mongoose.connection.close().catch((err) => logger.error({ err }, 'Error closing MongoDB connection')),
+          closeRedis().catch((err) => logger.error({ err }, 'Error closing Redis connection')),
+        ]);
+        logger.info('Shutdown complete');
+      })();
+    }
+    return shutdownPromise;
+  }
+
+  return { server, port: boundPort, consumer, shutdown };
+}
+
+const isMainModule = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMainModule) {
+  startServer()
+    .then(({ shutdown }) => {
+      const onSignal = (signal) => {
+        logger.info({ signal }, 'Shutdown signal received');
+        shutdown().finally(() => process.exit(0));
+      };
+      process.on('SIGTERM', () => onSignal('SIGTERM'));
+      process.on('SIGINT', () => onSignal('SIGINT'));
+      process.on('unhandledRejection', (err) => {
+        logger.error({ err }, 'Unhandled promise rejection');
+        shutdown().finally(() => process.exit(1));
+      });
+    })
+    .catch((err) => {
+      logger.error({ err }, 'Server failed to start');
+      process.exit(1);
+    });
+}

@@ -136,11 +136,12 @@ export async function rescanActiveLinksForAbuse() {
 
 /**
  * Schedules the 12-hourly background re-verification of active links.
+ * @returns {import('node-cron').ScheduledTask | null} null when disabled
  */
 export function scheduleAbuseRescan() {
-  if (!env.SAFE_BROWSING_ENABLED && !env.VIRUSTOTAL_ENABLED) return;
+  if (!env.SAFE_BROWSING_ENABLED && !env.VIRUSTOTAL_ENABLED) return null;
 
-  cron.schedule('0 */12 * * *', () => {
+  return cron.schedule('0 */12 * * *', () => {
     rescanActiveLinksForAbuse().catch((err) => logger.error({ err }, 'Scheduled abuse rescan failed'));
   });
 }

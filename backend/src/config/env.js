@@ -64,6 +64,11 @@ const envSchema = z
     CLICK_STREAM_KEY: z.string().default('stream:clicks'),
     CLICK_STREAM_CONSUMER_GROUP: z.string().default('click-consumers'),
     CLICK_STREAM_BATCH_SIZE: z.coerce.number().int().positive().default(500),
+    // separate: the click consumer runs as its own process
+    // (src/consumers/clickConsumer.js). embedded: server.js also runs it
+    // in-process, for single-instance hosting (e.g. one free web service).
+    WORKER_MODE: z.enum(['separate', 'embedded']).default('separate'),
+
     // Consumer polling (Redis command budget, docs/redis-keys.md): the
     // blocking read starts at the min BLOCK and doubles while the stream is
     // idle, up to the max; stale pending entries are reclaimed on a timer.

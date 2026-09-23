@@ -26,7 +26,7 @@ flowchart LR
 | Component | Responsibility | Code |
 |---|---|---|
 | API | HTTP API and the redirect hot path. Never writes analytics synchronously. | `backend/src/app.js`, `backend/src/server.js` |
-| Click consumer | Reads the click stream, enriches events (GeoIP, user agent), records them, updates `Link.clicks`, dispatches click webhooks | `backend/src/consumers/clickConsumer.js` |
+| Click consumer | Reads the click stream, enriches events (GeoIP, user agent), records them, updates `Link.clicks`, dispatches click webhooks. Runs as its own process (`WORKER_MODE=separate`, the default) or inside the API process (`WORKER_MODE=embedded`, for single-instance free hosting). | `backend/src/consumers/clickConsumer.js`, started by `backend/src/server.js` in embedded mode |
 | MongoDB | Source of truth for users, links, webhooks, API keys **and analytics** | `backend/src/models/`, `backend/src/repositories/` |
 | Redis (one database) | Link metadata cache, click stream, rate limits, refresh tokens, short-lived tokens, unique-visitor HyperLogLogs. Every key has a TTL or a cap ([redis-keys.md](redis-keys.md), [ADR 0006](adr/0006-single-redis-database.md)). | `backend/src/services/cacheService.js` |
 
@@ -110,6 +110,19 @@ Every rollup query examines exactly the documents it returns. Dashboard cost the
 ### Migrating existing data
 
 `backend/scripts/backfill-legacy-click-events.js` replays the old `clickevents` collection through `recordClicks`. It's idempotent (the legacy `_id` becomes the event ID) and doesn't touch `Link.clicks`, which already counts those clicks.
+
+## Worker modes and shutdown
+
+`startServer()` (`backend/src/server.js`) connects to MongoDB, prepares the analytics collections, schedules the cron jobs, and listens. With `WORKER_MODE=embedded` it also prepares and starts a click consumer in the same process. That consumer uses its own Redis connection for the blocking read, so a long BLOCK never delays the API's commands.
+
+Shutdown is the same in both modes, and idempotent:
+
+1. Stop accepting HTTP connections. In-flight requests get up to 15s to finish.
+2. Stop the cron jobs.
+3. Stop the consumer. A batch being processed finishes and is ACKed; an idle blocking read is aborted rather than waited out.
+4. Close MongoDB, and close Redis with `QUIT`, which waits for queued commands such as a redirect's fire-and-forget `XADD`.
+
+The standalone worker (`node src/consumers/clickConsumer.js`) runs steps 2 to 4 on `SIGTERM`/`SIGINT`.
 
 ## Failure modes
 
