@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { UAParser } from 'ua-parser-js';
-import { redis, linkCountersKey } from '../services/cacheService.js';
+import { redis } from '../services/cacheService.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { lookupGeo, scheduleGeoIpUpdates } from '../services/geoipService.js';
@@ -20,7 +20,11 @@ import { dispatchEvent } from '../services/webhookService.js';
 
 const CONSUMER_NAME = `consumer-${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
 const CLAIM_IDLE_MS = 30000; // reclaim entries a crashed consumer left pending > 30s
-const RECONCILE_INTERVAL_MS = 30000;
+// How many recent stream entry IDs each Link remembers for click-count
+// dedup. A redelivered entry is only double-counted if the same link took
+// more than this many other clicks between the first attempt and the retry
+// (i.e. ~33 clicks/s sustained on one link across a 30s CLAIM_IDLE_MS).
+export const APPLIED_CLICK_ID_WINDOW = 1000;
 
 let running = true;
 
@@ -119,14 +123,15 @@ async function enrichEvent(fields) {
 }
 
 /**
- * Enriches, bulk-inserts into ClickHouse, mirrors into the bounded
- * ClickEvent collection, and XACKs each successfully processed entry.
+ * Enriches, bulk-inserts into ClickHouse, counts into Link.clicks, mirrors
+ * into the bounded ClickEvent collection, and XACKs each processed entry.
  * Entries that fail enrichment are left un-acked so XAUTOCLAIM retries them.
  */
 export async function processBatch(entries) {
   const clickhouseRows = [];
   const mongoDocs = [];
   const ackIds = [];
+  const counted = [];
   const webhookDispatches = [];
 
   for (const [id, fieldArray] of entries) {
@@ -136,6 +141,7 @@ export async function processBatch(entries) {
       clickhouseRows.push(clickhouseRow);
       mongoDocs.push(mongoDoc);
       ackIds.push(id);
+      counted.push({ id, linkId: fields.linkId, timestamp: mongoDoc.timestamp });
       if (fields.userId) {
         webhookDispatches.push({
           userId: fields.userId,
@@ -158,6 +164,9 @@ export async function processBatch(entries) {
   if (clickhouseRows.length > 0) {
     await bulkInsert('click_events', clickhouseRows);
   }
+  // Must succeed before XACK: if it throws, the whole batch stays pending
+  // and is retried, which is safe because the increment is idempotent.
+  await applyClickCounts(counted);
   if (mongoDocs.length > 0) {
     await ClickEvent.insertMany(mongoDocs, { ordered: false }).catch((err) =>
       logger.error({ err }, 'Failed to bulk insert ClickEvent rows')
@@ -175,6 +184,34 @@ export async function processBatch(entries) {
   if (entries.length > 0) {
     logger.info({ count: entries.length, acked: ackIds.length }, 'Processed click event batch');
   }
+}
+
+/**
+ * Increments Link.clicks once per stream entry. Each entry is its own
+ * conditional single-document update (Mongo has no multi-document atomicity
+ * without a replica-set transaction), so an entry whose ID is already in the
+ * link's appliedClickIds window matches nothing and is a no-op on retry.
+ * @param {{ id: string, linkId: string, timestamp: Date }[]} clicks
+ */
+export async function applyClickCounts(clicks) {
+  const ops = [];
+  for (const { id, linkId, timestamp } of clicks) {
+    if (!mongoose.isValidObjectId(linkId)) {
+      logger.warn({ id, linkId }, 'Click event has an invalid linkId; not counted');
+      continue;
+    }
+    ops.push({
+      updateOne: {
+        filter: { _id: linkId, appliedClickIds: { $ne: id } },
+        update: {
+          $inc: { clicks: 1 },
+          $max: { lastAccessedAt: timestamp },
+          $push: { appliedClickIds: { $each: [id], $slice: -APPLIED_CLICK_ID_WINDOW } },
+        },
+      },
+    });
+  }
+  if (ops.length > 0) await Link.bulkWrite(ops, { ordered: false });
 }
 
 /**
@@ -198,45 +235,6 @@ export async function claimStalePending() {
     }
   } catch (err) {
     logger.error({ err }, 'Failed to claim stale pending entries');
-  }
-}
-
-/**
- * Periodically flushes the Redis per-day click counters (written
- * synchronously on the redirect hot path via HINCRBY) into MongoDB via a
- * batched $inc, using an atomic RENAME to claim the current bucket so
- * concurrent consumer instances never double-count.
- */
-export async function reconcileClickCounters() {
-  const date = new Date().toISOString().slice(0, 10);
-  const key = linkCountersKey(date);
-  const swapKey = `${key}:reconciling:${Date.now()}`;
-
-  try {
-    await redis.rename(key, swapKey);
-  } catch (err) {
-    if (!String(err.message).includes('no such key')) {
-      logger.error({ err }, 'Failed to claim click counters for reconciliation');
-    }
-    return;
-  }
-
-  const counters = await redis.hgetall(swapKey);
-  await redis.del(swapKey);
-
-  const bulkOps = Object.entries(counters)
-    .filter(([linkId]) => mongoose.isValidObjectId(linkId))
-    .map(([linkId, count]) => ({
-      updateOne: {
-        filter: { _id: linkId },
-        update: { $inc: { clicks: Number(count) || 0 }, $set: { lastAccessedAt: new Date() } },
-      },
-    }));
-
-  if (bulkOps.length > 0) {
-    await Link.bulkWrite(bulkOps, { ordered: false }).catch((err) =>
-      logger.error({ err }, 'Failed to reconcile click counters into MongoDB')
-    );
   }
 }
 
@@ -274,11 +272,6 @@ export async function startClickConsumer() {
   await ensureClickHouseSchema();
   await ensureConsumerGroup();
   scheduleGeoIpUpdates();
-
-  const reconcileTimer = setInterval(() => {
-    reconcileClickCounters().catch((err) => logger.error({ err }, 'Reconciliation tick failed'));
-  }, RECONCILE_INTERVAL_MS);
-  reconcileTimer.unref();
 
   logger.info({ consumer: CONSUMER_NAME, group: env.CLICK_STREAM_CONSUMER_GROUP }, 'Click consumer started');
   await pollLoop();

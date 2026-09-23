@@ -106,7 +106,7 @@ const linkSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    // Feature 2: A/B Split & Canary Routing
+    // A/B split routing
     routingType: {
       type: String,
       enum: ['direct', 'ab_test'],
@@ -124,7 +124,7 @@ const linkSchema = new mongoose.Schema(
         clicks: { type: Number, default: 0 },
       },
     ],
-    // Feature 3: Custom OpenGraph Social Card Preview
+    // Custom OpenGraph social card preview
     ogTitle: {
       type: String,
       default: null,
@@ -138,6 +138,15 @@ const linkSchema = new mongoose.Schema(
       default: null,
     },
     lastAccessedAt: Date,
+    // Sliding window of the most recent click-stream entry IDs already
+    // counted into `clicks`. The consumer's conditional $inc checks this in
+    // the same single-document update, so a redelivered entry (XAUTOCLAIM
+    // after a partial batch failure) is never counted twice.
+    appliedClickIds: {
+      type: [String],
+      default: undefined,
+      select: false,
+    },
   },
   {
     timestamps: true,
