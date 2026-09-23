@@ -1,19 +1,20 @@
 import crypto from 'crypto';
-import { redis, linkSequenceKey } from '../services/cacheService.js';
+import Counter from '../models/Counter.js';
 import { env } from '../config/env.js';
 
 /**
  * Distributed, collision-resistant short code generator.
  *
- * Zero database checks before insert: sequence numbers come from an atomic
- * Redis INCRBY, allocated in batches of 10,000 per app instance, then run
+ * Sequence numbers come from an atomic Mongo counter (findOneAndUpdate +
+ * $inc + upsert), allocated in blocks of 1,000 per app instance, then run
  * through a Feistel-network permutation before Base62 encoding so codes
  * don't reveal creation order.
  *
- * Deviation: the source spec's reference implementation is TypeScript; this
- * project has no TS toolchain (plain ESM + JSDoc throughout), so the same
- * algorithm is ported to JS with JSDoc types per the project's typescript
- * coding-style rule for .js files.
+ * Why Mongo and not Redis: this counter must never repeat or go backwards.
+ * Redis is treated as a cache (a flush, a failover without persistence, or
+ * a move to an evicting policy can drop any key), and for a counter that
+ * means a silent reset back toward zero and duplicate short codes handed
+ * out afterward. Mongo's atomic increment doesn't have that failure mode.
  */
 
 const BASE62_CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -59,8 +60,8 @@ function roundFunction(half, roundKey) {
 }
 
 /**
- * Feistel-network permutation over the 32-bit domain, so sequential Redis
- * counter values don't produce sequentially-guessable short codes.
+ * Feistel-network permutation over the 32-bit domain, so sequential counter
+ * values don't produce sequentially-guessable short codes.
  * @param {bigint} n
  * @returns {bigint}
  */
@@ -78,22 +79,48 @@ export function feistelPermute(n) {
   return ((left << HALF_BITS) | right) & DOMAIN_MASK;
 }
 
-const BATCH_SIZE = 10000n;
+const BATCH_SIZE = 1000n;
+const COUNTER_ID = 'linkSequence';
 
 let blockNext = 0n;
 let blockEnd = 0n; // exclusive upper bound of the currently-held block
 
+// Serializes concurrent block refills within this process: without this,
+// N concurrent callers that all observe an exhausted block before any of
+// them finishes refilling would each independently $inc the Mongo counter
+// by a full BATCH_SIZE, burning through sequence space N times faster than
+// necessary. Every caller that arrives while a refill is already in flight
+// awaits that same promise instead of starting its own.
+let refillPromise = null;
+
+async function refillBlock() {
+  const doc = await Counter.findOneAndUpdate(
+    { _id: COUNTER_ID },
+    { $inc: { seq: Number(BATCH_SIZE) } },
+    { upsert: true, new: true }
+  );
+  const maxBig = BigInt(doc.seq);
+  blockNext = maxBig - BATCH_SIZE + 1n;
+  blockEnd = maxBig + 1n;
+}
+
 /**
- * Allocates the next raw sequence value, pulling a fresh batch of
- * BATCH_SIZE from Redis only when the in-memory block is exhausted.
+ * Allocates the next raw sequence value, pulling a fresh block from Mongo
+ * only when the in-memory block is exhausted.
  * @returns {Promise<bigint>}
  */
 async function nextSequenceValue() {
-  if (blockNext >= blockEnd) {
-    const max = await redis.incrby(linkSequenceKey(), Number(BATCH_SIZE));
-    const maxBig = BigInt(max);
-    blockNext = maxBig - BATCH_SIZE + 1n;
-    blockEnd = maxBig + 1n;
+  // A `while`, not an `if`: a caller that joins an in-flight refill must
+  // re-check afterward, since more callers than BATCH_SIZE could have been
+  // queued behind that single refill and already exhausted it by the time
+  // this one resumes.
+  while (blockNext >= blockEnd) {
+    if (!refillPromise) {
+      refillPromise = refillBlock().finally(() => {
+        refillPromise = null;
+      });
+    }
+    await refillPromise;
   }
   const value = blockNext;
   blockNext += 1n;

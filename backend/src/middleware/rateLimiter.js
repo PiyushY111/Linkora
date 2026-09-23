@@ -1,4 +1,4 @@
-import { redis } from '../services/cacheService.js';
+import { getRedis } from '../services/cacheService.js';
 import { getClientIp } from '../utils/helpers.js';
 
 /**
@@ -40,14 +40,14 @@ async function evalSlidingWindow(key, windowMs, limit) {
 
   try {
     if (!scriptSha) {
-      scriptSha = await redis.script('LOAD', SLIDING_WINDOW_SCRIPT);
+      scriptSha = await getRedis().script('LOAD', SLIDING_WINDOW_SCRIPT);
     }
-    const [allowed, remaining] = await redis.evalsha(scriptSha, 1, ...args);
+    const [allowed, remaining] = await getRedis().evalsha(scriptSha, 1, ...args);
     return { allowed: allowed === 1, remaining };
   } catch (err) {
     if (String(err.message).includes('NOSCRIPT')) {
-      scriptSha = await redis.script('LOAD', SLIDING_WINDOW_SCRIPT);
-      const [allowed, remaining] = await redis.evalsha(scriptSha, 1, ...args);
+      scriptSha = await getRedis().script('LOAD', SLIDING_WINDOW_SCRIPT);
+      const [allowed, remaining] = await getRedis().evalsha(scriptSha, 1, ...args);
       return { allowed: allowed === 1, remaining };
     }
     throw err;
@@ -79,13 +79,6 @@ export function createSlidingWindowLimiter({ windowMs, max, keyPrefix, keyFn = g
     }
   };
 }
-
-// Redirect route: 5,000 req/min per IP.
-export const redirectRateLimiter = createSlidingWindowLimiter({
-  windowMs: 60 * 1000,
-  max: 5000,
-  keyPrefix: 'redirect',
-});
 
 const LINK_CREATION_LIMITS = {
   free: 30,
@@ -120,7 +113,7 @@ function authFailureKey(ip) {
  * @param {string} ip
  */
 export async function isAuthRateLimited(ip) {
-  const count = await redis.get(authFailureKey(ip));
+  const count = await getRedis().get(authFailureKey(ip));
   return Number(count) >= AUTH_FAILURE_MAX;
 }
 
@@ -128,18 +121,21 @@ export async function isAuthRateLimited(ip) {
  * @param {string} ip
  */
 export async function recordAuthFailure(ip) {
-  const key = authFailureKey(ip);
-  const count = await redis.incr(key);
-  if (count === 1) {
-    await redis.expire(key, AUTH_FAILURE_WINDOW_SECONDS);
-  }
+  // INCR and EXPIRE NX in one MULTI: a separate EXPIRE after INCR could be
+  // lost to a crash in between, leaving a counter with no TTL. NX keeps the
+  // window fixed from the first failure instead of sliding it.
+  await getRedis()
+    .multi()
+    .incr(authFailureKey(ip))
+    .expire(authFailureKey(ip), AUTH_FAILURE_WINDOW_SECONDS, 'NX')
+    .exec();
 }
 
 /**
  * @param {string} ip
  */
 export async function resetAuthFailures(ip) {
-  await redis.del(authFailureKey(ip));
+  await getRedis().del(authFailureKey(ip));
 }
 
 /**
@@ -192,13 +188,13 @@ async function evalTokenBucket(key, capacity, refillPerSecond, cost) {
   const args = [key, capacity, refillPerSecond, now, cost];
 
   try {
-    if (!tokenBucketSha) tokenBucketSha = await redis.script('LOAD', TOKEN_BUCKET_SCRIPT);
-    const [allowed, remaining] = await redis.evalsha(tokenBucketSha, 1, ...args);
+    if (!tokenBucketSha) tokenBucketSha = await getRedis().script('LOAD', TOKEN_BUCKET_SCRIPT);
+    const [allowed, remaining] = await getRedis().evalsha(tokenBucketSha, 1, ...args);
     return { allowed: allowed === 1, remaining };
   } catch (err) {
     if (String(err.message).includes('NOSCRIPT')) {
-      tokenBucketSha = await redis.script('LOAD', TOKEN_BUCKET_SCRIPT);
-      const [allowed, remaining] = await redis.evalsha(tokenBucketSha, 1, ...args);
+      tokenBucketSha = await getRedis().script('LOAD', TOKEN_BUCKET_SCRIPT);
+      const [allowed, remaining] = await getRedis().evalsha(tokenBucketSha, 1, ...args);
       return { allowed: allowed === 1, remaining };
     }
     throw err;
@@ -268,7 +264,6 @@ export const authRateLimitMiddleware = async (req, res, next) => {
 
 export default {
   createSlidingWindowLimiter,
-  redirectRateLimiter,
   linkCreationRateLimiter,
   registerRateLimiter,
   refreshRateLimiter,

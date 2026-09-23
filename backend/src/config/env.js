@@ -5,8 +5,8 @@ dotenv.config();
 
 /**
  * Strict environment schema. The app refuses to boot if a required variable
- * is missing or malformed. Optional integrations (Redis Streams consumer,
- * ClickHouse, GeoIP, Safe Browsing/VirusTotal, SSO, webhooks) are validated
+ * is missing or malformed. Optional integrations (GeoIP, Safe
+ * Browsing/VirusTotal, SSO, webhooks) are validated
  * only when their corresponding *_ENABLED flag is true, so the app can still
  * boot in a minimal local/dev configuration.
  */
@@ -53,27 +53,40 @@ const envSchema = z
     RATE_LIMIT_WINDOW: z.coerce.number().int().positive().default(15),
     RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
 
-    // Redis (cache, counters, streams, distributed rate limiting)
+    // Redis: one database for cache, streams, rate limits and tokens. Every
+    // key has a TTL or a hard bound (docs/redis-keys.md), so run it with
+    // maxmemory-policy noeviction.
     REDIS_URL: z.string().default('redis://127.0.0.1:6379'),
-    REDIS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
+    REDIS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
     REDIS_NEGATIVE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(120),
 
     // Redis Streams
     CLICK_STREAM_KEY: z.string().default('stream:clicks'),
     CLICK_STREAM_CONSUMER_GROUP: z.string().default('click-consumers'),
     CLICK_STREAM_BATCH_SIZE: z.coerce.number().int().positive().default(500),
-    CLICK_STREAM_BATCH_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
+    // separate: the click consumer runs as its own process
+    // (src/consumers/clickConsumer.js). embedded: server.js also runs it
+    // in-process, for single-instance hosting (e.g. one free web service).
+    WORKER_MODE: z.enum(['separate', 'embedded']).default('separate'),
+
+    // Consumer polling (Redis command budget, docs/redis-keys.md): the
+    // blocking read starts at the min BLOCK and doubles while the stream is
+    // idle, up to the max; stale pending entries are reclaimed on a timer.
+    CLICK_CONSUMER_BLOCK_MIN_MS: z.coerce.number().int().positive().default(1000),
+    CLICK_CONSUMER_BLOCK_MAX_MS: z.coerce.number().int().positive().default(30000),
+    CLICK_CONSUMER_CLAIM_INTERVAL_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
+    // Approximate caps (XADD MAXLEN ~). If the consumer falls further behind
+    // than this, the oldest unprocessed clicks are trimmed and lost.
+    CLICK_STREAM_MAXLEN: z.coerce.number().int().positive().default(10000),
     WEBHOOK_DLQ_STREAM_KEY: z.string().default('stream:webhooks:dlq'),
+    WEBHOOK_DLQ_STREAM_MAXLEN: z.coerce.number().int().positive().default(1000),
+
+    // Analytics: raw click events (time-series) and hourly rollups are
+    // kept this long; daily rollups are kept indefinitely.
+    CLICK_EVENT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
 
     // Metrics
     METRICS_TOKEN: z.string().optional().default(''),
-
-    // ClickHouse
-    CLICKHOUSE_ENABLED: booleanFromEnv,
-    CLICKHOUSE_URL: z.string().optional(),
-    CLICKHOUSE_DATABASE: z.string().optional().default('linkly'),
-    CLICKHOUSE_USERNAME: z.string().optional().default('default'),
-    CLICKHOUSE_PASSWORD: z.string().optional().default(''),
 
     // GeoIP (MaxMind GeoLite2)
     GEOIP_DB_PATH: z.string().optional().default(''),
@@ -100,11 +113,13 @@ const envSchema = z
     API_KEY_HEADER: z.string().default('x-api-key'),
   })
   .superRefine((env, ctx) => {
-    if (env.CLICKHOUSE_ENABLED && !env.CLICKHOUSE_URL) {
+    // Rollup dedup keeps a window of the last 1,000 applied event IDs per
+    // document; a batch larger than that could evict its own IDs.
+    if (env.CLICK_STREAM_BATCH_SIZE > 1000) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['CLICKHOUSE_URL'],
-        message: 'CLICKHOUSE_URL is required when CLICKHOUSE_ENABLED=true',
+        path: ['CLICK_STREAM_BATCH_SIZE'],
+        message: 'CLICK_STREAM_BATCH_SIZE must be at most 1000 (the per-document applied-ID window)',
       });
     }
     if (env.SAFE_BROWSING_ENABLED && !env.SAFE_BROWSING_API_KEY) {

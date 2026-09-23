@@ -36,6 +36,12 @@ export const redisCacheMissesTotal = new client.Counter({
   registers: [registry],
 });
 
+export const redisXfetchEarlyRefreshesTotal = new client.Counter({
+  name: 'redis_xfetch_early_refreshes_total',
+  help: 'Total XFetch probabilistic early-expiration recomputations triggered',
+  registers: [registry],
+});
+
 export const mongodbQueryDurationSeconds = new client.Histogram({
   name: 'mongodb_query_duration_seconds',
   help: 'MongoDB query duration in seconds',

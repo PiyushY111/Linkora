@@ -6,6 +6,7 @@ import { getClientIp } from '../utils/helpers.js';
 import { generateQRCode } from '../utils/qrcode.js';
 import { generateSequencedShortCode } from '../utils/sequenceGenerator.js';
 import { invalidateLinkMeta } from '../services/cacheService.js';
+import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
 import { logger } from '../config/logger.js';
 import { env } from '../config/env.js';
 import { logAudit } from '../utils/auditLogger.js';
@@ -81,54 +82,63 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
 
   // Distributed sequence generator: zero database checks before insert for
   // the auto-generated path. A user-supplied customAlias is checked above
-  // (reserved words + cross-field collision) and additionally relies on
-  // the unique index as a last-resort race guard.
-  const shortCode = customAlias || (await generateSequencedShortCode());
-  const shortUrl = `${env.FRONTEND_URL}/${shortCode}`;
-
+  // (reserved words + cross-field collision); the retry loop below is
+  // defense in depth for the auto-generated path only — a customAlias
+  // collision is a real conflict, not generator noise, so it fails fast.
+  const MAX_CREATE_ATTEMPTS = 3;
+  let shortCode = customAlias || (await generateSequencedShortCode());
   let link;
-  try {
-    link = await Link.create({
-      originalUrl,
-      shortCode,
-      shortUrl,
-      // Omitted (not null) when absent: the sparse unique index on
-      // customAlias only excludes missing fields, not explicit nulls, so
-      // writing null here would collide across every alias-less link.
-      ...(customAlias ? { customAlias } : {}),
-      user: userId,
-      title,
-      description,
-      tags,
-      category,
-      expiryDate,
-      password,
-      maxClicks: Number(maxClicks) > 0 ? parseInt(maxClicks, 10) : null,
-      iosRedirect: iosRedirect ? iosRedirect.trim() : null,
-      androidRedirect: androidRedirect ? androidRedirect.trim() : null,
-      expiredRedirectUrl: expiredRedirectUrl ? expiredRedirectUrl.trim() : null,
-      routingType: routingType === 'ab_test' ? 'ab_test' : 'direct',
-      variants: Array.isArray(variants)
-        ? variants.map((v, i) => ({
-            id: v.id || `var_${String.fromCharCode(97 + i)}_${Date.now()}`,
-            name: v.name || `Variant ${String.fromCharCode(65 + i)}`,
-            url: v.url,
-            weight: Number(v.weight) || 50,
-            clicks: v.clicks || 0,
-          }))
-        : [],
-      ogTitle: ogTitle ? ogTitle.trim() : null,
-      ogDescription: ogDescription ? ogDescription.trim() : null,
-      ogImage: ogImage ? ogImage.trim() : null,
-      ...(utm && typeof utm === 'object' ? { utm } : {}),
-      ...(initialQrCode ? { qrCode: initialQrCode } : {}),
-      ...(initialQrConfig ? { qrConfig: initialQrConfig } : {}),
-    });
-  } catch (createError) {
-    if (createError.code === 11000) {
-      throw new ConflictError('Short code or custom alias already exists');
+
+  for (let attempt = 1; ; attempt += 1) {
+    const shortUrl = `${env.FRONTEND_URL}/${shortCode}`;
+    try {
+      link = await Link.create({
+        originalUrl,
+        shortCode,
+        shortUrl,
+        // Omitted (not null) when absent: the sparse unique index on
+        // customAlias only excludes missing fields, not explicit nulls, so
+        // writing null here would collide across every alias-less link.
+        ...(customAlias ? { customAlias } : {}),
+        user: userId,
+        title,
+        description,
+        tags,
+        category,
+        expiryDate,
+        password,
+        maxClicks: Number(maxClicks) > 0 ? parseInt(maxClicks, 10) : null,
+        iosRedirect: iosRedirect ? iosRedirect.trim() : null,
+        androidRedirect: androidRedirect ? androidRedirect.trim() : null,
+        expiredRedirectUrl: expiredRedirectUrl ? expiredRedirectUrl.trim() : null,
+        routingType: routingType === 'ab_test' ? 'ab_test' : 'direct',
+        variants: Array.isArray(variants)
+          ? variants.map((v, i) => ({
+              id: v.id || `var_${String.fromCharCode(97 + i)}_${Date.now()}`,
+              name: v.name || `Variant ${String.fromCharCode(65 + i)}`,
+              url: v.url,
+              weight: Number(v.weight) || 50,
+              clicks: v.clicks || 0,
+            }))
+          : [],
+        ogTitle: ogTitle ? ogTitle.trim() : null,
+        ogDescription: ogDescription ? ogDescription.trim() : null,
+        ogImage: ogImage ? ogImage.trim() : null,
+        ...(utm && typeof utm === 'object' ? { utm } : {}),
+        ...(initialQrCode ? { qrCode: initialQrCode } : {}),
+        ...(initialQrConfig ? { qrConfig: initialQrConfig } : {}),
+      });
+      break;
+    } catch (createError) {
+      if (createError.code !== 11000) {
+        throw createError;
+      }
+      if (customAlias || attempt >= MAX_CREATE_ATTEMPTS) {
+        throw new ConflictError('Short code or custom alias already exists');
+      }
+      logger.warn({ shortCode, attempt }, 'Short code collision on insert; generating a fresh code and retrying');
+      shortCode = await generateSequencedShortCode();
     }
-    throw createError;
   }
 
   await Analytics.create({ link: link._id, user: userId });
@@ -393,7 +403,10 @@ export const deleteLink = async (req, res) => {
   await Link.findByIdAndDelete(link._id);
 
   // Delete associated analytics
-  await Analytics.findByIdAndDelete(link.analytics);
+  await Promise.all([
+    Analytics.findByIdAndDelete(link.analytics),
+    getAnalyticsRepository().deleteAnalytics({ linkId: String(link._id) }),
+  ]);
 
   // Remove from user's links array
   await req.user.updateOne({ $pull: { links: link._id } });

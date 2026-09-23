@@ -101,7 +101,7 @@ export default function RealtimeClickStream({ clicks = [], isLive = true }) {
           <p className="mt-1 text-[11px] text-paper-500">
             {searchQuery
               ? 'Try adjusting your filter terms'
-              : 'Incoming link redirects will stream here in real time via ClickHouse.'}
+              : 'Incoming link redirects will appear here as they are processed.'}
           </p>
         </div>
       ) : (

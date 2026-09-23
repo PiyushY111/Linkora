@@ -160,12 +160,13 @@ export async function updateGeoIpDatabase() {
 /**
  * Schedules the weekly GeoIP database refresh. No-ops when update
  * credentials aren't configured.
+ * @returns {import('node-cron').ScheduledTask | null} null when disabled
  */
 export function scheduleGeoIpUpdates() {
-  if (!env.GEOIP_ACCOUNT_ID || !env.GEOIP_LICENSE_KEY || !env.GEOIP_DB_PATH) return;
+  if (!env.GEOIP_ACCOUNT_ID || !env.GEOIP_LICENSE_KEY || !env.GEOIP_DB_PATH) return null;
 
   // Every Sunday at 03:00.
-  cron.schedule('0 3 * * 0', () => {
+  return cron.schedule('0 3 * * 0', () => {
     updateGeoIpDatabase().catch((err) => logger.error({ err }, 'Scheduled GeoIP update failed'));
   });
 }

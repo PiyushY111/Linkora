@@ -12,7 +12,7 @@ import bcrypt from 'bcryptjs';
 import { env } from '../src/config/env.js';
 import { logger } from '../src/config/logger.js';
 import Link from '../src/models/Link.js';
-import { redis, invalidateLinkMeta } from '../src/services/cacheService.js';
+import { getRedis, invalidateLinkMeta } from '../src/services/cacheService.js';
 
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$/;
 
@@ -56,7 +56,7 @@ if (isMainModule) {
       process.exitCode = 1;
     })
     .finally(async () => {
-      await redis.quit().catch(() => {});
+      await getRedis().quit().catch(() => {});
       await mongoose.connection.close().catch(() => {});
     });
 }

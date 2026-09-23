@@ -1,34 +1,29 @@
 import mongoose from 'mongoose';
+import { env } from '../config/env.js';
+
+export const CLICK_EVENTS_COLLECTION = 'click_events';
 
 /**
- * Bounded (30-day TTL) recent-click store. Introduced in Phase 2 as the
- * bridge off the unbounded Analytics.clicks array; from Phase 3 onward it's
- * written alongside ClickHouse by the stream consumer as an operational
- * "recent activity" store, while ClickHouse is the source of truth for
- * historical/aggregate analytics queries.
+ * Raw click events in a MongoDB time-series collection, expired after
+ * CLICK_EVENT_RETENTION_DAYS. Dashboards never scan this: they read the
+ * link_stats_* rollups. Raw events serve only the CSV export and the
+ * recent-clicks stream.
+ *
+ * Time-series collections can't carry unique indexes, so `eventId` (the
+ * stream entry ID) is deduplicated through the processed_events ledger,
+ * not here.
  */
 const clickEventSchema = new mongoose.Schema(
   {
-    link: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Link',
-      required: true,
-      index: true,
+    timestamp: { type: Date, required: true },
+    meta: {
+      linkId: { type: mongoose.Schema.Types.ObjectId, required: true },
+      userId: { type: mongoose.Schema.Types.ObjectId, default: null },
     },
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-      index: true,
-    },
+    eventId: { type: String, required: true },
     shortCode: String,
-    timestamp: {
-      type: Date,
-      default: Date.now,
-    },
     ipHash: String,
-    userAgent: String,
-    referer: String,
+    referrerDomain: String,
     device: String,
     browser: String,
     os: String,
@@ -39,20 +34,23 @@ const clickEventSchema = new mongoose.Schema(
     utmCampaign: String,
     variantId: String,
     variantName: String,
-    isBot: {
-      type: Boolean,
-      default: false,
-    },
+    isBot: { type: Boolean, default: false },
     botName: String,
   },
   {
-    timestamps: false,
+    collection: CLICK_EVENTS_COLLECTION,
+    timeseries: { timeField: 'timestamp', metaField: 'meta', granularity: 'seconds' },
+    expireAfterSeconds: env.CLICK_EVENT_RETENTION_DAYS * 24 * 60 * 60,
+    versionKey: false,
+    autoCreate: false,
+    autoIndex: false,
   }
 );
 
-clickEventSchema.index({ link: 1, timestamp: -1 });
-// 30-day TTL index — MongoDB automatically deletes documents once timestamp
-// is older than expireAfterSeconds.
-clickEventSchema.index({ timestamp: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 30 });
+// Recent clicks and CSV export, per link and per user.
+clickEventSchema.index({ 'meta.linkId': 1, timestamp: -1 });
+clickEventSchema.index({ 'meta.userId': 1, timestamp: -1 });
+// Redelivery check: which of these event IDs already have a raw row.
+clickEventSchema.index({ eventId: 1 });
 
 export default mongoose.model('ClickEvent', clickEventSchema);

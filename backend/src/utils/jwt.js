@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { redis } from '../services/cacheService.js';
+import { getRedis } from '../services/cacheService.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
@@ -67,7 +67,7 @@ export async function issueRefreshToken(userId, familyId = crypto.randomBytes(16
   const secret = crypto.randomBytes(40).toString('hex');
   const ttl = env.JWT_REFRESH_TOKEN_TTL_SECONDS;
 
-  await redis
+  await getRedis()
     .multi()
     .set(familyCurrentKey(familyId), secret, 'EX', ttl)
     .set(familyUserKey(familyId), userId, 'EX', ttl)
@@ -121,12 +121,12 @@ export async function consumeRefreshToken(token, context = {}) {
 
   let result;
   try {
-    if (!consumeScriptSha) consumeScriptSha = await redis.script('LOAD', CONSUME_SCRIPT);
-    result = await redis.evalsha(consumeScriptSha, 2, ...keys, secret);
+    if (!consumeScriptSha) consumeScriptSha = await getRedis().script('LOAD', CONSUME_SCRIPT);
+    result = await getRedis().evalsha(consumeScriptSha, 2, ...keys, secret);
   } catch (err) {
     if (!String(err.message).includes('NOSCRIPT')) throw err;
-    consumeScriptSha = await redis.script('LOAD', CONSUME_SCRIPT);
-    result = await redis.evalsha(consumeScriptSha, 2, ...keys, secret);
+    consumeScriptSha = await getRedis().script('LOAD', CONSUME_SCRIPT);
+    result = await getRedis().evalsha(consumeScriptSha, 2, ...keys, secret);
   }
 
   const [status, userId] = result;
@@ -152,5 +152,5 @@ export async function consumeRefreshToken(token, context = {}) {
 export async function revokeRefreshToken(tokenOrFamilyId) {
   const parsed = unpackToken(tokenOrFamilyId);
   const familyId = parsed ? parsed.familyId : tokenOrFamilyId;
-  await redis.multi().del(familyCurrentKey(familyId)).del(familyUserKey(familyId)).exec();
+  await getRedis().multi().del(familyCurrentKey(familyId)).del(familyUserKey(familyId)).exec();
 }

@@ -165,7 +165,7 @@ const Analytics = () => {
                 </h1>
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-ink-700 bg-ink-850 px-2.5 py-0.5 text-[10px] font-mono font-medium text-paper-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  ClickHouse Columnar
+                  MongoDB
                 </span>
               </div>
               <p className="mt-0.5 text-xs text-paper-400">
