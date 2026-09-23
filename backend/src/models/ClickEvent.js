@@ -22,6 +22,7 @@ const clickEventSchema = new mongoose.Schema(
     },
     eventId: { type: String, required: true },
     shortCode: String,
+    ip: String,
     ipHash: String,
     referrerDomain: String,
     device: String,
