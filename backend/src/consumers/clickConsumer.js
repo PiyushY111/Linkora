@@ -81,6 +81,7 @@ async function enrichEvent(id, fields) {
     userId: fields.userId || '',
     shortCode: fields.shortCode,
     timestamp: new Date(Number(fields.timestamp) || Date.now()),
+    ip: fields.ip || '',
     ipHash: hashIp(fields.ip),
     referrerDomain: extractDomain(fields.referer),
     device: ua.deviceType,
@@ -129,6 +130,7 @@ export async function processBatch(entries, { redis = getRedis() } = {}) {
     const data = {
       linkId: e.linkId,
       shortCode: e.shortCode,
+      ip: e.ip || '',
       country: e.country,
       device: e.device,
       browser: e.browser,

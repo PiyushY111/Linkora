@@ -491,6 +491,7 @@ const CSV_COLUMNS = [
   ['Event ID', 'eventId'],
   ['Timestamp (UTC)', 'timestamp'],
   ['Short Code', 'shortCode'],
+  ['IP Address', 'ip'],
   ['Country', 'country'],
   ['City', 'city'],
   ['Device', 'device'],

@@ -38,6 +38,7 @@ export default function RealtimeClickStream({ clicks = [], isLive = true }) {
     if (!searchQuery.trim()) return clicks;
     const q = searchQuery.toLowerCase();
     return clicks.filter((c) => {
+      const matchIp = c.ip && c.ip.toLowerCase().includes(q);
       const matchCity = c.city && c.city.toLowerCase().includes(q);
       const matchCountry = c.country_code && c.country_code.toLowerCase().includes(q);
       const matchBrowser = c.browser_family && c.browser_family.toLowerCase().includes(q);
@@ -46,7 +47,7 @@ export default function RealtimeClickStream({ clicks = [], isLive = true }) {
       const matchUtm =
         (c.utm_source && c.utm_source.toLowerCase().includes(q)) ||
         (c.utm_campaign && c.utm_campaign.toLowerCase().includes(q));
-      return matchCity || matchCountry || matchBrowser || matchOs || matchRef || matchUtm;
+      return matchIp || matchCity || matchCountry || matchBrowser || matchOs || matchRef || matchUtm;
     });
   }, [clicks, searchQuery]);
 
@@ -81,7 +82,7 @@ export default function RealtimeClickStream({ clicks = [], isLive = true }) {
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-paper-500" />
           <input
             type="text"
-            placeholder="Filter stream by location, OS, ref..."
+            placeholder="Filter stream by IP, location, OS, ref..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="input pl-8 py-1.5 text-xs w-full"
@@ -111,6 +112,7 @@ export default function RealtimeClickStream({ clicks = [], isLive = true }) {
               <tr>
                 <th className="px-5 py-2.5 font-semibold">Time</th>
                 <th className="px-5 py-2.5 font-semibold">Location</th>
+                <th className="px-5 py-2.5 font-semibold">IP Address</th>
                 <th className="px-5 py-2.5 font-semibold">Client & Device</th>
                 <th className="px-5 py-2.5 font-semibold">Referrer</th>
                 <th className="px-5 py-2.5 font-semibold">Attribution</th>
@@ -148,6 +150,13 @@ export default function RealtimeClickStream({ clicks = [], isLive = true }) {
                         )}
                         <span className="font-medium">{locText || 'Unknown'}</span>
                       </div>
+                    </td>
+
+                    {/* IP Address */}
+                    <td className="whitespace-nowrap px-5 py-3 font-mono text-xs">
+                      <span className="rounded-md bg-ink-800 px-2 py-0.5 text-paper-200 border border-ink-700 font-mono text-[11px] select-all">
+                        {click.ip || '—'}
+                      </span>
                     </td>
 
                     {/* Client & Device */}

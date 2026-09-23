@@ -110,6 +110,7 @@ async function insertRawEvents(events, resumedIds) {
       meta: { linkId: e.linkObjectId, userId: e.userObjectId },
       eventId: e.eventId,
       shortCode: e.shortCode,
+      ip: e.ip || '',
       ipHash: e.ipHash,
       referrerDomain: e.referrerDomain,
       device: e.device,

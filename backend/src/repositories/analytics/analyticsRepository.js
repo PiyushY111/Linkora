@@ -13,6 +13,7 @@ import { mongoAnalyticsRepository } from './mongoAnalyticsRepository.js';
  * @property {string} userId
  * @property {string} shortCode
  * @property {Date} timestamp
+ * @property {string} [ip]
  * @property {string} ipHash
  * @property {string} referrerDomain - '' for direct traffic
  * @property {string} device

@@ -145,6 +145,7 @@ async function recentClicks(metaScope) {
   return events.map((ev) => ({
     event_id: ev.eventId,
     timestamp: ev.timestamp,
+    ip: ev.ip || '',
     country_code: ev.country || '',
     city: ev.city || '',
     device_type: ev.device || '',
@@ -188,6 +189,7 @@ export async function* exportEvents({ linkId, userId, start, end, limit }) {
       eventId: ev.eventId,
       timestamp: ev.timestamp,
       shortCode: ev.shortCode || '',
+      ip: ev.ip || '',
       country: ev.country || '',
       city: ev.city || '',
       device: ev.device || '',

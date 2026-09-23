@@ -8,12 +8,15 @@ export const validateUrl = (url) => {
 };
 
 export const getClientIp = (req) => {
-  return (
-    req.headers['x-forwarded-for']?.split(',')[0] ||
-    req.socket.remoteAddress ||
-    req.connection.remoteAddress ||
-    req.ip
-  );
+  const raw =
+    req.headers['cf-connecting-ip'] ||
+    req.headers['x-real-ip'] ||
+    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+    req.socket?.remoteAddress ||
+    req.connection?.remoteAddress ||
+    req.ip ||
+    '127.0.0.1';
+  return String(raw).replace(/^::ffff:/, '');
 };
 
 export const getUserAgent = (req) => {
