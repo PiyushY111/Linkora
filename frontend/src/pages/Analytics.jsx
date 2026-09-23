@@ -130,7 +130,7 @@ const Analytics = () => {
       const url = window.URL.createObjectURL(new Blob([blobData]));
       const link = document.createElement('a');
       link.href = url;
-      const filename = `linkly-analytics-${linkId}-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`;
+      const filename = `linkora-analytics-${linkId}-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
@@ -149,7 +149,7 @@ const Analytics = () => {
   return (
     <>
       <Helmet>
-        <title>Analytics Engine — Linkly Enterprise</title>
+        <title>Analytics Engine — Linkora Enterprise</title>
       </Helmet>
       <AppShell>
         {/* Executive Header Toolbar */}

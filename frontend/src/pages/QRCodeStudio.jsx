@@ -60,7 +60,7 @@ export default function QRCodeStudio() {
 
   // View preferences
   const [viewMode, setViewMode] = useState(() => {
-    return localStorage.getItem('linkly_qr_view_mode') || 'table';
+    return localStorage.getItem('linkora_qr_view_mode') || localStorage.getItem('linkly_qr_view_mode') || 'table';
   });
 
   // Filters & Search
@@ -76,7 +76,7 @@ export default function QRCodeStudio() {
 
   // Persist view mode preference
   useEffect(() => {
-    localStorage.setItem('linkly_qr_view_mode', viewMode);
+    localStorage.setItem('linkora_qr_view_mode', viewMode);
   }, [viewMode]);
 
   // Global Keyboard Shortcuts: ⌘K to open create modal, / to search

@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 /**
  * Enterprise Custom Confirmation Modal
  * Replaces ugly, native browser window.confirm() popups with a sleek,
- * dark-mode, animated dialog adhering to Linkly's design system.
+ * dark-mode, animated dialog adhering to Linkora's design system.
  */
 const ConfirmModal = ({
   open = false,

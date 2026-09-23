@@ -30,7 +30,7 @@ const Sidebar = () => {
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-ink-700 bg-ink-950 lg:flex">
       <div className="flex h-16 items-center gap-2.5 px-5">
         <img src="/logo.svg" alt="" width={28} height={28} />
-        <span className="text-base font-bold tracking-tight text-paper-100">Linkly</span>
+        <span className="text-base font-bold tracking-tight text-paper-100">Linkora</span>
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-2">

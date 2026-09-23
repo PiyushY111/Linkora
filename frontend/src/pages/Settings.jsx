@@ -232,7 +232,7 @@ export default function Settings() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `linkly-account-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `linkora-account-export-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -253,7 +253,7 @@ export default function Settings() {
       const url = window.URL.createObjectURL(new Blob([blobData]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `linkly-clicks-stream-${new Date().toISOString().slice(0, 10)}.csv`);
+      link.setAttribute('download', `linkora-clicks-stream-${new Date().toISOString().slice(0, 10)}.csv`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -297,7 +297,7 @@ export default function Settings() {
   return (
     <>
       <Helmet>
-        <title>Settings & Preferences — Linkly</title>
+        <title>Settings & Preferences — Linkora</title>
       </Helmet>
       <AppShell>
         {/* Header */}
@@ -523,7 +523,7 @@ export default function Settings() {
                     <span>Default Link Creation Presets</span>
                   </h2>
                   <p className="mt-1 text-xs text-paper-500">
-                    Set standard values that automatically pre-fill whenever you shorten a link on Linkly.
+                    Set standard values that automatically pre-fill whenever you shorten a link on Linkora.
                   </p>
                 </div>
               </div>
@@ -592,7 +592,7 @@ export default function Settings() {
                         id="utm-source"
                         type="text"
                         className="input"
-                        placeholder="e.g. linkly, newsletter"
+                        placeholder="e.g. linkora, newsletter"
                         value={defaultUtmSource}
                         onChange={(e) => setDefaultUtmSource(e.target.value)}
                       />
@@ -764,7 +764,7 @@ export default function Settings() {
                 <span>Active Browser Session</span>
               </h2>
               <p className="mt-1 text-xs text-paper-500">
-                Details regarding the current browser and device connected to Linkly.
+                Details regarding the current browser and device connected to Linkora.
               </p>
 
               <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-ink-700 bg-ink-950 p-4">

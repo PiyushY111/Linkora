@@ -99,7 +99,11 @@ export async function executeDelivery(webhook, event, data, attempt = 1, existin
 
   const headers = {
     'Content-Type': 'application/json',
-    'User-Agent': 'Linkly-Webhooks/1.0 (+https://linkly.dev)',
+    'User-Agent': 'Linkora-Webhooks/1.0 (+https://linkora.dev)',
+    'Linkora-Delivery': deliveryId,
+    'Linkora-Event': event,
+    'Linkora-Signature': sigInfo.signature,
+    'X-Linkora-Signature': sigInfo.legacySignature,
     'Linkly-Delivery': deliveryId,
     'Linkly-Event': event,
     'Linkly-Signature': sigInfo.signature,
@@ -379,7 +383,7 @@ export async function testWebhookEndpoint(webhookId, userId, eventType = 'endpoi
     case 'endpoint.test':
     default:
       sampleData = {
-        message: 'This is a test webhook event from Linkly Enterprise.',
+        message: 'This is a test webhook event from Linkora Enterprise.',
         testTimestamp: new Date().toISOString(),
         status: 'operational',
       };

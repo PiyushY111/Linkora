@@ -19,7 +19,7 @@ async function callSafeBrowsing(url) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client: { clientId: 'linkly', clientVersion: '1.0.0' },
+        client: { clientId: 'linkora', clientVersion: '1.0.0' },
         threatInfo: {
           threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
           platformTypes: ['ANY_PLATFORM'],

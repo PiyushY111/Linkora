@@ -1080,7 +1080,7 @@ export const exportAnalytics = async (req, res) => {
       queryParams.userId = req.user.id;
     }
 
-    const filename = `linkly-analytics-${linkId || 'all'}-${timeInfo.timeRange}-${new Date()
+    const filename = `linkora-analytics-${linkId || 'all'}-${timeInfo.timeRange}-${new Date()
       .toISOString()
       .slice(0, 10)}.csv`;
 

@@ -187,7 +187,7 @@ const Workspaces = () => {
   return (
     <>
       <Helmet>
-        <title>Workspaces — Linkly</title>
+        <title>Workspaces — Linkora</title>
       </Helmet>
       <AppShell>
         <div className="mb-8 flex items-center justify-between">

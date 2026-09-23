@@ -38,7 +38,7 @@ const ApiKeyTable = ({ keys = [], onRollKey, onRevokeKey }) => {
         <Key size={32} className="mx-auto mb-2 text-paper-500 opacity-50" />
         <h3 className="text-sm font-semibold text-paper-200">No API Keys Generated</h3>
         <p className="mt-1 text-xs text-paper-500">
-          Create an API key to access Linkly&apos;s Public REST API programmatically.
+          Create an API key to access Linkora&apos;s Public REST API programmatically.
         </p>
       </div>
     );

@@ -186,7 +186,7 @@ const Webhooks = () => {
         secret: data.webhook.secret,
         title: 'Webhook Endpoint Provisioned',
         subtitle:
-          'Save this signing secret now — it cannot be viewed again. Verify the Linkly-Signature header on every payload using this secret.',
+          'Save this signing secret now — it cannot be viewed again. Verify the Linkora-Signature header on every payload using this secret.',
       });
 
       toast.success('Webhook created successfully');
@@ -298,7 +298,7 @@ const Webhooks = () => {
   return (
     <>
       <Helmet>
-        <title>Webhooks — Linkly</title>
+        <title>Webhooks — Linkora</title>
       </Helmet>
       <AppShell>
         {/* Page Header */}
@@ -455,7 +455,7 @@ const Webhooks = () => {
               id="create-url"
               type="url"
               className="input-mono text-xs"
-              placeholder="https://api.yourdomain.com/v1/webhooks/linkly"
+              placeholder="https://api.yourdomain.com/v1/webhooks/linkora"
               value={createData.url}
               onChange={(e) =>
                 setCreateData({ ...createData, url: e.target.value })

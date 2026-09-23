@@ -465,7 +465,7 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
                           </div>
                           <div className="relative mt-1.5 flex items-center">
                             <span className="pointer-events-none absolute left-3 text-xs font-mono text-paper-500">
-                              linkly.sh/
+                              linkora.io/
                             </span>
                             <input
                               type="text"

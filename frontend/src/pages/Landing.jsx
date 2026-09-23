@@ -82,13 +82,13 @@ const ProductPreview = () => (
       <span className="h-2.5 w-2.5 rounded-full bg-danger/70" />
       <span className="h-2.5 w-2.5 rounded-full bg-warning/70" />
       <span className="h-2.5 w-2.5 rounded-full bg-success/70" />
-      <span className="ml-3 truncate font-mono text-xs text-paper-500">linkly.io/dashboard</span>
+      <span className="ml-3 truncate font-mono text-xs text-paper-500">linkora.io/dashboard</span>
     </div>
     <div className="rounded-lg bg-ink-950 p-5">
       <div className="flex items-center justify-between rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="badge-accent shrink-0">307</span>
-          <span className="truncate font-mono text-sm text-paper-100">linkly.io/x7K9mP</span>
+          <span className="truncate font-mono text-sm text-paper-100">linkora.io/x7K9mP</span>
         </div>
         <span className="shrink-0 font-mono text-xs text-paper-500">18ms</span>
       </div>
@@ -119,15 +119,15 @@ const Landing = () => {
   return (
     <>
       <Helmet>
-        <title>Linkly — Links, engineered</title>
+        <title>Linkora — Links, engineered</title>
       </Helmet>
 
       <div className="min-h-screen bg-ink-950 text-paper-100">
         <header className="sticky top-0 z-40 border-b border-ink-700/60 bg-ink-950/80 backdrop-blur">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-2">
-              <img src="/logo.svg" alt="Linkly" width={28} height={28} />
-              <span className="text-base font-bold tracking-tight">Linkly</span>
+              <img src="/logo.svg" alt="Linkora" width={28} height={28} />
+              <span className="text-base font-bold tracking-tight">Linkora</span>
             </div>
             <div className="flex items-center gap-2">
               <Link to="/login" className="btn-ghost btn-sm">Sign in</Link>
@@ -190,7 +190,7 @@ const Landing = () => {
               The parts that are usually an afterthought, aren&apos;t.
             </h2>
             <p className="mt-3 text-paper-400">
-              Every one of these is a real subsystem in Linkly, not a marketing bullet.
+              Every one of these is a real subsystem in Linkora, not a marketing bullet.
             </p>
           </div>
 
@@ -235,7 +235,7 @@ const Landing = () => {
           <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 sm:flex-row">
             <div className="flex items-center gap-2 text-sm text-paper-500">
               <img src="/logo.svg" alt="" width={18} height={18} />
-              Linkly
+              Linkora
             </div>
             <p className="text-xs text-paper-500">Built on Redis, MongoDB &amp; ClickHouse.</p>
           </div>

@@ -28,10 +28,10 @@ router.post('/:id/deliveries/:deliveryId/retry', protect, retryDelivery);
 
 // Built-in public echo endpoint for instant testing with zero external setup
 router.post('/debug/echo', (req, res) => {
-  const sig = req.headers['linkly-signature'];
+  const sig = req.headers['linkora-signature'] || req.headers['linkly-signature'];
   res.status(200).json({
     success: true,
-    message: 'Webhook payload successfully delivered and acknowledged by Linkly Echo Service',
+    message: 'Webhook payload successfully delivered and acknowledged by Linkora Echo Service',
     receivedAt: new Date().toISOString(),
     event: req.body?.type || req.body?.event || 'test',
     signatureReceived: Boolean(sig),

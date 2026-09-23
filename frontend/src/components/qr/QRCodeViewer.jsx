@@ -5,7 +5,7 @@ import { DEFAULT_QR_CONFIG } from '../../utils/qrPresets';
 
 const QRCodeViewer = forwardRef(function QRCodeViewer(
   {
-    data = 'https://linkly.sh',
+    data = 'https://linkora.io',
     config = DEFAULT_QR_CONFIG,
     size = 260,
     showFrame = true,
@@ -39,7 +39,7 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
       width: targetSize,
       height: targetSize,
       type: 'canvas',
-      data: data || 'https://linkly.sh',
+      data: data || 'https://linkora.io',
       margin: 8,
       qrOptions: {
         typeNumber: 0,

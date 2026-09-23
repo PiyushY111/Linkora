@@ -1,4 +1,4 @@
-# ⚡ Linkora (formerly Linkly)
+# ⚡ Linkora
 
 <div align="center">
 
@@ -20,7 +20,7 @@
 
 ## 🌟 Overview
 
-**Linkora** is an enterprise-grade URL shortening and programmatic link intelligence platform. Designed to rival and surpass systems like Bitly and Dub.co, Linkora provides sub-millisecond cached redirects, asynchronous telemetry ingestion into ClickHouse, automated exponential-backoff webhooks with HMAC-SHA256 signatures, an in-browser interactive developer CLI (`linkly-cli`), and a multi-tab configuration hub.
+**Linkora** is an enterprise-grade URL shortening and programmatic link intelligence platform. Designed to rival and surpass systems like Bitly and Dub.co, Linkora provides sub-millisecond cached redirects, asynchronous telemetry ingestion into ClickHouse, automated exponential-backoff webhooks with HMAC-SHA256 signatures, an in-browser interactive developer CLI (`linkora-cli`), and a multi-tab configuration hub.
 
 ---
 
@@ -40,8 +40,8 @@
 ---
 
 ### 2. ⚡ Developer Portal & In-Browser CLI
-* **Interactive In-Browser CLI (`linkly-cli`)**:
-  * Full Unix-style command-line terminal executing live against Linkly's Public API.
+* **Interactive In-Browser CLI (`linkora-cli`)**:
+  * Full Unix-style command-line terminal executing live against Linkora's Public API.
   * Tab auto-completion, command history (<kbd>↑</kbd>/<kbd>↓</kbd> arrows), latency measurements, and formatted ASCII tables.
   * Built-in commands: `help`, `ping`, `usage`, `links list`, `links create`, `links get`, `links stats`, `links delete`, `keys list`, `auth`, `clear`.
 * **Scoped API Key Management**:
@@ -57,9 +57,9 @@
 
 ### 3. 🪝 Enterprise Webhook System
 * **Granular Event Subscriptions**: Subscribe to `link.clicked`, `link.created`, `link.updated`, `link.deleted`, and `link.limit_reached`.
-* **Cryptographic Signatures (HMAC-SHA256)**: Every payload is signed with a secret key and sent via the `x-linkly-signature` header:
+* **Cryptographic Signatures (HMAC-SHA256)**: Every payload is signed with a secret key and sent via the `x-linkora-signature` header:
   ```http
-  x-linkly-signature: t=1727025600,v1=5d41402abc4b2a76b9719d911017c592
+  x-linkora-signature: t=1727025600,v1=5d41402abc4b2a76b9719d911017c592
   ```
 * **Automated Exponential Backoff & Jitter**: Failed deliveries (4xx/5xx or timeout) automatically retry up to 5 times (`1m`, `5m`, `30m`, `2h`, `5h`).
 * **Circuit Breaker**: Automatically pauses degraded endpoints after consecutive failures to protect downstream receivers.
@@ -276,7 +276,7 @@ When receiving webhooks from Linkora, verify the payload authenticity using the 
 ```javascript
 import crypto from 'crypto';
 
-function verifyLinklySignature(rawBody, signatureHeader, secret) {
+function verifyLinkoraSignature(rawBody, signatureHeader, secret) {
   // Extract timestamp and signature: t=1727025600,v1=5d41402...
   const parts = Object.fromEntries(
     signatureHeader.split(',').map((p) => p.split('='))

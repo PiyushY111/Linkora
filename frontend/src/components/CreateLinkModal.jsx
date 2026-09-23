@@ -976,7 +976,7 @@ export default function CreateLinkModal({ open, onClose }) {
                       <div>
                         <h4 className="text-sm font-semibold text-paper-100">Password Protection</h4>
                         <p className="text-xs text-paper-500">
-                          Visitors must enter a password on Linkly's unlock gate to be redirected.
+                          Visitors must enter a password on Linkora's unlock gate to be redirected.
                         </p>
                       </div>
                     </div>
@@ -1192,7 +1192,7 @@ export default function CreateLinkModal({ open, onClose }) {
                     Mobile Deep Linking & OS Routing
                   </span>
                   <p className="text-xs text-paper-500">
-                    Linkly automatically inspects visitor devices and redirects iPhone/iPad users to iOS target and Android users to Google Play target.
+                    Linkora automatically inspects visitor devices and redirects iPhone/iPad users to iOS target and Android users to Google Play target.
                   </p>
                 </div>
 

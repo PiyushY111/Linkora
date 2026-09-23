@@ -32,7 +32,7 @@ const Login = () => {
   return (
     <>
       <Helmet>
-        <title>Sign in — Linkly</title>
+        <title>Sign in — Linkora</title>
       </Helmet>
 
       <div className="relative flex min-h-screen items-center justify-center bg-ink-950 bg-grid px-4">
@@ -41,7 +41,7 @@ const Login = () => {
         <div className="relative w-full max-w-sm animate-fade-up">
           <Link to="/" className="mb-8 flex items-center justify-center gap-2">
             <img src="/logo.svg" alt="" width={30} height={30} />
-            <span className="text-lg font-bold text-paper-100">Linkly</span>
+            <span className="text-lg font-bold text-paper-100">Linkora</span>
           </Link>
 
           <div className="panel p-7">

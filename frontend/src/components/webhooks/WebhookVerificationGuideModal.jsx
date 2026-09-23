@@ -8,11 +8,11 @@ const CODE_SNIPPETS = {
 
 // Express middleware handler example
 app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-  const signatureHeader = req.headers['linkly-signature'];
-  const webhookSecret = process.env.LINKLY_WEBHOOK_SECRET;
+  const signatureHeader = req.headers['linkora-signature'] || req.headers['linkly-signature'];
+  const webhookSecret = process.env.LINKORA_WEBHOOK_SECRET;
 
   if (!signatureHeader) {
-    return res.status(400).send('Missing Linkly-Signature header');
+    return res.status(400).send('Missing Linkora-Signature header');
   }
 
   // 1. Extract timestamp and signature
@@ -65,9 +65,9 @@ WEBHOOK_SECRET = "whsec_your_secret_here"
 
 @app.route("/webhook", methods=["POST"])
 def handle_webhook():
-    signature_header = request.headers.get("Linkly-Signature")
+    signature_header = request.headers.get("Linkora-Signature") or request.headers.get("Linkly-Signature")
     if not signature_header:
-        abort(400, "Missing Linkly-Signature header")
+        abort(400, "Missing Linkora-Signature header")
 
     # 1. Parse t=... and v1=...
     elements = dict(item.split("=") for item in signature_header.split(","))
@@ -114,9 +114,12 @@ import (
 var webhookSecret = "whsec_your_secret_here"
 
 func webhookHandler(w http.ResponseWriter, r *http.Request) {
-	sigHeader := r.Header.Get("Linkly-Signature")
+	sigHeader := r.Header.Get("Linkora-Signature")
 	if sigHeader == "" {
-		http.Error(w, "Missing Linkly-Signature header", http.StatusBadRequest)
+		sigHeader = r.Header.Get("Linkly-Signature")
+	}
+	if sigHeader == "" {
+		http.Error(w, "Missing Linkora-Signature header", http.StatusBadRequest)
 		return
 	}
 
@@ -178,7 +181,7 @@ const WebhookVerificationGuideModal = ({ open, onClose }) => {
     >
       <div className="space-y-4">
         <p className="text-xs text-paper-400">
-          Linkly signs every outgoing webhook delivery with HMAC-SHA256 and provides timestamp replay defense matching Stripe &amp; Svix standards.
+          Linkora signs every outgoing webhook delivery with HMAC-SHA256 and provides timestamp replay defense matching Stripe &amp; Svix standards.
         </p>
 
         {/* Specification Box */}
@@ -188,7 +191,7 @@ const WebhookVerificationGuideModal = ({ open, onClose }) => {
             <span>Signature Specification</span>
           </div>
           <div className="font-mono text-paper-200 bg-ink-900 rounded-md p-2 text-[11px] border border-ink-700">
-            Linkly-Signature: t=1727018400,v1=3c5d8a9...
+            Linkora-Signature: t=1727018400,v1=3c5d8a9...
           </div>
           <ul className="list-disc list-inside space-y-1 text-paper-300 text-[11px]">
             <li>

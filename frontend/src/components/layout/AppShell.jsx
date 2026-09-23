@@ -33,7 +33,7 @@ const MobileNav = () => {
     <div className="flex h-14 items-center justify-between border-b border-ink-700 bg-ink-950 px-4 lg:hidden">
       <div className="flex items-center gap-2">
         <img src="/logo.svg" alt="" width={24} height={24} />
-        <span className="text-sm font-bold text-paper-100">Linkly</span>
+        <span className="text-sm font-bold text-paper-100">Linkora</span>
       </div>
       <button
         type="button"

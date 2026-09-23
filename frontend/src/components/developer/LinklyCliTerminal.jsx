@@ -27,7 +27,7 @@ const QUICK_COMMANDS = [
   'clear',
 ];
 
-const LinklyCliTerminal = ({ activeApiKey = '', user = null }) => {
+const LinkoraCliTerminal = ({ activeApiKey = '', user = null }) => {
   const [history, setHistory] = useState([
     {
       type: 'system',
@@ -161,7 +161,7 @@ const LinklyCliTerminal = ({ activeApiKey = '', user = null }) => {
   const copySession = () => {
     const text = history
       .map((h) => {
-        if (h.type === 'user') return `linkly ❯ ${h.command}`;
+        if (h.type === 'user') return `linkora ❯ ${h.command}`;
         return (h.lines || []).map((l) => l.text).join('\n');
       })
       .join('\n');
@@ -172,7 +172,7 @@ const LinklyCliTerminal = ({ activeApiKey = '', user = null }) => {
   const downloadSessionLog = () => {
     const text = history
       .map((h) => {
-        if (h.type === 'user') return `linkly ❯ ${h.command}`;
+        if (h.type === 'user') return `linkora ❯ ${h.command}`;
         return (h.lines || []).map((l) => l.text).join('\n');
       })
       .join('\n');
@@ -180,7 +180,7 @@ const LinklyCliTerminal = ({ activeApiKey = '', user = null }) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `linkly-cli-session-${Date.now()}.txt`;
+    a.download = `linkora-cli-session-${Date.now()}.txt`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Session log downloaded');
@@ -218,7 +218,7 @@ const LinklyCliTerminal = ({ activeApiKey = '', user = null }) => {
         {/* Window Title */}
         <div className="flex items-center gap-2 text-xs text-paper-400 font-semibold">
           <TerminalIcon size={14} className="text-accent-400" />
-          <span>linkly-cli v1.0.4 — 80x24 (zsh)</span>
+          <span>linkora-cli v1.0.4 — 80x24 (zsh)</span>
           <span className="badge text-[10px] bg-accent-400/10 text-accent-400 border border-accent-400/20">
             {activeApiKey?.startsWith('lnk_test') ? 'SANDBOX' : 'LIVE'}
           </span>
@@ -271,7 +271,7 @@ const LinklyCliTerminal = ({ activeApiKey = '', user = null }) => {
             return (
               <div key={idx} className="flex items-center gap-2 text-paper-200">
                 <span className="text-accent-400 font-bold select-none">
-                  linkly ❯
+                  linkora ❯
                 </span>
                 <span className="font-semibold text-paper-100">{entry.command}</span>
               </div>
@@ -312,7 +312,7 @@ const LinklyCliTerminal = ({ activeApiKey = '', user = null }) => {
         {isExecuting && (
           <div className="flex items-center gap-2 text-accent-400 text-xs font-mono py-1">
             <RotateCw size={13} className="animate-spin" />
-            <span>Executing request against Linkly API…</span>
+            <span>Executing request against Linkora API…</span>
           </div>
         )}
 
@@ -341,7 +341,7 @@ const LinklyCliTerminal = ({ activeApiKey = '', user = null }) => {
       {/* Terminal Input Prompt */}
       <div className="border-t border-ink-800 bg-ink-900/60 p-3.5 flex items-center gap-2 shrink-0">
         <span className="text-accent-400 font-bold select-none text-sm">
-          linkly ❯
+          linkora ❯
         </span>
         <input
           ref={inputRef}
@@ -370,4 +370,4 @@ const LinklyCliTerminal = ({ activeApiKey = '', user = null }) => {
   );
 };
 
-export default LinklyCliTerminal;
+export default LinkoraCliTerminal;

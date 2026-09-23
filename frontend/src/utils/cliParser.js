@@ -1,16 +1,16 @@
 import { publicApiService, developerService, authService } from '../services/index.js';
 
 export const BANNER_TEXT = `
-  _     ___ _   _ _  ___  ____  __     ____ _     ___ 
- | |   |_ _| \\ | | |/ / | \\ \\ / /    / ___| |   |_ _|
- | |    | ||  \\| | ' /| |  \\ V /____| |   | |    | | 
- | |___ | || |\\  | . \\| |___| |_____| |___| |___ | | 
- |_____|___|_| \\_|_|\\_\\_____|_|      \\____|_____|___|
-                                           v1.0.4
+  _     ___ _   _ _  _____  ____      _       ____ _     ___ 
+ | |   |_ _| \\ | | |/ / _ \\|  _ \\    / \\     / ___| |   |_ _|
+ | |    | ||  \\| | ' / | | | |_) |  / _ \\   | |   | |    | | 
+ | |___ | || |\\  | . \\ |_| |  _ <  / ___ \\  | |___| |___ | | 
+ |_____|___|_| \\_|_|\\_\\___/|_| \\_\\/_/   \\_\\  \\____|_____|___|
+                                            v1.0.4
 `;
 
 export const WELCOME_MESSAGE = `
-Welcome to Linkly Interactive CLI (v1.0.4).
+Welcome to Linkora Interactive CLI (v1.0.4).
 Type "help" for a list of available commands or "banner" to display the welcome art.
 Tip: Press [Tab] to auto-complete commands, [Up/Down] arrows for history.
 `;
@@ -159,11 +159,11 @@ export async function executeCommand(commandLine, apiKey, contextUser) {
     // 3. help
     if (mainCommand === 'help' || mainCommand === '?') {
       const helpText = `
-Linkly CLI — Command Reference Manual
+Linkora CLI — Command Reference Manual
 
 CORE COMMANDS:
   help                       Display this manual
-  banner                     Display the Linkly ASCII banner
+  banner                     Display the Linkora ASCII banner
   auth [--status]            Show active user, key info, and scopes
   whoami                     Alias for auth
   ping                       Measure API latency and connectivity

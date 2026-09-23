@@ -187,7 +187,7 @@ const ApiPlayground = ({ activeKeys = [], defaultApiKey = '' }) => {
           <div>
             <h2 className="text-sm font-semibold text-paper-100">Interactive API Playground</h2>
             <p className="text-xs text-paper-500">
-              Execute live REST requests against Linkly&apos;s Public API with real-time response inspection.
+              Execute live REST requests against Linkora&apos;s Public API with real-time response inspection.
             </p>
           </div>
 

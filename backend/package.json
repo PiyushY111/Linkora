@@ -1,5 +1,5 @@
 {
-  "name": "linkly-backend",
+  "name": "linkora-backend",
   "version": "1.0.0",
   "description": "URL Shortener with Advanced Analytics - Backend",
   "main": "src/index.js",

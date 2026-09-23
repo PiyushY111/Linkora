@@ -91,7 +91,7 @@ export default function Redirect() {
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-ink-700 border-t-accent-400" />
         </div>
         <p className="font-mono text-xs text-paper-400">
-          {state === 'redirecting' ? 'Redirecting to destination…' : 'Connecting to Linkly…'}
+          {state === 'redirecting' ? 'Redirecting to destination…' : 'Connecting to Linkora…'}
         </p>
       </div>
     );
@@ -187,7 +187,7 @@ export default function Redirect() {
 
           <div className="mt-6 border-t border-ink-800 pt-4 text-center">
             <p className="text-[11px] text-paper-500">
-              Secured with bcrypt cryptographic authentication by Linkly
+              Secured with bcrypt cryptographic authentication by Linkora
             </p>
           </div>
         </motion.div>
@@ -209,7 +209,7 @@ export default function Redirect() {
           </p>
           <RouterLink to="/" className="btn-secondary btn-sm inline-flex items-center gap-1.5 mt-2">
             <Home size={14} />
-            <span>Go to Linkly</span>
+            <span>Go to Linkora</span>
           </RouterLink>
         </div>
       </div>
@@ -230,7 +230,7 @@ export default function Redirect() {
           </p>
           <RouterLink to="/" className="btn-secondary btn-sm inline-flex items-center gap-1.5 mt-2">
             <Home size={14} />
-            <span>Go to Linkly</span>
+            <span>Go to Linkora</span>
           </RouterLink>
         </div>
       </div>

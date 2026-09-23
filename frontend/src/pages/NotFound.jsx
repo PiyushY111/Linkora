@@ -5,7 +5,7 @@ const NotFound = () => {
   return (
     <>
       <Helmet>
-        <title>Page not found — Linkly</title>
+        <title>Page not found — Linkora</title>
       </Helmet>
 
       <div className="flex min-h-screen flex-col items-center justify-center bg-ink-950 bg-grid px-4 text-center">

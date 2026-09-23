@@ -8,7 +8,7 @@ import { logger } from '../config/logger.js';
 
 async function uploadToCloudinary(tempPath) {
   return cloudinary.uploader.upload(tempPath, {
-    folder: 'linkly/qrcodes',
+    folder: 'linkora/qrcodes',
     resource_type: 'auto',
     quality: 'auto',
   });

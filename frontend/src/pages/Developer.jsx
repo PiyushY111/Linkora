@@ -27,7 +27,7 @@ import CreateApiKeyModal from '../components/developer/CreateApiKeyModal';
 import ApiPlayground from '../components/developer/ApiPlayground';
 import ApiCodeSnippets from '../components/developer/ApiCodeSnippets';
 import ApiLogsViewer from '../components/developer/ApiLogsViewer';
-import LinklyCliTerminal from '../components/developer/LinklyCliTerminal';
+import LinkoraCliTerminal from '../components/developer/LinklyCliTerminal';
 import CacheArchitectureViewer from '../components/developer/CacheArchitectureViewer';
 import { useConfirm } from '../context/ConfirmContext';
 import { developerService, authService } from '../services';
@@ -120,7 +120,7 @@ const Developer = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'linkly-openapi-v1.json';
+      a.download = 'linkora-openapi-v1.json';
       a.click();
       URL.revokeObjectURL(url);
       toast.success('OpenAPI 3.1 specification downloaded');
@@ -135,7 +135,7 @@ const Developer = () => {
   return (
     <>
       <Helmet>
-        <title>Developer Portal — Linkly</title>
+        <title>Developer Portal — Linkora</title>
       </Helmet>
       <AppShell>
         {/* Header */}
@@ -250,7 +250,7 @@ const Developer = () => {
           {[
             { id: 'keys', label: 'API Keys', icon: Key },
             { id: 'playground', label: 'Interactive Playground', icon: Play },
-            { id: 'cli', label: 'Interactive CLI (linkly-cli)', icon: Terminal },
+            { id: 'cli', label: 'Interactive CLI (linkora-cli)', icon: Terminal },
             { id: 'cache', label: 'Cache & XFetch Defense', icon: Cpu },
             { id: 'snippets', label: 'SDK Quickstarts', icon: Code2 },
             { id: 'logs', label: 'Request Logs & Audit', icon: Activity },
@@ -288,7 +288,7 @@ const Developer = () => {
                   <div className="font-semibold text-xs text-paper-100 flex items-center gap-2">
                     <span>Prefer the command line?</span>
                     <span className="badge text-[10px] bg-accent-400/20 text-accent-400 border border-accent-400/30">
-                      linkly-cli v1.0.4
+                      linkora-cli v1.0.4
                     </span>
                   </div>
                   <div className="text-[11px] text-paper-400 mt-0.5">
@@ -350,18 +350,18 @@ const Developer = () => {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-paper-100 flex items-center gap-2">
-                  <span>linkly-cli — Interactive Developer Shell</span>
+                  <span>linkora-cli — Interactive Developer Shell</span>
                   <span className="badge text-[10px] bg-accent-400/10 text-accent-400 border border-accent-400/25">
                     Live Session
                   </span>
                 </h2>
                 <p className="text-xs text-paper-500">
-                  Full Unix-style command line interface executing live against Linkly&apos;s Public API.
+                  Full Unix-style command line interface executing live against Linkora&apos;s Public API.
                 </p>
               </div>
             </div>
 
-            <LinklyCliTerminal
+            <LinkoraCliTerminal
               activeApiKey={defaultKeyForPlayground}
               user={currentUser}
             />

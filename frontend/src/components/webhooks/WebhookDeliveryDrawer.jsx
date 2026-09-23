@@ -161,7 +161,7 @@ const WebhookDeliveryDrawer = ({ open, onClose, webhook }) => {
               </code>{' '}
               are failing because no server is currently listening on this address/port.
               <div className="mt-1 text-paper-300">
-                To test successfully with zero setup, edit this endpoint URL to use Linkly&apos;s built-in Echo receiver:
+                To test successfully with zero setup, edit this endpoint URL to use Linkora&apos;s built-in Echo receiver:
                 <div className="font-mono bg-ink-950 border border-ink-700 px-2 py-1 rounded text-accent-400 mt-1 select-all">
                   http://127.0.0.1:5001/api/webhooks/debug/echo
                 </div>

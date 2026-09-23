@@ -88,7 +88,7 @@ export default function BulkActionBar({ selectedIds, links, onClearSelection }) 
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `linkly-selected-${Date.now()}.csv`);
+      link.setAttribute('download', `linkora-selected-${Date.now()}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

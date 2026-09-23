@@ -60,7 +60,7 @@ export default function Dashboard() {
 
   // View preferences
   const [viewMode, setViewMode] = useState(() => {
-    return localStorage.getItem('linkly_view_mode') || 'table';
+    return localStorage.getItem('linkora_view_mode') || localStorage.getItem('linkly_view_mode') || 'table';
   });
 
   // Filters & Search
@@ -76,7 +76,7 @@ export default function Dashboard() {
 
   // Persist view mode preference
   useEffect(() => {
-    localStorage.setItem('linkly_view_mode', viewMode);
+    localStorage.setItem('linkora_view_mode', viewMode);
   }, [viewMode]);
 
   // Global Keyboard Shortcuts: ⌘K to create link, / to search
@@ -174,7 +174,7 @@ export default function Dashboard() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `linkly-catalog-${Date.now()}.csv`;
+      a.download = `linkora-catalog-${Date.now()}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -187,7 +187,7 @@ export default function Dashboard() {
   return (
     <>
       <Helmet>
-        <title>Enterprise Links — Linkly</title>
+        <title>Enterprise Links — Linkora</title>
       </Helmet>
 
       <AppShell>
