@@ -21,8 +21,11 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(5000),
     FRONTEND_URL: z.string().url().default('http://localhost:3000'),
-    COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).optional().default('lax'),
-    COOKIE_SECURE: booleanFromEnv,
+    COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).optional(),
+    COOKIE_SECURE: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === 'true')),
     // Number of reverse-proxy hops in front of this app (nginx, ALB, etc.).
     // Trusting all hops (`true`) lets a client spoof X-Forwarded-For and
     // bypass IP-based rate limiting — trust only as many hops as you

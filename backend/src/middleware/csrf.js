@@ -24,8 +24,8 @@ export function verifyOriginForCsrf(req, res, next) {
     allowed = null;
   }
 
-  const isVercel = origin.endsWith('.vercel.app') || (allowed && origin === allowed) || origin === 'http://localhost:3000';
-  if (!isVercel) {
+  const isAllowedOrigin = origin.endsWith('.vercel.app') || (allowed && origin === allowed) || origin === 'http://localhost:3000' || origin === 'http://localhost:5173';
+  if (!isAllowedOrigin) {
     throw new ForbiddenError('Cross-origin request rejected');
   }
 

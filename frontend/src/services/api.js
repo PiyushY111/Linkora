@@ -32,18 +32,39 @@ let refreshPromise = null;
 
 async function refreshAccessToken() {
   const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
-  const { token } = response.data;
+  const { token, user } = response.data;
   useAuthStore.getState().setToken(token);
+  if (user) {
+    useAuthStore.getState().setUser(user);
+  }
   return token;
 }
 
 /**
- * Attempts a silent refresh from the httpOnly cookie on app load. Call this
- * once, before rendering any route that depends on auth state, so a hard
- * refresh doesn't briefly render as "logged out" while the memory-only
- * access token is empty.
+ * Validates any existing session on app load or performs a silent refresh
+ * from the httpOnly cookie so hard reloads maintain seamless authentication.
  */
 export async function bootstrapSession() {
+  const currentToken = useAuthStore.getState().token;
+
+  if (currentToken) {
+    try {
+      const res = await api.get('/auth/me');
+      if (res.data?.user) {
+        useAuthStore.getState().setUser(res.data.user);
+      }
+      return;
+    } catch (err) {
+      // If error is transient (network / cold start), preserve session
+      if (err.response?.status !== 401) {
+        return;
+      }
+      // If 401, token expired: fall through to silent refresh
+    } finally {
+      useAuthStore.getState().setBootstrapped();
+    }
+  }
+
   try {
     await refreshAccessToken();
   } catch {

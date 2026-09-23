@@ -11,7 +11,7 @@ const REFRESH_COOKIE_PATH = '/api/auth';
  */
 export function setRefreshTokenCookie(res, token) {
   const isProd = env.NODE_ENV === 'production';
-  const sameSite = env.COOKIE_SAMESITE || (isProd ? 'none' : 'lax');
+  const sameSite = env.COOKIE_SAMESITE || (isProd ? 'none' : 'strict');
   const secure = env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : isProd;
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
@@ -19,18 +19,20 @@ export function setRefreshTokenCookie(res, token) {
     sameSite,
     path: REFRESH_COOKIE_PATH,
     maxAge: env.JWT_REFRESH_TOKEN_TTL_SECONDS * 1000,
+    ...(isProd && sameSite === 'none' ? { partitioned: true } : {}),
   });
 }
 
 export function clearRefreshTokenCookie(res) {
   const isProd = env.NODE_ENV === 'production';
-  const sameSite = env.COOKIE_SAMESITE || (isProd ? 'none' : 'lax');
+  const sameSite = env.COOKIE_SAMESITE || (isProd ? 'none' : 'strict');
   const secure = env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : isProd;
   res.clearCookie(REFRESH_COOKIE_NAME, {
     httpOnly: true,
     secure,
     sameSite,
     path: REFRESH_COOKIE_PATH,
+    ...(isProd && sameSite === 'none' ? { partitioned: true } : {}),
   });
 }
 
