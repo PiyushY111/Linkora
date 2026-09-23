@@ -7,7 +7,7 @@ import { logAudit } from '../utils/auditLogger.js';
 import { invalidateLinkMeta } from '../services/cacheService.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
-import { ValidationError, NotFoundError } from '../lib/errors.js';
+import { ValidationError, NotFoundError, toClientError } from '../lib/errors.js';
 
 const MAX_BULK_SIZE = 1000;
 const VALIDATION_CONCURRENCY = 50;
@@ -329,7 +329,9 @@ export const bulkCreateLinks = async (req, res) => {
         shortUrl: `${env.FRONTEND_URL}/${link.shortCode}`,
       };
     } catch (err) {
-      return { originalUrl, success: false, message: err.message };
+      const clientError = toClientError(err);
+      if (!clientError) logger.error({ err, originalUrl }, 'Bulk link creation failed unexpectedly');
+      return { originalUrl, success: false, message: clientError?.message ?? 'Failed to create link' };
     }
   });
 
