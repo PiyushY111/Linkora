@@ -13,14 +13,58 @@ import { redisCacheHitsTotal, redisCacheMissesTotal } from '../middleware/metric
  * starting point for that scale, with maxmemory-policy allkeys-lru so cold
  * entries evict before hot ones under pressure.
  */
-export const redis = new Redis(env.REDIS_URL, {
-  maxRetriesPerRequest: 3,
-  lazyConnect: false,
-  enableAutoPipelining: false,
-});
+/**
+ * Factory, not a singleton: nothing connects at import time. server.js (and
+ * test setup, pointed at a testcontainers URL) decide when and to what to
+ * connect by calling this.
+ */
+export function createRedisClient(url = env.REDIS_URL, options = {}) {
+  const client = new Redis(url, {
+    maxRetriesPerRequest: 3,
+    lazyConnect: false,
+    enableAutoPipelining: false,
+    ...options,
+  });
+  client.on('error', (err) => logger.error({ err }, 'Redis connection error'));
+  client.on('connect', () => logger.info('Redis connected'));
+  return client;
+}
 
-redis.on('error', (err) => logger.error({ err }, 'Redis connection error'));
-redis.on('connect', () => logger.info('Redis connected'));
+let activeClient = null;
+
+function ensureActiveClient() {
+  if (!activeClient) activeClient = createRedisClient();
+  return activeClient;
+}
+
+/**
+ * Swaps the client every `redis.<method>()` call below resolves against.
+ * Test setup uses this to point every already-imported module at a
+ * testcontainers Redis without needing to change any of their imports.
+ */
+export function setActiveRedisClient(client) {
+  activeClient = client;
+}
+
+export function resetActiveRedisClient() {
+  activeClient = null;
+}
+
+// A thin proxy, not the client itself: every property/method access is
+// resolved against whatever `activeClient` currently is (lazily created on
+// first use), so the many `import { redis } from './cacheService.js'`
+// call sites across the app never need to change, while still never
+// connecting anything just by being imported.
+export const redis = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      const client = ensureActiveClient();
+      const value = client[prop];
+      return typeof value === 'function' ? value.bind(client) : value;
+    },
+  }
+);
 
 export const NEGATIVE_CACHE_MARKER = '__NULL__';
 

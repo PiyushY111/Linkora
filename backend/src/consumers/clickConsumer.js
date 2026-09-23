@@ -32,7 +32,7 @@ function streamEntryToObject(fieldArray) {
   return obj;
 }
 
-async function ensureConsumerGroup() {
+export async function ensureConsumerGroup() {
   try {
     await redis.xgroup('CREATE', env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, '$', 'MKSTREAM');
   } catch (err) {
@@ -123,7 +123,7 @@ async function enrichEvent(fields) {
  * ClickEvent collection, and XACKs each successfully processed entry.
  * Entries that fail enrichment are left un-acked so XAUTOCLAIM retries them.
  */
-async function processBatch(entries) {
+export async function processBatch(entries) {
   const clickhouseRows = [];
   const mongoDocs = [];
   const ackIds = [];
@@ -181,7 +181,7 @@ async function processBatch(entries) {
  * Reclaims and reprocesses entries left pending by a crashed/restarted
  * consumer (idle longer than CLAIM_IDLE_MS).
  */
-async function claimStalePending() {
+export async function claimStalePending() {
   try {
     const [, entries] = await redis.xautoclaim(
       env.CLICK_STREAM_KEY,
@@ -207,7 +207,7 @@ async function claimStalePending() {
  * batched $inc, using an atomic RENAME to claim the current bucket so
  * concurrent consumer instances never double-count.
  */
-async function reconcileClickCounters() {
+export async function reconcileClickCounters() {
   const date = new Date().toISOString().slice(0, 10);
   const key = linkCountersKey(date);
   const swapKey = `${key}:reconciling:${Date.now()}`;

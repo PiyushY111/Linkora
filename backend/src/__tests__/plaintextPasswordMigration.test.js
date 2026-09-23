@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import request from 'supertest';
-import app from '../index.js';
+import app from '../app.js';
 import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from './testUtils.js';
 import Link from '../models/Link.js';
 import { redis } from '../services/cacheService.js';

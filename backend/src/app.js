@@ -6,13 +6,9 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
-import { logger, httpLogger } from './config/logger.js';
-import connectDB from './config/db.js';
+import { httpLogger } from './config/logger.js';
 import { errorHandler, notFound } from './middleware/error.js';
 import { metricsMiddleware, metricsAuth, metricsHandler } from './middleware/metrics.js';
-import { ensureClickHouseSchema } from './config/clickhouse.js';
-import { scheduleAbuseRescan } from './services/threatDetectionService.js';
-import { scheduleExpiryWebhookCheck } from './services/webhookService.js';
 import { redis } from './services/cacheService.js';
 
 // Import routes
@@ -24,6 +20,14 @@ import webhookRoutes from './routes/webhooks.js';
 import publicApiRoutes from './routes/publicApi.js';
 import developerRoutes from './routes/developer.js';
 
+/**
+ * Builds and returns the Express app. Importing this file has no side
+ * effects — it does not connect to Mongo/Redis/ClickHouse, does not listen
+ * on a port, and does not schedule any cron jobs. That's server.js's job.
+ * Tests import this directly (with supertest) against whatever
+ * Mongo/Redis the test's own setup has already pointed cacheService.js /
+ * config/db.js at.
+ */
 const app = express();
 
 app.set('trust proxy', env.TRUST_PROXY_HOPS);
@@ -42,7 +46,7 @@ app.use(cookieParser());
 app.use(metricsMiddleware);
 
 // Local rate limiting fallback; replaced on the redirect/auth/link-creation
-// paths by the Redis-backed sliding-window limiter in Phase 5.
+// paths by the Redis-backed sliding-window limiter.
 const limiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW * 60 * 1000,
   max: env.NODE_ENV === 'development' ? 5000 : env.RATE_LIMIT_MAX_REQUESTS,
@@ -128,60 +132,3 @@ app.use(notFound);
 app.use(errorHandler);
 
 export default app;
-
-// Everything below only runs when this file is executed directly (`node
-// src/index.js`), not when a test suite imports `app` via supertest — that
-// import must never bind the real port or start background cron jobs.
-const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
-
-if (isMainModule) {
-  connectDB();
-  ensureClickHouseSchema().catch((err) => logger.error({ err }, 'Failed to ensure ClickHouse schema'));
-  scheduleAbuseRescan();
-  scheduleExpiryWebhookCheck();
-
-  const server = app.listen(env.PORT, () => {
-    logger.info({ port: env.PORT, env: env.NODE_ENV }, 'Server started');
-  });
-
-  // Handle unhandled promise rejections
-  process.on('unhandledRejection', (err) => {
-    logger.error({ err }, 'Unhandled promise rejection');
-    server.close(() => process.exit(1));
-  });
-
-  const SHUTDOWN_DRAIN_MS = 15000;
-  let shuttingDown = false;
-
-  const closeConnections = async () => {
-    // redis.quit() (unlike disconnect()) waits for in-flight commands —
-    // including any XADD click events still in the pipeline — to complete
-    // before closing the connection.
-    await Promise.allSettled([
-      mongoose.connection.close().catch((err) => logger.error({ err }, 'Error closing MongoDB connection')),
-      redis.quit().catch((err) => logger.error({ err }, 'Error closing Redis connection')),
-    ]);
-  };
-
-  const gracefulShutdown = async (signal) => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    logger.info({ signal }, 'Shutdown signal received; draining in-flight requests');
-
-    const drainTimer = setTimeout(() => {
-      logger.warn('Drain window expired; forcing shutdown');
-      closeConnections().finally(() => process.exit(0));
-    }, SHUTDOWN_DRAIN_MS);
-    drainTimer.unref();
-
-    server.close(async () => {
-      logger.info('HTTP server closed; no longer accepting new connections');
-      clearTimeout(drainTimer);
-      await closeConnections();
-      process.exit(0);
-    });
-  };
-
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-}

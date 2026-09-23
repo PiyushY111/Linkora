@@ -4,14 +4,20 @@ import { logger } from './logger.js';
 
 let client = null;
 
-export function getClickHouseClient() {
-  if (!env.CLICKHOUSE_ENABLED) return null;
+/**
+ * Lazy factory: nothing connects until the first call, and this returns the
+ * same client on every subsequent call unless resetClickHouseClient() has
+ * been called in between (test teardown, or picking up a new URL). `overrides`
+ * lets tests point this at a testcontainers instance without touching env.
+ */
+export function getClickHouseClient(overrides = {}) {
+  if (!env.CLICKHOUSE_ENABLED && !overrides.url) return null;
   if (client) return client;
 
   client = createClient({
-    url: env.CLICKHOUSE_URL,
-    username: env.CLICKHOUSE_USERNAME,
-    password: env.CLICKHOUSE_PASSWORD,
+    url: overrides.url || env.CLICKHOUSE_URL,
+    username: overrides.username || env.CLICKHOUSE_USERNAME,
+    password: overrides.password || env.CLICKHOUSE_PASSWORD,
     // No default `database`: every query below fully-qualifies table names
     // with CLICKHOUSE_DATABASE, so schema bootstrap (CREATE DATABASE ...)
     // doesn't hit a chicken-and-egg "database does not exist" error.
@@ -21,6 +27,11 @@ export function getClickHouseClient() {
   });
 
   return client;
+}
+
+/** Test-only escape hatch: forces the next getClickHouseClient() call to build a fresh client. */
+export function resetClickHouseClient() {
+  client = null;
 }
 
 const SCHEMA_STATEMENTS = [
@@ -109,4 +120,4 @@ export async function runQuery(query, query_params = {}) {
   return resultSet.json();
 }
 
-export default { getClickHouseClient, ensureClickHouseSchema, bulkInsert, runQuery };
+export default { getClickHouseClient, resetClickHouseClient, ensureClickHouseSchema, bulkInsert, runQuery };

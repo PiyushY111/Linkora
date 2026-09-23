@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import request from 'supertest';
 import mongoose from 'mongoose';
-import app from '../index.js';
+import app from '../app.js';
 import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from './testUtils.js';
 import Link from '../models/Link.js';
 import { redis, getCurrentUsage } from '../services/cacheService.js';

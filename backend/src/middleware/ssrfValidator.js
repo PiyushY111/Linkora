@@ -67,9 +67,12 @@ function isBlockedIp(ip) {
  * and re-validate immediately before connecting, not trust a cached result.
  *
  * @param {string} url
+ * @param {{ lookup?: typeof dns.lookup }} [deps] - injectable for tests
+ *   that need to simulate a private IP or a DNS-rebinding answer without
+ *   controlling real DNS.
  * @returns {Promise<{ safe: boolean, reason?: string }>}
  */
-export async function validateUrlSafety(url) {
+export async function validateUrlSafety(url, { lookup = dns.lookup } = {}) {
   let parsed;
   try {
     parsed = new URL(url);
@@ -83,7 +86,7 @@ export async function validateUrlSafety(url) {
 
   let addresses;
   try {
-    addresses = await dns.lookup(parsed.hostname, { all: true, verbatim: true });
+    addresses = await lookup(parsed.hostname, { all: true, verbatim: true });
   } catch {
     return { safe: false, reason: 'Could not resolve destination host' };
   }

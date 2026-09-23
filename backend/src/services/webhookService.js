@@ -43,7 +43,7 @@ function isBlockedWebhookAddress(ip) {
  * Validates endpoint URL and guards against Server-Side Request Forgery (SSRF).
  * Blocks loopback, private RFC 1918, link-local, and cloud metadata addresses.
  */
-export async function isSafeEndpointUrl(urlStr) {
+export async function isSafeEndpointUrl(urlStr, { lookup = dns.promises.lookup } = {}) {
   try {
     const parsed = new URL(urlStr);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -62,7 +62,7 @@ export async function isSafeEndpointUrl(urlStr) {
       return { safe: false, reason: 'Access to cloud metadata endpoints is forbidden' };
     }
 
-    const lookupResult = await dns.promises.lookup(host);
+    const lookupResult = await lookup(host);
     if (isBlockedWebhookAddress(lookupResult.address)) {
       return { safe: false, reason: 'This destination resolves to a blocked/private address' };
     }
@@ -81,9 +81,12 @@ export async function isSafeEndpointUrl(urlStr) {
  * registration and then repoint it at an internal address before the next
  * delivery — a classic DNS-rebinding bypass of a validate-then-fetch
  * pattern.
+ *
+ * `lookup` is injectable so tests can simulate exactly that rebinding
+ * scenario (a hostname that resolves safely once and privately the next).
  */
-async function resolveSafeDeliveryAddress(hostname) {
-  const addresses = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+async function resolveSafeDeliveryAddress(hostname, lookup = dns.promises.lookup) {
+  const addresses = await lookup(hostname, { all: true, verbatim: true });
   const safe = addresses.find((addr) => !isBlockedWebhookAddress(addr.address));
   if (!safe) {
     throw new Error(`Destination "${hostname}" resolves only to blocked/private addresses`);
@@ -126,7 +129,14 @@ export function generateSignature(payloadString, secret, timestamp) {
 /**
  * Executes a single HTTP webhook delivery attempt, records telemetry and response preview.
  */
-export async function executeDelivery(webhook, event, data, attempt = 1, existingDeliveryId = null) {
+export async function executeDelivery(
+  webhook,
+  event,
+  data,
+  attempt = 1,
+  existingDeliveryId = null,
+  { lookup = dns.promises.lookup } = {}
+) {
   const deliveryId = existingDeliveryId || `del_${crypto.randomBytes(12).toString('hex')}`;
   const eventId = `evt_${crypto.randomBytes(12).toString('hex')}`;
   const now = Date.now();
@@ -164,7 +174,7 @@ export async function executeDelivery(webhook, event, data, attempt = 1, existin
 
   try {
     const targetHostname = new URL(webhook.url).hostname;
-    const safeAddress = await resolveSafeDeliveryAddress(targetHostname);
+    const safeAddress = await resolveSafeDeliveryAddress(targetHostname, lookup);
     pinnedDispatcher = buildPinnedDispatcher(safeAddress);
 
     // Uses undici's own fetch (not Node's global fetch) so it always shares

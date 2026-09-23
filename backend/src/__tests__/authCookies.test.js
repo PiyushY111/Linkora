@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import request from 'supertest';
-import app from '../index.js';
+import app from '../app.js';
 import { connectTestDb, disconnectTestDb } from './testUtils.js';
 import User from '../models/User.js';
 import { redis } from '../services/cacheService.js';
