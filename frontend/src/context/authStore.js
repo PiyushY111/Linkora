@@ -1,28 +1,68 @@
 import { create } from 'zustand';
 
-// The access token lives in memory only (never localStorage/sessionStorage)
-// so it isn't readable by an XSS payload that persists across reloads. The
-// refresh token never reaches JavaScript at all — it's an httpOnly cookie
-// set by the server. Losing the in-memory token on a hard refresh is
-// expected and handled by bootstrapSession() (see services/api.js), which
-// exchanges the refresh cookie for a fresh access token on app load.
+const TOKEN_KEY = 'linkora_token';
+const USER_KEY = 'linkora_user';
+
+const getStoredToken = () => {
+  try {
+    return localStorage.getItem(TOKEN_KEY) || null;
+  } catch {
+    return null;
+  }
+};
+
+const getStoredUser = () => {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const initialToken = getStoredToken();
+const initialUser = getStoredUser();
+
 const useAuthStore = create((set) => ({
-  user: null,
-  token: null,
+  user: initialUser,
+  token: initialToken,
   isLoading: false,
-  // True until the initial silent-refresh attempt (via the refresh cookie)
-  // has resolved, so routing decisions never fire on a stale/absent token.
-  isBootstrapping: true,
+  // If we already have a persisted token, we don't need a full-screen block,
+  // but bootstrapSession() will silently re-validate in the background.
+  isBootstrapping: !initialToken,
   error: null,
 
-  setUser: (user) => set({ user }),
-  setToken: (token) => set({ token }),
+  setUser: (user) => {
+    try {
+      if (user) {
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
+      } else {
+        localStorage.removeItem(USER_KEY);
+      }
+    } catch {}
+    set({ user });
+  },
+
+  setToken: (token) => {
+    try {
+      if (token) {
+        localStorage.setItem(TOKEN_KEY, token);
+      } else {
+        localStorage.removeItem(TOKEN_KEY);
+      }
+    } catch {}
+    set({ token });
+  },
 
   setLoading: (isLoading) => set({ isLoading }),
   setBootstrapped: () => set({ isBootstrapping: false }),
   setError: (error) => set({ error }),
 
   logout: () => {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    } catch {}
     set({ user: null, token: null });
   },
 

@@ -46,10 +46,10 @@ app.use(cors({
     } catch {
       allowedHost = null;
     }
-    if (origin === allowedHost || origin.endsWith('.vercel.app') || origin === 'http://localhost:3000') {
+    if (origin === allowedHost || origin.endsWith('.vercel.app') || origin === 'http://localhost:3000' || origin === 'http://localhost:5173') {
       return callback(null, true);
     }
-    callback(new Error('Blocked by CORS'));
+    callback(null, false);
   },
   credentials: true,
 }));
