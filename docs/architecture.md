@@ -34,8 +34,8 @@ flowchart LR
 
 1. `GET /api/r/:code` resolves the link from the Redis cache (MongoDB on a miss), runs the password, expiry and usage-limit checks, and responds with the redirect.
 2. After responding, it `XADD`s a click event to the click stream. This is fire-and-forget: a Redis failure here loses that click's analytics but never fails the redirect.
-3. The consumer reads batches with `XREADGROUP`, enriches each event, and writes it through the `AnalyticsRepository`. It updates `Link.clicks` idempotently and only then `XACK`s.
-4. A batch that fails stays pending. `XAUTOCLAIM` hands it to a consumer again later, and because every write is keyed by the stream entry ID, the retry doesn't double count.
+3. The consumer reads batches with `XREADGROUP`, on its own connection, because a blocking read holds the connection. It enriches each event and writes it through the `AnalyticsRepository`, which also updates `Link.clicks`, and only then `XACK`s. While the stream is idle, the read's BLOCK doubles from 1s up to 30s, to save Redis commands ([command budget](redis-keys.md#command-budget)). A new entry still returns immediately.
+4. A batch that fails stays pending. Every 5 minutes, `XAUTOCLAIM` hands entries idle for over 30s to a consumer again. Because every write is keyed by the stream entry ID, the retry doesn't double count. Worst-case retry delay is about 5.5 minutes.
 
 ## Analytics
 

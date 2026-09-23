@@ -16,7 +16,7 @@ Sizes were measured with `MEMORY USAGE` on Redis 8 (see "Memory budget").
 | `link:unlock:<jti>` | Single-use password-unlock token | `analyticsController` | **60 s**; consumed with `GETDEL` | ~75 B |
 | `sso:state:<state>` | SSO CSRF `state` | `routes/sso.js` | `SSO_STATE_TTL_SECONDS`; consumed with `GETDEL` | ~75 B |
 | `refresh:family:<id>:current` / `:user` | Refresh-token rotation family (current secret, owner) | `utils/jwt.js` | `JWT_REFRESH_TOKEN_TTL_SECONDS` (default **30 days**) | ~150 B per key |
-| `ratelimit:<prefix>:<id>` (sorted set) | Sliding-window limiters: redirect, register, refresh, link-creation, link-unlock | `middleware/rateLimiter.js` | `PEXPIRE` = the window (15 min to 1 h); at most `max` members | ~200 B, plus ~60 B per request in the window |
+| `ratelimit:<prefix>:<id>` (sorted set) | Sliding-window limiters: register, refresh, link-creation, link-unlock | `middleware/rateLimiter.js` | `PEXPIRE` = the window (15 min to 1 h); at most `max` members | ~200 B, plus ~60 B per request in the window |
 | `ratelimit:public-api:<keyId>` (hash) | Public API token bucket | `middleware/rateLimiter.js` | **1 h** | ~100 B |
 | `ratelimit:auth-failures:<ip>` | Failed-login counter | `middleware/rateLimiter.js` | **15 min**, fixed from the first failure (`INCR` + `EXPIRE NX` in one `MULTI`) | ~70 B |
 | `hll:visitors:<linkId>:<yyyymmdd>` | Unique-visitor HyperLogLog per link per UTC day | `repositories/analytics/mongoAnalyticsWriter.js` | **2 days** (refreshed on write) | ~200 B sparse, **≤ 14.4 KB** dense |
@@ -45,6 +45,68 @@ That leaves more than 5× headroom on a 256 MB instance at these volumes, well a
 
 - lower `REDIS_CACHE_TTL_SECONDS`, which only costs more MongoDB reads
 - then lower `CLICK_STREAM_MAXLEN`, which leaves less room for consumer downtime
+
+## Command budget
+
+Free-tier Redis (Upstash) allows **500,000 commands a month**. Every command counts, including each command inside a `MULTI`/`EXEC`, and a Lua script counts as one. These numbers are pinned by tests:
+
+- `backend/test/integration/redisCommandBudget.test.js` records the exact commands the API sends.
+- `backend/test/unit/clickConsumerPolling.test.js` measures an idle consumer under fake timers.
+
+### Per request (API)
+
+| Operation | Commands | Which |
+|---|---|---|
+| **Redirect, cache hit** | **2** | `HGETALL link:meta`, `XADD stream:clicks` (test-pinned) |
+| Redirect, cache miss | 4 | `HGETALL`, `HSET` + `EXPIRE` (repopulate), `XADD` (test-pinned) |
+| Redirect to an unknown code | 3, then 1 while the negative entry lives | `HGETALL`, `HSET` + `EXPIRE` |
+| … link has `maxClicks` | +1 | usage Lua script |
+| … password-protected link | +1 on redirect, 2 on `POST /unlock` | `GETDEL`; limiter script + `SET` |
+| … XFetch early refresh (only near cache expiry) | +3 | `SET NX` lock, `HSET` + `EXPIRE` |
+| `GET /health/liveness` | **0** | (test-pinned) |
+| `GET /health/readiness` | 2 | `PING`, `XINFO` (test-pinned) |
+| Create link (dashboard) | 1 | link-creation limiter script |
+| Public API request | 1 | token-bucket script |
+| Login | 2 to 6 | failure check, failure counter or reset, refresh-token `MULTI` |
+| Refresh session | 5 | limiter script, consume script, `MULTI SET SET EXEC` |
+
+The redirect path used to also run a Redis sliding-window limiter, one more script per redirect. It was removed because the in-memory limiter in `app.js` already covers that route with a much lower ceiling, so the Redis one could never reject anything.
+
+### Worker
+
+| Situation | Commands |
+|---|---|
+| Per batch | `XREADGROUP` + `XACK` + 1 unique-visitor script per (link, day) in the batch |
+| Sparse traffic (each click its own batch) | **3 per click** |
+| Busy (500-entry batches) | 2 + (distinct link-days) per 500 clicks |
+| **Idle** | **136 an hour**: 124 `XREADGROUP` (BLOCK backs off 1s → 2s → … → 30s) + 12 `XAUTOCLAIM` (every 5 min). That's 26 per 10 minutes, and the test budget is < 30. |
+| Connection handshake | 5 per connection (`HELLO`, `SELECT`, 2 × `CLIENT SETINFO`, `INFO`), once per connect or reconnect; the worker holds 2 connections, the API 1 |
+| Script load | 1 `SCRIPT LOAD` per script per process start |
+
+The previous loop, a fixed 1s BLOCK plus `XAUTOCLAIM` on every iteration, spent about **7,200 commands an hour while idle (~5.2M a month)**, ten times the whole free budget before a single click.
+
+### Monthly estimate
+
+At sparse traffic, with a warm cache and plain links:
+
+```
+monthly ≈ 99,000 (idle worker: 136/h × 730 h) + 5 × N redirects (2 API + 3 worker)
+```
+
+| Redirects per month (N) | Commands per month | Share of 500K |
+|---|---|---|
+| 10,000 | ~149,000 | 30% |
+| 50,000 | ~349,000 | 70% |
+| **80,000** | **~499,000** | **~100%** |
+| 100,000 | ~599,000 | over |
+
+The idle floor is an upper bound: while clicks flow, reads return immediately and replace idle reads. Busy traffic also batches, which cuts the worker's per-click cost toward zero. So ~80K redirects a month is the conservative ceiling for the free tier.
+
+To stretch the budget:
+
+- `CLICK_CONSUMER_BLOCK_MAX_MS=120000` drops the idle floor to ~42/h (~31K a month) and raises the ceiling to ~94K redirects. A long BLOCK costs no click latency, because a blocked read returns as soon as an entry arrives.
+- Point the platform health check at `/health/liveness` (0 commands). Polling `/health/readiness` every 30 seconds alone would cost ~173K commands a month.
+- Longer `REDIS_CACHE_TTL_SECONDS` turns more 4-command misses into 2-command hits.
 
 ## Splitting roles again later
 

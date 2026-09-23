@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { UAParser } from 'ua-parser-js';
-import { getRedis } from '../services/cacheService.js';
+import mongoose from 'mongoose';
+import { getRedis, closeRedis } from '../services/cacheService.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { lookupGeo, scheduleGeoIpUpdates } from '../services/geoipService.js';
@@ -9,16 +10,22 @@ import connectDB from '../config/db.js';
 import { dispatchEvent } from '../services/webhookService.js';
 
 /**
- * Dedicated Redis Streams consumer group worker. Runs as its own process
- * (`node src/consumers/clickConsumer.js`), separate from the redirect
- * request path, so multiple instances can share load via consumer-group
- * semantics (XREADGROUP/XACK) and crash recovery (XAUTOCLAIM).
+ * Redis Streams consumer-group worker for click events. Runs as its own
+ * process (`node src/consumers/clickConsumer.js`) or embedded in the API
+ * process (WORKER_MODE=embedded, see server.js). Several instances share
+ * load through the consumer group (XREADGROUP/XACK) and recover each
+ * other's crashed batches (XAUTOCLAIM).
+ *
+ * Built to spend as few Redis commands as possible while idle, since a
+ * free-tier Redis has a monthly command budget (docs/redis-keys.md,
+ * "Command budget"): the blocking read backs off to a long BLOCK when the
+ * stream is quiet, and stale-entry recovery runs on a slow timer rather
+ * than every loop.
  */
 
-const CONSUMER_NAME = `consumer-${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
-const CLAIM_IDLE_MS = 30000; // reclaim entries a crashed consumer left pending > 30s
-
-let running = true;
+// Reclaim entries another consumer left pending for longer than this.
+const CLAIM_IDLE_MS = 30000;
+const ERROR_BACKOFF_MS = 1000;
 
 function streamEntryToObject(fieldArray) {
   const obj = {};
@@ -96,7 +103,7 @@ async function enrichEvent(id, fields) {
  * left un-acked so XAUTOCLAIM retries them; a failed write throws, leaving
  * the whole batch pending, which is safe because every write is idempotent.
  */
-export async function processBatch(entries) {
+export async function processBatch(entries, { redis = getRedis() } = {}) {
   const events = [];
   const ackIds = [];
 
@@ -112,7 +119,7 @@ export async function processBatch(entries) {
   // Raw event, rollups, unique visitors and Link.clicks, all idempotent.
   const { applied } = await getAnalyticsRepository().recordClicks(events);
   if (ackIds.length > 0) {
-    await getRedis().xack(env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, ...ackIds);
+    await redis.xack(env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, ...ackIds);
   }
 
   // Fire-and-forget: click webhook subscribers, only for newly applied events.
@@ -136,86 +143,165 @@ export async function processBatch(entries) {
 }
 
 /**
- * Reclaims and reprocesses entries left pending by a crashed/restarted
- * consumer (idle longer than CLAIM_IDLE_MS).
+ * Reclaims and reprocesses entries another consumer left pending for longer
+ * than CLAIM_IDLE_MS (a crash, or a batch whose write failed).
  */
-export async function claimStalePending() {
-  try {
-    // Redis 7+ also returns the IDs of pending entries that MAXLEN trimming
-    // deleted before anyone processed them; those clicks are gone, and
-    // leaving them pending would grow the PEL forever.
-    const [, entries, deletedIds = []] = await getRedis().xautoclaim(
-      env.CLICK_STREAM_KEY,
-      env.CLICK_STREAM_CONSUMER_GROUP,
-      CONSUMER_NAME,
-      CLAIM_IDLE_MS,
-      '0-0',
-      'COUNT',
-      env.CLICK_STREAM_BATCH_SIZE
-    );
-    if (deletedIds.length > 0) {
-      logger.error({ count: deletedIds.length }, 'Pending click events were trimmed from the stream before processing; lost');
-      await getRedis().xack(env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, ...deletedIds);
-    }
-    if (entries.length > 0) {
-      logger.warn({ count: entries.length }, 'Reclaimed stale pending click events');
-      await processBatch(entries);
-    }
-  } catch (err) {
-    logger.error({ err }, 'Failed to claim stale pending entries');
+async function claimStalePending(redis, consumerName) {
+  // Redis 7+ also returns the IDs of pending entries that MAXLEN trimming
+  // deleted before anyone processed them; those clicks are gone, and
+  // leaving them pending would grow the PEL forever.
+  const [, entries, deletedIds = []] = await redis.xautoclaim(
+    env.CLICK_STREAM_KEY,
+    env.CLICK_STREAM_CONSUMER_GROUP,
+    consumerName,
+    CLAIM_IDLE_MS,
+    '0-0',
+    'COUNT',
+    env.CLICK_STREAM_BATCH_SIZE
+  );
+  if (deletedIds.length > 0) {
+    logger.error({ count: deletedIds.length }, 'Pending click events were trimmed from the stream before processing; lost');
+    await redis.xack(env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, ...deletedIds);
+  }
+  if (entries.length > 0) {
+    logger.warn({ count: entries.length }, 'Reclaimed stale pending click events');
+    await processBatch(entries, { redis });
   }
 }
 
-async function pollLoop() {
-  while (running) {
+/**
+ * @param {{
+ *   redis?: import('ioredis').Redis,
+ *   blockingRedis?: import('ioredis').Redis,
+ *   consumerName?: string,
+ *   blockMinMs?: number,
+ *   blockMaxMs?: number,
+ *   claimIntervalMs?: number,
+ * }} [options]
+ *   `blockingRedis` serves only the blocking XREADGROUP. It must be its own
+ *   connection: a BLOCK of up to blockMaxMs holds the connection, and in
+ *   embedded mode every API command queued behind it would wait too.
+ */
+export function createClickConsumer({
+  redis = getRedis(),
+  blockingRedis = redis.duplicate(),
+  consumerName = `consumer-${process.pid}-${crypto.randomBytes(3).toString('hex')}`,
+  blockMinMs = env.CLICK_CONSUMER_BLOCK_MIN_MS,
+  blockMaxMs = env.CLICK_CONSUMER_BLOCK_MAX_MS,
+  claimIntervalMs = env.CLICK_CONSUMER_CLAIM_INTERVAL_MS,
+} = {}) {
+  let running = false;
+  let reading = false;
+  let loopDone = Promise.resolve();
+
+  async function readOnce(blockMs) {
+    reading = true;
     try {
-      const response = await getRedis().xreadgroup(
+      return await blockingRedis.xreadgroup(
         'GROUP',
         env.CLICK_STREAM_CONSUMER_GROUP,
-        CONSUMER_NAME,
+        consumerName,
         'COUNT',
         env.CLICK_STREAM_BATCH_SIZE,
         'BLOCK',
-        env.CLICK_STREAM_BATCH_INTERVAL_MS,
+        blockMs,
         'STREAMS',
         env.CLICK_STREAM_KEY,
         '>'
       );
-
-      if (response) {
-        const [, entries] = response[0];
-        if (entries.length > 0) await processBatch(entries);
-      }
-
-      await claimStalePending();
-    } catch (err) {
-      logger.error({ err }, 'Click consumer poll loop error');
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } finally {
+      reading = false;
     }
   }
+
+  async function loop() {
+    let blockMs = blockMinMs;
+    let lastClaimAt = -Infinity;
+    while (running) {
+      try {
+        if (Date.now() - lastClaimAt >= claimIntervalMs) {
+          lastClaimAt = Date.now();
+          await claimStalePending(redis, consumerName);
+        }
+
+        const response = await readOnce(blockMs);
+        const entries = response?.[0]?.[1] || [];
+        if (entries.length > 0) {
+          await processBatch(entries, { redis });
+          blockMs = blockMinMs;
+        } else {
+          // Idle: each empty read doubles the next BLOCK, up to blockMaxMs.
+          // A new entry still returns a blocked read immediately, so this
+          // costs no latency, only fewer commands while nothing happens.
+          blockMs = Math.min(blockMs * 2, blockMaxMs);
+        }
+      } catch (err) {
+        if (!running) break; // stop() aborted the blocking read
+        logger.error({ err }, 'Click consumer loop error');
+        await new Promise((resolve) => setTimeout(resolve, ERROR_BACKOFF_MS));
+      }
+    }
+  }
+
+  return {
+    consumerName,
+
+    /** Starts polling; resolves once the loop has started. */
+    start() {
+      if (running) return;
+      running = true;
+      loopDone = loop();
+      logger.info({ consumer: consumerName, group: env.CLICK_STREAM_CONSUMER_GROUP }, 'Click consumer started');
+    },
+
+    /**
+     * Stops polling. An in-flight batch finishes (and is ACKed) first; a
+     * blocking read with nothing to process is aborted by closing its
+     * dedicated connection. Resolves once the loop has exited.
+     */
+    async stop() {
+      running = false;
+      if (reading) blockingRedis.disconnect();
+      await loopDone;
+      if (blockingRedis.status !== 'end') blockingRedis.disconnect();
+      logger.info({ consumer: consumerName }, 'Click consumer stopped');
+    },
+  };
 }
 
-export async function startClickConsumer() {
-  await connectDB();
+/**
+ * Everything a consumer needs before it can poll, shared by the standalone
+ * worker and embedded mode.
+ */
+export async function prepareClickConsumer() {
   await getAnalyticsRepository().ensureReady();
   await ensureConsumerGroup();
   scheduleGeoIpUpdates();
-
-  logger.info({ consumer: CONSUMER_NAME, group: env.CLICK_STREAM_CONSUMER_GROUP }, 'Click consumer started');
-  await pollLoop();
-}
-
-export function stopClickConsumer() {
-  running = false;
 }
 
 const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 
 if (isMainModule) {
-  process.on('SIGTERM', stopClickConsumer);
-  process.on('SIGINT', stopClickConsumer);
+  const run = async () => {
+    await connectDB();
+    await prepareClickConsumer();
+    const consumer = createClickConsumer();
+    consumer.start();
 
-  startClickConsumer().catch((err) => {
+    let stopping = false;
+    const shutdown = async (signal) => {
+      if (stopping) return;
+      stopping = true;
+      logger.info({ signal }, 'Stopping click consumer');
+      await consumer.stop();
+      await Promise.allSettled([mongoose.connection.close(), closeRedis()]);
+      process.exit(0);
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+  };
+
+  run().catch((err) => {
     logger.error({ err }, 'Click consumer crashed');
     process.exit(1);
   });

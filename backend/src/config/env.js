@@ -64,7 +64,12 @@ const envSchema = z
     CLICK_STREAM_KEY: z.string().default('stream:clicks'),
     CLICK_STREAM_CONSUMER_GROUP: z.string().default('click-consumers'),
     CLICK_STREAM_BATCH_SIZE: z.coerce.number().int().positive().default(500),
-    CLICK_STREAM_BATCH_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
+    // Consumer polling (Redis command budget, docs/redis-keys.md): the
+    // blocking read starts at the min BLOCK and doubles while the stream is
+    // idle, up to the max; stale pending entries are reclaimed on a timer.
+    CLICK_CONSUMER_BLOCK_MIN_MS: z.coerce.number().int().positive().default(1000),
+    CLICK_CONSUMER_BLOCK_MAX_MS: z.coerce.number().int().positive().default(30000),
+    CLICK_CONSUMER_CLAIM_INTERVAL_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
     // Approximate caps (XADD MAXLEN ~). If the consumer falls further behind
     // than this, the oldest unprocessed clicks are trimmed and lost.
     CLICK_STREAM_MAXLEN: z.coerce.number().int().positive().default(10000),

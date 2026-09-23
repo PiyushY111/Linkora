@@ -80,13 +80,6 @@ export function createSlidingWindowLimiter({ windowMs, max, keyPrefix, keyFn = g
   };
 }
 
-// Redirect route: 5,000 req/min per IP.
-export const redirectRateLimiter = createSlidingWindowLimiter({
-  windowMs: 60 * 1000,
-  max: 5000,
-  keyPrefix: 'redirect',
-});
-
 const LINK_CREATION_LIMITS = {
   free: 30,
   pro: 1000,
@@ -271,7 +264,6 @@ export const authRateLimitMiddleware = async (req, res, next) => {
 
 export default {
   createSlidingWindowLimiter,
-  redirectRateLimiter,
   linkCreationRateLimiter,
   registerRateLimiter,
   refreshRateLimiter,

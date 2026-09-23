@@ -70,7 +70,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({ success: true, message: 'Server is running' });
 });
 
-// Liveness: process is responsive. No dependency checks — a slow/broken
+// Liveness: process is responsive. No dependency checks (and no Redis
+// commands), so it's safe for a platform to poll often: a slow or broken
 // dependency should surface as a readiness failure, not a restart loop.
 app.get('/health/liveness', (req, res) => {
   res.status(200).json({ success: true, status: 'alive' });
@@ -80,6 +81,10 @@ app.get('/health/liveness', (req, res) => {
 // round-trip latency (<50ms), and that the click-stream consumer group is
 // reachable (informational — the group is created lazily by the consumer
 // process, so its absence doesn't fail readiness).
+//
+// Costs two Redis commands per call. Point platform health checks at
+// /health/liveness instead; poll this rarely (docs/redis-keys.md,
+// "Command budget"). Failure details go to the log, never the response.
 app.get('/health/readiness', async (req, res) => {
   const checks = {};
   let healthy = true;
@@ -89,7 +94,8 @@ app.get('/health/readiness', async (req, res) => {
     await getRedis().ping();
     checks.redis = { ok: true, latencyMs: Date.now() - start };
   } catch (err) {
-    checks.redis = { ok: false, error: err.message };
+    req.log.warn({ err }, 'Readiness: Redis check failed');
+    checks.redis = { ok: false };
     healthy = false;
   }
 
@@ -100,15 +106,16 @@ app.get('/health/readiness', async (req, res) => {
     checks.mongodb = { ok: latencyMs < 50, latencyMs };
     if (latencyMs >= 50) healthy = false;
   } catch (err) {
-    checks.mongodb = { ok: false, error: err.message };
+    req.log.warn({ err }, 'Readiness: MongoDB check failed');
+    checks.mongodb = { ok: false };
     healthy = false;
   }
 
   try {
     await getRedis().xinfo('GROUPS', env.CLICK_STREAM_KEY);
     checks.streamConsumerGroup = { ok: true };
-  } catch (err) {
-    checks.streamConsumerGroup = { ok: false, note: 'group not yet created by consumer', error: err.message };
+  } catch {
+    checks.streamConsumerGroup = { ok: false, note: 'group not yet created by consumer' };
   }
 
   res.status(healthy ? 200 : 503).json({ success: healthy, checks });
