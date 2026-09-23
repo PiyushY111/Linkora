@@ -5,6 +5,7 @@ import { validateLinkRedirectFields } from '../services/linkUrlValidation.js';
 import { getClientIp } from '../utils/helpers.js';
 import { logAudit } from '../utils/auditLogger.js';
 import { invalidateLinkMeta } from '../services/cacheService.js';
+import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { ValidationError, NotFoundError, toClientError } from '../lib/errors.js';
@@ -274,6 +275,7 @@ export const deleteLink = async (req, res) => {
   }
 
   await Link.findByIdAndDelete(link._id);
+  await getAnalyticsRepository().deleteAnalytics({ linkId: String(link._id) });
   await invalidateLinkMeta(link.shortCode);
   if (link.customAlias) await invalidateLinkMeta(link.customAlias);
 

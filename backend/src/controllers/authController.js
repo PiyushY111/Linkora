@@ -9,6 +9,7 @@ import { logAudit } from '../utils/auditLogger.js';
 import { env } from '../config/env.js';
 import { ValidationError, UnauthorizedError, NotFoundError } from '../lib/errors.js';
 import { setRefreshTokenCookie, clearRefreshTokenCookie } from '../utils/authCookies.js';
+import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
 
 // Minimum acceptable password strength at registration: 8+ chars, at least
 // one letter and one digit. Deliberately simple (no forced special-char
@@ -304,6 +305,7 @@ export const deleteAccount = async (req, res) => {
     Link.deleteMany({ user: user._id }),
     ApiKey.deleteMany({ user: user._id }),
     Webhook.deleteMany({ user: user._id }),
+    getAnalyticsRepository().deleteAnalytics({ userId: String(user._id) }),
     User.findByIdAndDelete(user._id),
   ]);
 

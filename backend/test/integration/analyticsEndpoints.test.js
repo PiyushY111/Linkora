@@ -7,6 +7,11 @@ import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from '../
 import Link from '../../src/models/Link.js';
 import { redis, cacheRedis } from '../../src/services/cacheService.js';
 import { processBatch } from '../../src/consumers/clickConsumer.js';
+import { getAnalyticsRepository } from '../../src/repositories/analytics/analyticsRepository.js';
+
+// Stream entry IDs are unique in production; processed_events outlives a
+// test run, so reusing fixed IDs across runs would read as redeliveries.
+const runId = Date.now();
 
 let user;
 let token;
@@ -36,12 +41,13 @@ beforeAll(async () => {
     timestamp: Date.now(),
   };
   await processBatch([
-    streamEntry('10-0', { ...base, referer: 'https://news.ycombinator.com/item?id=1', utmSource: 'hn' }),
-    streamEntry('10-1', { ...base, referer: 'direct', utmSource: '=HYPERLINK("http://evil")' }),
+    streamEntry(`${runId}-100`, { ...base, referer: 'https://news.ycombinator.com/item?id=1', utmSource: 'hn' }),
+    streamEntry(`${runId}-101`, { ...base, referer: 'direct', utmSource: '=HYPERLINK("http://evil")' }),
   ]);
 });
 
 afterAll(async () => {
+  await getAnalyticsRepository().deleteAnalytics({ userId: String(user._id) });
   await Link.deleteMany({ user: user._id });
   await mongoose.model('User').deleteOne({ _id: user._id });
   await disconnectTestDb();

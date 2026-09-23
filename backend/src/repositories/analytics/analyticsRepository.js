@@ -37,12 +37,16 @@ import { mongoAnalyticsRepository } from './mongoAnalyticsRepository.js';
  * @property {string} timeRange
  *
  * @typedef {Object} AnalyticsRepository
- * @property {(events: ClickEventRecord[]) => Promise<{ applied: ClickEventRecord[] }>} recordClicks
+ * @property {() => Promise<void>} ensureReady
+ *   Creates collections/indexes; idempotent. Called at process startup.
+ * @property {(events: ClickEventRecord[], options?: { countLinkClicks?: boolean }) => Promise<{ applied: ClickEventRecord[] }>} recordClicks
  *   Persists a batch. Must be idempotent per eventId: re-recording an event
  *   already recorded is a no-op. Returns the events that were newly applied.
  * @property {(linkId: string, timeInfo: TimeInfo, options: { excludeBots: boolean }) => Promise<object>} getLinkAnalytics
  * @property {(userId: string, timeInfo: TimeInfo) => Promise<object>} getUserSummary
  * @property {(filter: { linkId?: string, userId: string, start: Date, end: Date, limit: number }) => AsyncIterable<object>} exportEvents
+ * @property {(scope: { linkId?: string, userId?: string }) => Promise<void>} deleteAnalytics
+ *   Removes every stored click for a link or a user (link/account deletion).
  */
 
 /** @returns {AnalyticsRepository} */

@@ -1,12 +1,10 @@
 import crypto from 'crypto';
-import mongoose from 'mongoose';
 import { UAParser } from 'ua-parser-js';
 import { redis } from '../services/cacheService.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { lookupGeo, scheduleGeoIpUpdates } from '../services/geoipService.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
-import Link from '../models/Link.js';
 import connectDB from '../config/db.js';
 import { dispatchEvent } from '../services/webhookService.js';
 
@@ -19,11 +17,6 @@ import { dispatchEvent } from '../services/webhookService.js';
 
 const CONSUMER_NAME = `consumer-${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
 const CLAIM_IDLE_MS = 30000; // reclaim entries a crashed consumer left pending > 30s
-// How many recent stream entry IDs each Link remembers for click-count
-// dedup. A redelivered entry is only double-counted if the same link took
-// more than this many other clicks between the first attempt and the retry
-// (i.e. ~33 clicks/s sustained on one link across a 30s CLAIM_IDLE_MS).
-export const APPLIED_CLICK_ID_WINDOW = 1000;
 
 let running = true;
 
@@ -98,8 +91,8 @@ async function enrichEvent(id, fields) {
 }
 
 /**
- * Enriches a batch, records it through the analytics repository, counts it
- * into Link.clicks, and only then XACKs. Entries that fail enrichment are
+ * Enriches a batch, records it through the analytics repository, and only
+ * then XACKs. Entries that fail enrichment are
  * left un-acked so XAUTOCLAIM retries them; a failed write throws, leaving
  * the whole batch pending, which is safe because every write is idempotent.
  */
@@ -116,8 +109,8 @@ export async function processBatch(entries) {
     }
   }
 
+  // Raw event, rollups, unique visitors and Link.clicks, all idempotent.
   const { applied } = await getAnalyticsRepository().recordClicks(events);
-  await applyClickCounts(events.map((e) => ({ id: e.eventId, linkId: e.linkId, timestamp: e.timestamp })));
   if (ackIds.length > 0) {
     await redis.xack(env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, ...ackIds);
   }
@@ -140,34 +133,6 @@ export async function processBatch(entries) {
   if (entries.length > 0) {
     logger.info({ count: entries.length, acked: ackIds.length }, 'Processed click event batch');
   }
-}
-
-/**
- * Increments Link.clicks once per stream entry. Each entry is its own
- * conditional single-document update (Mongo has no multi-document atomicity
- * without a replica-set transaction), so an entry whose ID is already in the
- * link's appliedClickIds window matches nothing and is a no-op on retry.
- * @param {{ id: string, linkId: string, timestamp: Date }[]} clicks
- */
-export async function applyClickCounts(clicks) {
-  const ops = [];
-  for (const { id, linkId, timestamp } of clicks) {
-    if (!mongoose.isValidObjectId(linkId)) {
-      logger.warn({ id, linkId }, 'Click event has an invalid linkId; not counted');
-      continue;
-    }
-    ops.push({
-      updateOne: {
-        filter: { _id: linkId, appliedClickIds: { $ne: id } },
-        update: {
-          $inc: { clicks: 1 },
-          $max: { lastAccessedAt: timestamp },
-          $push: { appliedClickIds: { $each: [id], $slice: -APPLIED_CLICK_ID_WINDOW } },
-        },
-      },
-    });
-  }
-  if (ops.length > 0) await Link.bulkWrite(ops, { ordered: false });
 }
 
 /**
@@ -225,6 +190,7 @@ async function pollLoop() {
 
 export async function startClickConsumer() {
   await connectDB();
+  await getAnalyticsRepository().ensureReady();
   await ensureConsumerGroup();
   scheduleGeoIpUpdates();
 

@@ -3,9 +3,14 @@ import assert from 'node:assert';
 import mongoose from 'mongoose';
 import { connectTestDb, disconnectTestDb, createTestUser } from '../helpers/testUtils.js';
 import Link from '../../src/models/Link.js';
-import ClickEvent from '../../src/models/ClickEvent.js';
 import { redis, cacheRedis } from '../../src/services/cacheService.js';
-import { applyClickCounts, processBatch, APPLIED_CLICK_ID_WINDOW } from '../../src/consumers/clickConsumer.js';
+import { processBatch } from '../../src/consumers/clickConsumer.js';
+import { getAnalyticsRepository } from '../../src/repositories/analytics/analyticsRepository.js';
+import { applyClickCounts, APPLIED_ID_WINDOW as APPLIED_CLICK_ID_WINDOW } from '../../src/repositories/analytics/mongoAnalyticsWriter.js';
+
+// Stream entry IDs are unique in production; processed_events outlives a
+// test run, so reusing fixed IDs across runs would read as redeliveries.
+const runId = Date.now();
 
 let user;
 
@@ -15,7 +20,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await ClickEvent.deleteMany({ user: user._id });
+  await getAnalyticsRepository().deleteAnalytics({ userId: String(user._id) });
   await Link.deleteMany({ user: user._id });
   await mongoose.model('User').deleteOne({ _id: user._id });
   await disconnectTestDb();
@@ -107,7 +112,7 @@ describe('click counting (stream consumer -> Link.clicks)', () => {
       referer: 'direct',
       timestamp: Date.now(),
     };
-    const entries = [streamEntry('4-0', base), streamEntry('4-1', base)];
+    const entries = [streamEntry(`${runId}-40`, base), streamEntry(`${runId}-41`, base)];
 
     await processBatch(entries);
     assert.strictEqual(await clicksOf(link._id), 2);

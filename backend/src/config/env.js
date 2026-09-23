@@ -73,6 +73,10 @@ const envSchema = z
     CLICK_STREAM_BATCH_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
     WEBHOOK_DLQ_STREAM_KEY: z.string().default('stream:webhooks:dlq'),
 
+    // Analytics: raw click events (time-series) and hourly rollups are
+    // kept this long; daily rollups are kept indefinitely.
+    CLICK_EVENT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+
     // Metrics
     METRICS_TOKEN: z.string().optional().default(''),
 
@@ -101,6 +105,15 @@ const envSchema = z
     API_KEY_HEADER: z.string().default('x-api-key'),
   })
   .superRefine((env, ctx) => {
+    // Rollup dedup keeps a window of the last 1,000 applied event IDs per
+    // document; a batch larger than that could evict its own IDs.
+    if (env.CLICK_STREAM_BATCH_SIZE > 1000) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CLICK_STREAM_BATCH_SIZE'],
+        message: 'CLICK_STREAM_BATCH_SIZE must be at most 1000 (the per-document applied-ID window)',
+      });
+    }
     if (env.SAFE_BROWSING_ENABLED && !env.SAFE_BROWSING_API_KEY) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

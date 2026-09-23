@@ -6,6 +6,7 @@ import connectDB from './config/db.js';
 import { scheduleAbuseRescan } from './services/threatDetectionService.js';
 import { scheduleExpiryWebhookCheck } from './services/webhookService.js';
 import { redis } from './services/cacheService.js';
+import { getAnalyticsRepository } from './repositories/analytics/analyticsRepository.js';
 
 /**
  * The real process entrypoint (`node src/server.js`): connects to Mongo
@@ -13,7 +14,12 @@ import { redis } from './services/cacheService.js';
  * listening. Kept separate from app.js so importing the app (e.g. in
  * tests, via supertest) never has any of these side effects.
  */
-connectDB();
+connectDB()
+  .then(() => getAnalyticsRepository().ensureReady())
+  .catch((err) => {
+    logger.error({ err }, 'Failed to prepare analytics collections');
+    process.exit(1);
+  });
 scheduleAbuseRescan();
 scheduleExpiryWebhookCheck();
 

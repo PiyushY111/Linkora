@@ -39,14 +39,77 @@ flowchart LR
 
 ## Analytics
 
-All analytics reads and writes go through `AnalyticsRepository` (`backend/src/repositories/analytics/analyticsRepository.js`). It has one implementation today, `MongoAnalyticsRepository`, and was chosen over ClickHouse to stay on free tiers ([ADR 0005](adr/0005-analytics-on-mongodb.md)). Controllers and the consumer never touch analytics collections directly.
+All analytics reads and writes go through `AnalyticsRepository` (`backend/src/repositories/analytics/analyticsRepository.js`). It has one implementation, `MongoAnalyticsRepository`, and MongoDB was chosen over ClickHouse to stay on free tiers ([ADR 0005](adr/0005-analytics-on-mongodb.md)). Controllers and the consumer never touch analytics collections directly.
 
 | Method | Used by |
 |---|---|
-| `recordClicks(events)` | click consumer |
+| `recordClicks(events)` | click consumer (and the legacy backfill script) |
 | `getLinkAnalytics(linkId, timeInfo, { excludeBots })` | `GET /api/analytics/link/:id`, `GET /api/public/v1/links/:code/analytics` |
 | `getUserSummary(userId, timeInfo)` | `GET /api/analytics/summary/all` |
 | `exportEvents(filter)` | `GET /api/analytics/export` (CSV, formula-escaped cells) |
+| `deleteAnalytics({ linkId } \| { userId })` | link deletion (dashboard and public API), account deletion |
+
+### Collections
+
+| Collection | Shape | Retention |
+|---|---|---|
+| `click_events` | **Time-series**: `timeField: timestamp`, `metaField: { linkId, userId }`, one document per click with `eventId`, the enriched dimensions, `isBot` | `expireAfterSeconds` = `CLICK_EVENT_RETENTION_DAYS` (default 90). Kept in sync at startup with `collMod`. |
+| `link_stats_hourly` | One document per link per UTC hour: `total`, `human`, `bot`, `dims`, `appliedIds` | TTL on `bucket` = `CLICK_EVENT_RETENTION_DAYS` |
+| `link_stats_daily` | One document per link per UTC day: the same fields, plus `unique` | Kept until the link or account is deleted |
+| `processed_events` | `{ _id: <stream entry ID>, state: pending\|done, createdAt }` | TTL 3 days |
+
+`dims` maps each dimension to `{ <value>: { a, h } }`: all clicks and human clicks. The dimensions are country, city (`CC|City`), device, browser, os, referrer (`Direct` for none or localhost), utmSource, utmMedium, utmCampaign and variant. Keys are percent-encoded for `.`, `$` and `%`, because a MongoDB field name can't contain a dot. **Each map is capped** per document (country 60, city 50, referrer 50, browser and os 30, each UTM field 30, variant 20, device 10). Values past the cap count under `__other__`, shown as "Other". This is "the first N values seen in the bucket", not a true top N, and it bounds a rollup document at roughly 40 KB, including a full 1,000-ID `appliedIds` window.
+
+### Write path (idempotent without transactions)
+
+`recordClicks` (`mongoAnalyticsWriter.js`) can't use a multi-document transaction: time-series collections can't be written in one, and dev MongoDB is often standalone. So each step is idempotent on its own, and a batch can be replayed from any point:
+
+1. **Claim** every event in `processed_events` (the unique `_id` is the stream entry ID). Events already `done` are skipped outright.
+2. **Raw insert** into `click_events`. For events left `pending` by an interrupted attempt, only those with no raw row for that `eventId` yet are inserted. Time-series collections can't have unique indexes, which is why the ledger exists.
+3. **Rollups**: one conditional upsert per event per collection, `filter: { linkId, bucket, appliedIds: { $ne: eventId } }`, with `$inc` counters and `$push appliedIds { $slice: -1000 }`. A replay matches nothing. A duplicate-key error means either a concurrent upsert created the document first, or the event is already applied; one retry tells them apart.
+4. **`Link.clicks`**: the same pattern, on `Link.appliedClickIds`.
+5. **Unique visitors**: one Redis command per (link, day) in the batch, a Lua script that `PFADD`s the visitors' IP hashes into `hll:visitors:<linkId>:<yyyymmdd>`, refreshes its 2-day TTL, and returns `PFCOUNT`. That count is written into the daily rollup with `$max`. Both operations are idempotent.
+6. Mark the events **`done`**.
+
+The window is 1,000 IDs and `CLICK_STREAM_BATCH_SIZE` is capped at 1,000 in `env.js`, so a batch can never evict its own IDs. A replay goes undetected only if the same bucket took more than 1,000 other clicks between the first attempt and the retry.
+
+### Read path
+
+- **Rollup choice**: hourly for ranges of 48 hours or less that start inside the retention window, daily otherwise (`selectRollupGranularity`). Buckets are selected with `bucket >= floor(start)`, so a range that starts mid-bucket includes the whole first bucket.
+- **Monthly charts** (`ytd`, `all`) sum daily rollups per month.
+- **`excludeBots=true`** reads the `h` (human) counters. The bot breakdown always shows both.
+- **Raw events** are read only for recent clicks (latest 50) and the CSV export (up to 10,000 rows).
+
+### Known approximations
+
+| Metric | Approximation |
+|---|---|
+| Unique visitors | HyperLogLog (about 0.8% standard error), per link per UTC day. Ranges report the **sum of daily uniques**, so returning visitors on different days count again. A 24h range reports the uniques of the calendar days it touches. The user summary sums across links. |
+| Breakdown maps | First N distinct values per bucket, the rest in "Other" |
+| Range edges | Whole first bucket (hour or day) included |
+
+### Indexes
+
+Checked with `explain("executionStats")` against 10,000 seeded events (20 links, 2 users), producing 198 daily and 2,000 hourly documents, on MongoDB 8.2:
+
+| Query | Index | Plan (from explain) |
+|---|---|---|
+| Link analytics, daily: `{ linkId, bucket: range }` | `link_stats_daily {linkId:1, bucket:1}` (unique; also the upsert target) | `IXSCAN → FETCH`, keys examined = docs examined = returned (9/9/9) |
+| Link analytics, hourly: same shape | `link_stats_hourly {linkId:1, bucket:1}` (unique) | `IXSCAN → FETCH`, 12/12/12 |
+| User summary: `{ userId, bucket: range }` | `{userId:1, bucket:1}` on both rollups | `IXSCAN → FETCH`, 99/99/99 |
+| Hourly retention | `link_stats_hourly {bucket:1}` TTL | TTL monitor |
+| Recent clicks per link: `{ meta.linkId }` sorted by `timestamp` desc, limit 50 | `click_events {meta.linkId:1, timestamp:-1}` | `IXSCAN` on the bucket-level index |
+| Recent clicks per user | `click_events {meta.userId:1, timestamp:-1}` | `IXSCAN` |
+| CSV export: `{ meta.linkId, timestamp: range }` | `click_events {meta.linkId:1, timestamp:-1}` | `IXSCAN` |
+| Redelivery check: `{ eventId: { $in } }` | `click_events {eventId:1}` | `IXSCAN` (one per value, `OR`) |
+| Ledger lookup: `{ _id: { $in } }` | `processed_events _id` | `IXSCAN(_id_)` |
+| Ledger expiry | `processed_events {createdAt:1}` TTL 3 days | TTL monitor |
+
+Every rollup query examines exactly the documents it returns. Dashboard cost therefore scales with links × buckets in range, not with clicks.
+
+### Migrating existing data
+
+`backend/scripts/backfill-legacy-click-events.js` replays the old `clickevents` collection through `recordClicks`. It's idempotent (the legacy `_id` becomes the event ID) and doesn't touch `Link.clicks`, which already counts those clicks.
 
 ## Failure modes
 
@@ -54,4 +117,4 @@ All analytics reads and writes go through `AnalyticsRepository` (`backend/src/re
 |---|---|---|
 | Redis down | Redirects on a cache miss still resolve from MongoDB. Click events for those redirects are lost. Login refresh, rate limits and unlock tokens fail. | Automatic reconnect (ioredis) |
 | MongoDB slow or down | Cache hits keep redirecting. Cache misses, dashboard and writes fail. The consumer stops ACKing, so clicks wait in the stream. | Pending entries are retried by `XAUTOCLAIM` |
-| Consumer crash mid-batch | The batch stays pending | Reclaimed by `XAUTOCLAIM` and applied exactly once (idempotent writes) |
+| Consumer crash mid-batch | The batch stays pending, possibly with some events `pending` in the ledger | Reclaimed by `XAUTOCLAIM`; each step is idempotent, so the replay applies only what's missing |

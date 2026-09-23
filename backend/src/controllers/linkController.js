@@ -6,6 +6,7 @@ import { getClientIp } from '../utils/helpers.js';
 import { generateQRCode } from '../utils/qrcode.js';
 import { generateSequencedShortCode } from '../utils/sequenceGenerator.js';
 import { invalidateLinkMeta } from '../services/cacheService.js';
+import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
 import { logger } from '../config/logger.js';
 import { env } from '../config/env.js';
 import { logAudit } from '../utils/auditLogger.js';
@@ -402,7 +403,10 @@ export const deleteLink = async (req, res) => {
   await Link.findByIdAndDelete(link._id);
 
   // Delete associated analytics
-  await Analytics.findByIdAndDelete(link.analytics);
+  await Promise.all([
+    Analytics.findByIdAndDelete(link.analytics),
+    getAnalyticsRepository().deleteAnalytics({ linkId: String(link._id) }),
+  ]);
 
   // Remove from user's links array
   await req.user.updateOne({ $pull: { links: link._id } });
