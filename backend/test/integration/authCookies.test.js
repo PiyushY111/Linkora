@@ -1,10 +1,10 @@
 import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import request from 'supertest';
-import app from '../app.js';
-import { connectTestDb, disconnectTestDb, resetRateLimits } from './testUtils.js';
-import User from '../models/User.js';
-import { redis } from '../services/cacheService.js';
+import app from '../../src/app.js';
+import { connectTestDb, disconnectTestDb, resetRateLimits } from '../helpers/testUtils.js';
+import User from '../../src/models/User.js';
+import { redis } from '../../src/services/cacheService.js';
 
 const createdEmails = [];
 

@@ -2,10 +2,10 @@ import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import request from 'supertest';
 import mongoose from 'mongoose';
-import app from '../app.js';
-import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from './testUtils.js';
-import Link from '../models/Link.js';
-import { redis } from '../services/cacheService.js';
+import app from '../../src/app.js';
+import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from '../helpers/testUtils.js';
+import Link from '../../src/models/Link.js';
+import { redis } from '../../src/services/cacheService.js';
 
 let owner;
 let ownerToken;

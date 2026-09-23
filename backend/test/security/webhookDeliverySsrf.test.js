@@ -2,11 +2,11 @@ import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import http from 'http';
 import mongoose from 'mongoose';
-import { executeDelivery } from '../services/webhookService.js';
-import { connectTestDb, disconnectTestDb, createTestUser } from './testUtils.js';
-import Webhook from '../models/Webhook.js';
-import WebhookDelivery from '../models/WebhookDelivery.js';
-import { redis } from '../services/cacheService.js';
+import { executeDelivery } from '../../src/services/webhookService.js';
+import { connectTestDb, disconnectTestDb, createTestUser } from '../helpers/testUtils.js';
+import Webhook from '../../src/models/Webhook.js';
+import WebhookDelivery from '../../src/models/WebhookDelivery.js';
+import { redis } from '../../src/services/cacheService.js';
 
 // Passed as the `attempt` argument so a failing delivery is treated as the
 // final attempt (matches RETRY_DELAYS_MS.length) and does NOT schedule a

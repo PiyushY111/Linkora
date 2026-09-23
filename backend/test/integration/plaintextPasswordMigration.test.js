@@ -3,11 +3,11 @@ import assert from 'node:assert';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import request from 'supertest';
-import app from '../app.js';
-import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from './testUtils.js';
-import Link from '../models/Link.js';
-import { redis, cacheRedis } from '../services/cacheService.js';
-import { migratePlaintextLinkPasswords } from '../../scripts/migrate-plaintext-link-passwords.js';
+import app from '../../src/app.js';
+import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from '../helpers/testUtils.js';
+import Link from '../../src/models/Link.js';
+import { redis, cacheRedis } from '../../src/services/cacheService.js';
+import { migratePlaintextLinkPasswords } from '../../src/../scripts/migrate-plaintext-link-passwords.js';
 
 let user;
 let token;

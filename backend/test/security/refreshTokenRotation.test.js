@@ -1,8 +1,8 @@
 import { describe, it, afterAll } from 'vitest';
 import assert from 'node:assert';
 import crypto from 'crypto';
-import { issueRefreshToken, consumeRefreshToken, revokeRefreshToken } from '../utils/jwt.js';
-import { redis } from '../services/cacheService.js';
+import { issueRefreshToken, consumeRefreshToken, revokeRefreshToken } from '../../src/utils/jwt.js';
+import { redis } from '../../src/services/cacheService.js';
 
 afterAll(async () => {
   await redis.quit();

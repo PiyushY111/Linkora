@@ -2,11 +2,11 @@ import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import request from 'supertest';
 import mongoose from 'mongoose';
-import app from '../app.js';
-import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from './testUtils.js';
-import Link from '../models/Link.js';
-import { ConflictError, toClientError } from '../lib/errors.js';
-import { redis, cacheRedis } from '../services/cacheService.js';
+import app from '../../src/app.js';
+import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from '../helpers/testUtils.js';
+import Link from '../../src/models/Link.js';
+import { ConflictError, toClientError } from '../../src/lib/errors.js';
+import { redis, cacheRedis } from '../../src/services/cacheService.js';
 
 let user;
 let token;

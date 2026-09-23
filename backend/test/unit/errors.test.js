@@ -8,9 +8,9 @@ import {
   ForbiddenError,
   ConflictError,
   RateLimitError,
-} from '../lib/errors.js';
-import { errorHandler } from '../middleware/error.js';
-import { env } from '../config/env.js';
+} from '../../src/lib/errors.js';
+import { errorHandler } from '../../src/middleware/error.js';
+import { env } from '../../src/config/env.js';
 
 function mockRes() {
   const res = {

@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import crypto from 'crypto';
-import { env } from '../config/env.js';
-import User from '../models/User.js';
-import { generateToken } from '../utils/jwt.js';
-import { redis } from '../services/cacheService.js';
+import { env } from '../../src/config/env.js';
+import User from '../../src/models/User.js';
+import { generateToken } from '../../src/utils/jwt.js';
+import { redis } from '../../src/services/cacheService.js';
 
 /**
  * Tests never touch the real dev database: they connect to a sibling

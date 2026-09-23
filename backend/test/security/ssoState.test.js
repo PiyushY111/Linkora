@@ -1,9 +1,9 @@
 import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import request from 'supertest';
-import app from '../app.js';
-import { env } from '../config/env.js';
-import { redis } from '../services/cacheService.js';
+import app from '../../src/app.js';
+import { env } from '../../src/config/env.js';
+import { redis } from '../../src/services/cacheService.js';
 
 // SSO isn't configured with real WorkOS credentials in this environment, so
 // these tests only exercise the state-verification boundary — the part of

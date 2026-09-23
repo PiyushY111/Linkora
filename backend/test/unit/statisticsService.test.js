@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert';
-import { calculateAbTestStatistics } from '../services/statisticsService.js';
+import { calculateAbTestStatistics } from '../../src/services/statisticsService.js';
 
 describe('A/B Testing Statistical Significance Engine', () => {
   it('returns collecting_data when clicks are low (<10)', () => {

@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert';
-import { constantTimeEqual } from '../utils/constantTimeEqual.js';
+import { constantTimeEqual } from '../../src/utils/constantTimeEqual.js';
 
 describe('constantTimeEqual', () => {
   it('returns true for identical strings', () => {

@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert';
-import { detectBot } from '../utils/botDetector.js';
+import { detectBot } from '../../src/utils/botDetector.js';
 
 describe('Bot & Social Crawler Detector', () => {
   it('correctly identifies Twitterbot as a social crawler', () => {

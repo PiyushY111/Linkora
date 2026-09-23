@@ -1,6 +1,6 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert';
-import { isReservedAlias } from '../lib/reservedAliases.js';
+import { isReservedAlias } from '../../src/lib/reservedAliases.js';
 
 describe('isReservedAlias', () => {
   it('flags known dashboard/API route names', () => {

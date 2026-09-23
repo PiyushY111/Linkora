@@ -1,7 +1,7 @@
 import { describe, it } from 'vitest';
 import assert from 'node:assert';
-import { verifyOriginForCsrf } from '../middleware/csrf.js';
-import { env } from '../config/env.js';
+import { verifyOriginForCsrf } from '../../src/middleware/csrf.js';
+import { env } from '../../src/config/env.js';
 
 function run(headers) {
   return new Promise((resolve) => {

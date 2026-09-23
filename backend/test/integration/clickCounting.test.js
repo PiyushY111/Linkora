@@ -1,12 +1,12 @@
 import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import mongoose from 'mongoose';
-import { connectTestDb, disconnectTestDb, createTestUser } from './testUtils.js';
-import Link from '../models/Link.js';
-import ClickEvent from '../models/ClickEvent.js';
-import { env } from '../config/env.js';
-import { redis, cacheRedis } from '../services/cacheService.js';
-import { applyClickCounts, processBatch, APPLIED_CLICK_ID_WINDOW } from '../consumers/clickConsumer.js';
+import { connectTestDb, disconnectTestDb, createTestUser } from '../helpers/testUtils.js';
+import Link from '../../src/models/Link.js';
+import ClickEvent from '../../src/models/ClickEvent.js';
+import { env } from '../../src/config/env.js';
+import { redis, cacheRedis } from '../../src/services/cacheService.js';
+import { applyClickCounts, processBatch, APPLIED_CLICK_ID_WINDOW } from '../../src/consumers/clickConsumer.js';
 
 let user;
 let originalClickHouseEnabled;
