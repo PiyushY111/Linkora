@@ -22,9 +22,9 @@ const Modal = ({ open, onClose, title, children, maxWidth = 'max-w-lg' }) => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className={`panel-elevated relative z-10 w-full ${maxWidth} p-6`}
+            className={`panel-elevated relative z-10 flex flex-col w-full ${maxWidth} max-h-[calc(100vh-3rem)] sm:max-h-[90vh] overflow-hidden p-6`}
           >
-            <div className="mb-5 flex items-center justify-between">
+            <div className="mb-4 flex shrink-0 items-center justify-between">
               <h2 className="text-lg font-semibold text-paper-100">{title}</h2>
               <button
                 type="button"
@@ -35,7 +35,9 @@ const Modal = ({ open, onClose, title, children, maxWidth = 'max-w-lg' }) => {
                 <X size={18} />
               </button>
             </div>
-            {children}
+            <div className="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
+              {children}
+            </div>
           </motion.div>
         </div>
       )}

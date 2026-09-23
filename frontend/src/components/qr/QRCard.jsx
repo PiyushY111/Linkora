@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   Copy,
   Check,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Link as RouterLink } from 'react-router-dom';
+import ActionDropdown from '../ui/ActionDropdown';
 
 function getDomain(url) {
   try {
@@ -38,6 +39,7 @@ export default function QRCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editUrl, setEditUrl] = useState(link.originalUrl);
   const [isSaving, setIsSaving] = useState(false);
+  const menuBtnRef = useRef(null);
 
   const domain = getDomain(link.originalUrl);
 
@@ -120,73 +122,76 @@ export default function QRCard({
 
           <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
             <button
+              ref={menuBtnRef}
               type="button"
               onClick={() => setShowMenu(!showMenu)}
-              className="rounded-lg p-1.5 text-paper-500 hover:bg-ink-700 hover:text-paper-100 transition-colors"
+              className={`rounded-lg p-1.5 transition-colors ${
+                showMenu ? 'bg-ink-750 text-accent-400' : 'text-paper-500 hover:bg-ink-700 hover:text-paper-100'
+              }`}
             >
               <MoreVertical size={15} />
             </button>
 
-            {showMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-                <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-ink-600 bg-ink-800 py-1 shadow-2xl text-left">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false);
-                      setIsEditing(true);
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                  >
-                    <Edit3 size={13} /> Change Destination
-                  </button>
+            <ActionDropdown
+              isOpen={showMenu}
+              onClose={() => setShowMenu(false)}
+              anchorEl={menuBtnRef.current}
+              width={180}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  setIsEditing(true);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+              >
+                <Edit3 size={13} /> Change Destination
+              </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false);
-                      onEditStyle && onEditStyle(link);
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                  >
-                    <Sparkles size={13} /> Customize QR Style
-                  </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  onEditStyle && onEditStyle(link);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+              >
+                <Sparkles size={13} /> Customize QR Style
+              </button>
 
-                  <RouterLink
-                    to={`/analytics/${link._id}`}
-                    className="flex items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                    onClick={() => setShowMenu(false)}
-                  >
-                    <BarChart3 size={13} /> View Analytics
-                  </RouterLink>
+              <RouterLink
+                to={`/analytics/${link._id}`}
+                className="flex items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                onClick={() => setShowMenu(false)}
+              >
+                <BarChart3 size={13} /> View Analytics
+              </RouterLink>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false);
-                      onToggleStatus && onToggleStatus(link);
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                  >
-                    <Power size={13} /> {link.isActive ? 'Pause QR' : 'Activate QR'}
-                  </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  onToggleStatus && onToggleStatus(link);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+              >
+                <Power size={13} /> {link.isActive ? 'Pause QR' : 'Activate QR'}
+              </button>
 
-                  <div className="my-1 border-t border-ink-700" />
+              <div className="my-1 border-t border-ink-700/80" />
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMenu(false);
-                      onDelete && onDelete(link._id);
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10"
-                  >
-                    <Trash2 size={13} /> Delete QR
-                  </button>
-                </div>
-              </>
-            )}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  onDelete && onDelete(link._id);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10 transition-colors"
+              >
+                <Trash2 size={13} /> Delete QR
+              </button>
+            </ActionDropdown>
           </div>
         </div>
 

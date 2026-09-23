@@ -44,6 +44,15 @@ export default function ClicksOverTimeChart({ data = [], granularity = 'day', to
           } catch {
             displayDay = item.day;
           }
+        } else if (item.day.length === 7) {
+          // 'YYYY-MM' -> display as 'MMM yyyy'
+          try {
+            const [y, m] = item.day.split('-');
+            const date = new Date(y, m - 1, 1);
+            displayDay = date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+          } catch {
+            displayDay = item.day;
+          }
         }
       }
       return {

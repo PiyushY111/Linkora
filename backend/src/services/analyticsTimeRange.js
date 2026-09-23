@@ -53,10 +53,36 @@ export function calculateTimeRange(timeRange = '30d', customStart, customEnd) {
     }
     case 'custom':
     default: {
-      end = customEnd ? new Date(customEnd) : now;
-      start = customStart
-        ? new Date(customStart)
-        : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+      let e = now;
+      if (customEnd) {
+        if (typeof customEnd === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(customEnd.trim())) {
+          e = new Date(`${customEnd.trim()}T23:59:59.999Z`);
+        } else {
+          e = new Date(customEnd);
+        }
+      }
+      let s;
+      if (customStart) {
+        if (typeof customStart === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(customStart.trim())) {
+          s = new Date(`${customStart.trim()}T00:00:00.000Z`);
+        } else {
+          s = new Date(customStart);
+        }
+      } else {
+        s = new Date(e.getTime() - 30 * 24 * 60 * 60 * 1000);
+      }
+
+      if (isNaN(s.getTime())) s = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      if (isNaN(e.getTime())) e = now;
+
+      if (s.getTime() > e.getTime()) {
+        const tmp = s;
+        s = e;
+        e = tmp;
+      }
+
+      start = s;
+      end = e;
       const diffDays = (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000);
       granularity = diffDays <= 2 ? 'hour' : diffDays <= 90 ? 'day' : 'month';
       break;
