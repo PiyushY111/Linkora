@@ -17,14 +17,15 @@ export function verifyOriginForCsrf(req, res, next) {
   const origin = req.headers.origin || refererOrigin(req.headers.referer);
   if (!origin) return next();
 
-  let allowed;
+  let allowed = null;
   try {
     allowed = new URL(env.FRONTEND_URL).origin;
   } catch {
-    return next();
+    allowed = null;
   }
 
-  if (origin !== allowed) {
+  const isVercel = origin.endsWith('.vercel.app') || (allowed && origin === allowed) || origin === 'http://localhost:3000';
+  if (!isVercel) {
     throw new ForbiddenError('Cross-origin request rejected');
   }
 

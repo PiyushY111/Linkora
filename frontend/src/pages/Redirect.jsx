@@ -3,6 +3,7 @@ import { useParams, Link as RouterLink } from 'react-router-dom';
 import { Lock, ArrowRight, Eye, EyeOff, ShieldAlert, AlertTriangle, Home, Sparkles, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import { getApiOrigin } from '../services/api';
 
 export default function Redirect() {
   const { shortCode } = useParams();
@@ -26,12 +27,13 @@ export default function Redirect() {
   }, [shortCode]);
 
   const checkLink = async () => {
+    const origin = getApiOrigin();
     try {
-      const res = await axios.get(`/api/r/${shortCode}?probe=1`);
+      const res = await axios.get(`${origin}/api/r/${shortCode}?probe=1`);
       if (res.data?.success) {
         // Link does not require password, proceed with actual redirect
         setState('redirecting');
-        window.location.href = `/api/r/${shortCode}`;
+        window.location.href = `${origin}/api/r/${shortCode}`;
       }
     } catch (err) {
       const status = err.response?.status;
@@ -47,7 +49,7 @@ export default function Redirect() {
         setState('not_found');
       } else {
         // Fallback: try direct redirect anyway
-        window.location.href = `/api/r/${shortCode}`;
+        window.location.href = `${origin}/api/r/${shortCode}`;
       }
     }
   };
@@ -67,13 +69,14 @@ export default function Redirect() {
       // token out-of-band, over a POST body — it never appears in a URL,
       // so it never lands in access logs, browser history, or a Referer
       // header. Only the resulting token travels on the redirect itself.
-      const res = await axios.post(`/api/r/${shortCode}/unlock`, {
+      const origin = getApiOrigin();
+      const res = await axios.post(`${origin}/api/r/${shortCode}/unlock`, {
         password: password.trim(),
       });
       const { unlockToken } = res.data || {};
       if (unlockToken) {
         setState('redirecting');
-        window.location.href = `/api/r/${shortCode}?unlockToken=${encodeURIComponent(unlockToken)}`;
+        window.location.href = `${origin}/api/r/${shortCode}?unlockToken=${encodeURIComponent(unlockToken)}`;
       }
     } catch (err) {
       if (err.response?.status === 401) {

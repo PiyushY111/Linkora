@@ -38,7 +38,19 @@ app.use(httpLogger);
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: env.FRONTEND_URL,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    let allowedHost = null;
+    try {
+      allowedHost = new URL(env.FRONTEND_URL).origin;
+    } catch {
+      allowedHost = null;
+    }
+    if (origin === allowedHost || origin.endsWith('.vercel.app') || origin === 'http://localhost:3000') {
+      return callback(null, true);
+    }
+    callback(new Error('Blocked by CORS'));
+  },
   credentials: true,
 }));
 app.use(cookieParser());
