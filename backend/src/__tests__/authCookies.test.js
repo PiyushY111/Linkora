@@ -2,13 +2,16 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import request from 'supertest';
 import app from '../app.js';
-import { connectTestDb, disconnectTestDb } from './testUtils.js';
+import { connectTestDb, disconnectTestDb, resetRateLimits } from './testUtils.js';
 import User from '../models/User.js';
 import { redis } from '../services/cacheService.js';
 
 const createdEmails = [];
 
-before(connectTestDb);
+before(async () => {
+  await connectTestDb();
+  await resetRateLimits(['register', 'refresh']);
+});
 after(async () => {
   await User.deleteMany({ email: { $in: createdEmails } });
   await disconnectTestDb();

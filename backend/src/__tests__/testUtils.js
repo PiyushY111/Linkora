@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { env } from '../config/env.js';
 import User from '../models/User.js';
 import { generateToken } from '../utils/jwt.js';
+import { redis } from '../services/cacheService.js';
 
 /**
  * Tests never touch the real dev database: they connect to a sibling
@@ -43,4 +44,23 @@ export async function createTestUser(overrides = {}) {
 
 export function authHeader(token) {
   return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * Clears the given rate-limit windows. Tests share one Redis and always come
+ * from the same loopback IP, so without this the hour-long register window
+ * fills up across repeated local runs and later runs start seeing 429s.
+ * Scoped to named prefixes because test files run in parallel, and wiping
+ * another suite's window mid-test would break its own limit assertions.
+ * @param {string[]} keyPrefixes - limiter keyPrefix values, e.g. ['register']
+ */
+export async function resetRateLimits(keyPrefixes) {
+  for (const prefix of keyPrefixes) {
+    let cursor = '0';
+    do {
+      const [next, keys] = await redis.scan(cursor, 'MATCH', `ratelimit:${prefix}:*`, 'COUNT', 500);
+      if (keys.length > 0) await redis.del(...keys);
+      cursor = next;
+    } while (cursor !== '0');
+  }
 }
