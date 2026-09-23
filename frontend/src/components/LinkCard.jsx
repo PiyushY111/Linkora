@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   Copy,
   Check,
@@ -16,6 +16,7 @@ import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
 import { Link as RouterLink } from 'react-router-dom';
 import QRCodeModal from './qr/QRCodeModal';
+import ActionDropdown from './ui/ActionDropdown';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
 import { useConfirm } from '../context/ConfirmContext';
@@ -42,6 +43,7 @@ export default function LinkCard({
   const [showMenu, setShowMenu] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
+  const menuBtnRef = useRef(null);
   const { removeLink, updateLink } = useLinkStore();
 
   const domain = getDomain(link.originalUrl);
@@ -164,62 +166,73 @@ export default function LinkCard({
         {/* Menu Actions */}
         <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
           <button
+            ref={menuBtnRef}
             type="button"
             onClick={() => setShowMenu((v) => !v)}
-            className="rounded-lg p-1.5 text-paper-500 transition-colors hover:bg-ink-700 hover:text-paper-100"
+            className={`rounded-lg p-1.5 transition-colors ${
+              showMenu ? 'bg-ink-700 text-accent-400' : 'text-paper-500 hover:bg-ink-700 hover:text-paper-100'
+            }`}
             aria-label="Link actions"
           >
             <MoreVertical size={16} />
           </button>
-          {showMenu && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-              <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-ink-600 bg-ink-800 py-1 shadow-panel text-left">
-                <RouterLink
-                  to={`/analytics/${link._id}`}
-                  className="flex items-center gap-2 px-3 py-2 text-sm text-paper-200 hover:bg-ink-700"
-                  onClick={() => setShowMenu(false)}
-                >
-                  <BarChart3 size={14} /> Analytics
-                </RouterLink>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMenu(false);
-                    setShowQrModal(true);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-paper-200 hover:bg-ink-700"
-                >
-                  <QrCode size={14} /> Customize QR
-                </button>
-                <a
-                  href={link.originalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-2 px-3 py-2 text-sm text-paper-200 hover:bg-ink-700"
-                  onClick={() => setShowMenu(false)}
-                >
-                  <ExternalLink size={14} /> Visit original
-                </a>
-                <button
-                  type="button"
-                  onClick={handleToggle}
-                  disabled={isLoading}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-paper-200 hover:bg-ink-700"
-                >
-                  <Power size={14} /> {link.isActive ? 'Pause link' : 'Activate link'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={isLoading}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
-                >
-                  <Trash2 size={14} /> Delete
-                </button>
-              </div>
-            </>
-          )}
+
+          <ActionDropdown
+            isOpen={showMenu}
+            onClose={() => setShowMenu(false)}
+            anchorEl={menuBtnRef.current}
+            width={176}
+          >
+            <RouterLink
+              to={`/analytics/${link._id}`}
+              className="flex items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+              onClick={() => setShowMenu(false)}
+            >
+              <BarChart3 size={13} /> Analytics
+            </RouterLink>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMenu(false);
+                setShowQrModal(true);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+            >
+              <QrCode size={13} /> Customize QR
+            </button>
+            <a
+              href={link.originalUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+              onClick={() => setShowMenu(false)}
+            >
+              <ExternalLink size={13} /> Visit original
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMenu(false);
+                handleToggle();
+              }}
+              disabled={isLoading}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+            >
+              <Power size={13} /> {link.isActive ? 'Pause link' : 'Activate link'}
+            </button>
+            <div className="my-1 border-t border-ink-700/80" />
+            <button
+              type="button"
+              onClick={() => {
+                setShowMenu(false);
+                handleDelete();
+              }}
+              disabled={isLoading}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-danger hover:bg-danger/10 transition-colors"
+            >
+              <Trash2 size={13} /> Delete
+            </button>
+          </ActionDropdown>
         </div>
       </div>
 

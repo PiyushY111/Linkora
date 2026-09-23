@@ -320,10 +320,10 @@ export default function CreateLinkModal({ open, onClose }) {
     <>
       <Modal
         open={open}
-      onClose={handleClose}
-      title={createdResult ? 'Link Created Successfully' : 'Create Enterprise Link'}
-      maxWidth="max-w-2xl"
-    >
+        onClose={handleClose}
+        title={createdResult ? 'Link Created Successfully' : 'Create Enterprise Link'}
+        maxWidth="max-w-3xl"
+      >
       <AnimatePresence mode="wait">
         {createdResult ? (
           /* Success Screen */
@@ -464,11 +464,11 @@ export default function CreateLinkModal({ open, onClose }) {
           /* Main Creation Form */
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Tabs */}
-            <div className="flex border-b border-ink-700">
+            <div className="flex items-center gap-1 border-b border-ink-700 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-ink-700 scrollbar-track-transparent shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveTab('general')}
-                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-xs font-semibold shrink-0 whitespace-nowrap transition-colors ${
                   activeTab === 'general'
                     ? 'border-accent-400 text-accent-400'
                     : 'border-transparent text-paper-500 hover:text-paper-300'
@@ -480,7 +480,7 @@ export default function CreateLinkModal({ open, onClose }) {
               <button
                 type="button"
                 onClick={() => setActiveTab('utm')}
-                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-xs font-semibold shrink-0 whitespace-nowrap transition-colors ${
                   activeTab === 'utm'
                     ? 'border-accent-400 text-accent-400'
                     : 'border-transparent text-paper-500 hover:text-paper-300'
@@ -495,7 +495,7 @@ export default function CreateLinkModal({ open, onClose }) {
               <button
                 type="button"
                 onClick={() => setActiveTab('enterprise')}
-                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-xs font-semibold shrink-0 whitespace-nowrap transition-colors ${
                   activeTab === 'enterprise'
                     ? 'border-accent-400 text-accent-400'
                     : 'border-transparent text-paper-500 hover:text-paper-300'
@@ -510,7 +510,7 @@ export default function CreateLinkModal({ open, onClose }) {
               <button
                 type="button"
                 onClick={() => setActiveTab('targeting')}
-                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-xs font-semibold shrink-0 whitespace-nowrap transition-colors ${
                   activeTab === 'targeting'
                     ? 'border-accent-400 text-accent-400'
                     : 'border-transparent text-paper-500 hover:text-paper-300'
@@ -525,7 +525,7 @@ export default function CreateLinkModal({ open, onClose }) {
               <button
                 type="button"
                 onClick={() => setActiveTab('ab_test')}
-                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-xs font-semibold shrink-0 whitespace-nowrap transition-colors ${
                   activeTab === 'ab_test'
                     ? 'border-accent-400 text-accent-400'
                     : 'border-transparent text-paper-500 hover:text-paper-300'
@@ -540,7 +540,7 @@ export default function CreateLinkModal({ open, onClose }) {
               <button
                 type="button"
                 onClick={() => setActiveTab('opengraph')}
-                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-xs font-semibold shrink-0 whitespace-nowrap transition-colors ${
                   activeTab === 'opengraph'
                     ? 'border-accent-400 text-accent-400'
                     : 'border-transparent text-paper-500 hover:text-paper-300'
@@ -555,7 +555,7 @@ export default function CreateLinkModal({ open, onClose }) {
               <button
                 type="button"
                 onClick={() => setActiveTab('qr')}
-                className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-xs font-semibold shrink-0 whitespace-nowrap transition-colors ${
                   activeTab === 'qr'
                     ? 'border-accent-400 text-accent-400'
                     : 'border-transparent text-paper-500 hover:text-paper-300'
@@ -1498,7 +1498,7 @@ export default function CreateLinkModal({ open, onClose }) {
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-between border-t border-ink-700 pt-4">
+            <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-ink-700 pt-3.5 pb-1 mt-4 bg-ink-900/95 backdrop-blur-sm shrink-0">
               <span className="text-xs text-paper-500">
                 {activeTab === 'general'
                   ? 'General'
@@ -1506,6 +1506,12 @@ export default function CreateLinkModal({ open, onClose }) {
                   ? 'Attribution'
                   : activeTab === 'targeting'
                   ? 'Device Targeting'
+                  : activeTab === 'ab_test'
+                  ? 'A/B Split'
+                  : activeTab === 'opengraph'
+                  ? 'Social Preview'
+                  : activeTab === 'qr'
+                  ? 'Custom QR'
                   : 'Security & Access'}
               </span>
               <div className="flex gap-2">

@@ -15,6 +15,7 @@ import {
 import toast from 'react-hot-toast';
 import { Link as RouterLink } from 'react-router-dom';
 import QRCodeModal from '../qr/QRCodeModal';
+import ActionDropdown from '../ui/ActionDropdown';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -38,7 +39,7 @@ export default function LinkTableView({
   const confirm = useConfirm();
   const { updateLink, removeLink } = useLinkStore();
   const [copiedId, setCopiedId] = useState(null);
-  const [menuOpenId, setMenuOpenId] = useState(null);
+  const [activeMenu, setActiveMenu] = useState(null);
   const [selectedQrLink, setSelectedQrLink] = useState(null);
 
   const allSelected = links.length > 0 && selectedIds.length === links.length;
@@ -115,7 +116,6 @@ export default function LinkTableView({
               const domain = getDomain(link.originalUrl);
               const isQuotaFull = link.maxClicks && (link.clicks || 0) >= link.maxClicks;
               const isExpired = link.expiryDate && new Date(link.expiryDate) < new Date();
-              const isNearBottom = index >= links.length - 2;
 
               return (
                 <tr
@@ -290,78 +290,84 @@ export default function LinkTableView({
                         title="Configure details (Drawer)"
                       >
                         <SlidersHorizontal size={15} />
-                      </button>
-
-                      {/* Dropdown Menu */}
+                      </button>                      {/* Dropdown Menu */}
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={() => setMenuOpenId(menuOpenId === link._id ? null : link._id)}
-                          className="rounded-lg p-1.5 text-paper-400 hover:bg-ink-800 hover:text-paper-100 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMenu((prev) =>
+                              prev?.id === link._id ? null : { id: link._id, anchorEl: e.currentTarget }
+                            );
+                          }}
+                          className={`rounded-lg p-1.5 transition-colors ${
+                            activeMenu?.id === link._id
+                              ? 'bg-ink-800 text-accent-400'
+                              : 'text-paper-400 hover:bg-ink-800 hover:text-paper-100'
+                          }`}
                           title="More actions"
                         >
                           <MoreHorizontal size={15} />
                         </button>
 
-                        {menuOpenId === link._id && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-30"
-                              onClick={() => setMenuOpenId(null)}
-                            />
-                            <div
-                              className={`absolute right-0 z-40 w-40 overflow-hidden rounded-lg border border-ink-600 bg-ink-800 py-1 shadow-2xl text-left ${
-                                isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'
-                              }`}
-                            >
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  handleCopy(link._id, link.shortUrl, e);
-                                  setMenuOpenId(null);
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                              >
-                                <Copy size={13} /> Copy link
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMenuOpenId(null);
-                                  setSelectedQrLink(link);
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                              >
-                                <QrCode size={13} /> Customize QR
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => handleToggle(link, e)}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                              >
-                                <Power size={13} /> {link.isActive ? 'Pause link' : 'Activate link'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMenuOpenId(null);
-                                  onInspectLink(link);
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                              >
-                                <SlidersHorizontal size={13} /> Edit settings
-                              </button>
-                              <div className="my-1 border-t border-ink-700" />
-                              <button
-                                type="button"
-                                onClick={(e) => handleDelete(link._id, e)}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10"
-                              >
-                                <Trash2 size={13} /> Delete
-                              </button>
-                            </div>
-                          </>
-                        )}
+                        <ActionDropdown
+                          isOpen={activeMenu?.id === link._id}
+                          onClose={() => setActiveMenu(null)}
+                          anchorEl={activeMenu?.anchorEl}
+                          width={176}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              handleCopy(link._id, link.shortUrl, e);
+                              setActiveMenu(null);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                          >
+                            <Copy size={13} /> Copy link
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenu(null);
+                              setSelectedQrLink(link);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                          >
+                            <QrCode size={13} /> Customize QR
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              setActiveMenu(null);
+                              handleToggle(link, e);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                          >
+                            <Power size={13} /> {link.isActive ? 'Pause link' : 'Activate link'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenu(null);
+                              onInspectLink(link);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                          >
+                            <SlidersHorizontal size={13} /> Edit settings
+                          </button>
+                          <div className="my-1 border-t border-ink-700/80" />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              setActiveMenu(null);
+                              handleDelete(link._id, e);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10 transition-colors"
+                          >
+                            <Trash2 size={13} /> Delete
+                          </button>
+                        </ActionDropdown>
                       </div>
                     </div>
                   </td>

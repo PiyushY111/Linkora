@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Link as RouterLink } from 'react-router-dom';
+import ActionDropdown from '../ui/ActionDropdown';
 
 function getDomain(url) {
   try {
@@ -38,7 +39,7 @@ export default function QRTableView({
   onUpdateDestination,
 }) {
   const [copiedId, setCopiedId] = useState(null);
-  const [menuOpenId, setMenuOpenId] = useState(null);
+  const [activeMenu, setActiveMenu] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editUrl, setEditUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -352,76 +353,85 @@ export default function QRTableView({
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={() => setMenuOpenId(menuOpenId === link._id ? null : link._id)}
-                          className="rounded-lg p-1.5 text-paper-400 hover:bg-ink-800 hover:text-paper-100 transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMenu((prev) =>
+                              prev?.id === link._id ? null : { id: link._id, anchorEl: e.currentTarget }
+                            );
+                          }}
+                          className={`rounded-lg p-1.5 transition-colors ${
+                            activeMenu?.id === link._id
+                              ? 'bg-ink-800 text-accent-400'
+                              : 'text-paper-400 hover:bg-ink-800 hover:text-paper-100'
+                          }`}
                           title="More actions"
                         >
                           <MoreHorizontal size={15} />
                         </button>
 
-                        {menuOpenId === link._id && (
-                          <>
-                            <div className="fixed inset-0 z-30" onClick={() => setMenuOpenId(null)} />
-                            <div className="absolute right-0 z-40 w-44 overflow-hidden rounded-xl border border-ink-600 bg-ink-800 py-1 shadow-2xl text-left">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  setMenuOpenId(null);
-                                  handleStartEdit(link, e);
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                              >
-                                <Edit3 size={13} /> Change Destination
-                              </button>
+                        <ActionDropdown
+                          isOpen={activeMenu?.id === link._id}
+                          onClose={() => setActiveMenu(null)}
+                          anchorEl={activeMenu?.anchorEl}
+                          width={180}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              setActiveMenu(null);
+                              handleStartEdit(link, e);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                          >
+                            <Edit3 size={13} /> Change Destination
+                          </button>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  setMenuOpenId(null);
-                                  onEditStyle && onEditStyle(link);
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                              >
-                                <Sparkles size={13} /> Customize QR Style
-                              </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              setActiveMenu(null);
+                              onEditStyle && onEditStyle(link);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                          >
+                            <Sparkles size={13} /> Customize QR Style
+                          </button>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  setMenuOpenId(null);
-                                  handleCopy(link._id, link.shortUrl, e);
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                              >
-                                <Copy size={13} /> Copy Short URL
-                              </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              setActiveMenu(null);
+                              handleCopy(link._id, link.shortUrl, e);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                          >
+                            <Copy size={13} /> Copy Short URL
+                          </button>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  setMenuOpenId(null);
-                                  onToggleStatus && onToggleStatus(link);
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-700"
-                              >
-                                <Power size={13} /> {link.isActive ? 'Pause QR' : 'Activate QR'}
-                              </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              setActiveMenu(null);
+                              onToggleStatus && onToggleStatus(link);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                          >
+                            <Power size={13} /> {link.isActive ? 'Pause QR' : 'Activate QR'}
+                          </button>
 
-                              <div className="my-1 border-t border-ink-700" />
+                          <div className="my-1 border-t border-ink-700/80" />
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  setMenuOpenId(null);
-                                  onDelete && onDelete(link._id);
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10"
-                              >
-                                <Trash2 size={13} /> Delete QR
-                              </button>
-                            </div>
-                          </>
-                        )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              setActiveMenu(null);
+                              onDelete && onDelete(link._id);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10 transition-colors"
+                          >
+                            <Trash2 size={13} /> Delete QR
+                          </button>
+                        </ActionDropdown>
                       </div>
                     </div>
                   </td>

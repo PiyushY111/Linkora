@@ -109,10 +109,15 @@ const Analytics = () => {
   }, [autoRefresh, fetchAnalytics]);
 
   // Time range handler
-  const handleTimeRangeChange = ({ timeRange: tr, startDate, endDate }) => {
+  const handleTimeRangeChange = ({ timeRange: tr, startDate = '', endDate = '' }) => {
     setTimeRange(tr);
-    if (startDate) setCustomStart(startDate);
-    if (endDate) setCustomEnd(endDate);
+    if (tr === 'custom') {
+      setCustomStart(startDate);
+      setCustomEnd(endDate);
+    } else {
+      setCustomStart('');
+      setCustomEnd('');
+    }
   };
 
   // CSV Export handler
@@ -229,7 +234,7 @@ const Analytics = () => {
         </div>
 
         {/* Dedicated Control & Filter Deck */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink-750 bg-ink-850/70 p-2 backdrop-blur-md shadow-sm">
+        <div className="relative z-30 mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink-750 bg-ink-850/70 p-2 backdrop-blur-md shadow-sm">
           {/* Left: Time Range Segmented Control */}
           <div className="flex items-center gap-2">
             <TimeRangePicker
