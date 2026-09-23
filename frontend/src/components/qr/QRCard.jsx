@@ -15,6 +15,7 @@ import {
 import toast from 'react-hot-toast';
 import { Link as RouterLink } from 'react-router-dom';
 import ActionDropdown from '../ui/ActionDropdown';
+import QRCodeViewer from './QRCodeViewer';
 
 function getDomain(url) {
   try {
@@ -202,19 +203,33 @@ export default function QRCard({
               e.stopPropagation();
               onEditStyle && onEditStyle(link);
             }}
-            className="group/img relative h-40 w-40 cursor-pointer overflow-hidden rounded-2xl bg-ink-950 p-2.5 ring-1 ring-ink-700 shadow-inner transition-transform group-hover/img:scale-105 group-hover/img:ring-accent-400/50"
+            className="group/img relative h-40 w-40 cursor-pointer overflow-hidden rounded-2xl bg-ink-950 p-2.5 ring-1 ring-ink-700 shadow-inner transition-transform group-hover/img:scale-105 group-hover/img:ring-accent-400/50 flex items-center justify-center"
             title="Click to customize design"
           >
-            <img
-              src={
-                link.qrCode ||
-                `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+            {link.qrCode ? (
+              <img
+                src={link.qrCode}
+                alt="QR Code"
+                className="h-full w-full object-contain rounded-xl"
+              />
+            ) : link.qrConfig ? (
+              <div className="h-full w-full flex items-center justify-center pointer-events-none">
+                <QRCodeViewer
+                  data={link.shortUrl}
+                  config={link.qrConfig}
+                  size={144}
+                  showFrame={false}
+                />
+              </div>
+            ) : (
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
                   link.shortUrl
-                )}`
-              }
-              alt="QR Code"
-              className="h-full w-full object-contain"
-            />
+                )}`}
+                alt="QR Code"
+                className="h-full w-full object-contain rounded-xl"
+              />
+            )}
             <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-ink-950/70 opacity-0 group-hover/img:opacity-100 transition-opacity">
               <Sparkles size={18} className="text-accent-400" />
             </div>

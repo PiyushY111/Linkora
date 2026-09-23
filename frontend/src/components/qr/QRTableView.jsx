@@ -18,6 +18,7 @@ import {
 import toast from 'react-hot-toast';
 import { Link as RouterLink } from 'react-router-dom';
 import ActionDropdown from '../ui/ActionDropdown';
+import QRCodeViewer from './QRCodeViewer';
 
 function getDomain(url) {
   try {
@@ -151,19 +152,33 @@ export default function QRTableView({
                         e.stopPropagation();
                         onEditStyle && onEditStyle(link);
                       }}
-                      className="relative group/qr h-12 w-12 cursor-pointer overflow-hidden rounded-xl bg-ink-950 p-1 ring-1 ring-ink-700 transition-all group-hover/qr:scale-105 group-hover/qr:ring-accent-400/50"
+                      className="relative group/qr h-12 w-12 cursor-pointer overflow-hidden rounded-xl bg-ink-950 p-1 ring-1 ring-ink-700 transition-all group-hover/qr:scale-105 group-hover/qr:ring-accent-400/50 flex items-center justify-center"
                       title="Click to customize QR design"
                     >
-                      <img
-                        src={
-                          link.qrCode ||
-                          `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
+                      {link.qrCode ? (
+                        <img
+                          src={link.qrCode}
+                          alt="QR Code"
+                          className="h-full w-full object-contain rounded-lg"
+                        />
+                      ) : link.qrConfig ? (
+                        <div className="h-full w-full flex items-center justify-center pointer-events-none">
+                          <QRCodeViewer
+                            data={link.shortUrl}
+                            config={link.qrConfig}
+                            size={40}
+                            showFrame={false}
+                          />
+                        </div>
+                      ) : (
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
                             link.shortUrl
-                          )}`
-                        }
-                        alt="QR Code"
-                        className="h-full w-full object-contain"
-                      />
+                          )}`}
+                          alt="QR Code"
+                          className="h-full w-full object-contain rounded-lg"
+                        />
+                      )}
                       <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-ink-950/70 opacity-0 group-hover/qr:opacity-100 transition-opacity">
                         <Sparkles size={13} className="text-accent-400" />
                       </div>

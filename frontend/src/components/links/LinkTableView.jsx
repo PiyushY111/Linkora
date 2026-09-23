@@ -383,6 +383,7 @@ export default function LinkTableView({
       open={Boolean(selectedQrLink)}
       onClose={() => setSelectedQrLink(null)}
       link={selectedQrLink}
+      onSaveSuccess={() => setSelectedQrLink(null)}
     />
   </>
   );

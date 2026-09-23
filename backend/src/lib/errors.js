@@ -78,6 +78,10 @@ export function toClientError(err) {
     return { status: 409, message: `A record with this ${duplicateKeyField(err)} already exists` };
   }
 
+  if (err?.type === 'entity.too.large' || err?.status === 413) {
+    return { status: 413, message: 'Request payload too large (maximum 10MB)' };
+  }
+
   if (err?.name === 'ValidationError' && err.errors) {
     // Mongoose schema validation error — safe to surface field-level messages.
     const firstMessage = Object.values(err.errors)[0]?.message || 'Validation failed';

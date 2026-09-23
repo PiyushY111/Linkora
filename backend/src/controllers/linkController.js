@@ -145,7 +145,7 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
 
   if (generateQr && !link.qrCode) {
     try {
-      const qrCode = await generateQRCode(link.shortUrl);
+      const qrCode = await generateQRCode(link.shortUrl, link.qrConfig);
       link.qrCode = qrCode;
       await link.save();
     } catch (qrError) {

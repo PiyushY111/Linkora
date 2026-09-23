@@ -24,27 +24,33 @@ const cloudinaryBreaker = new CircuitBreaker(uploadToCloudinary, {
 cloudinaryBreaker.on('open', () => logger.warn({ breaker: 'cloudinary' }, 'Circuit breaker opened'));
 cloudinaryBreaker.on('close', () => logger.info({ breaker: 'cloudinary' }, 'Circuit breaker closed'));
 
-export const generateQRCode = async (url) => {
+export const generateQRCode = async (url, qrConfig = {}) => {
+  const qrOptions = {
+    errorCorrectionLevel: 'H',
+    type: 'image/png',
+    quality: 0.95,
+    width: 300,
+    margin: 1,
+    color: {
+      dark: qrConfig?.dotsColor || '#000000',
+      light: qrConfig?.isTransparent ? '#00000000' : (qrConfig?.bgColor || '#ffffff'),
+    },
+  };
+
   // If Cloudinary credentials are not configured, use Base64 data URL
   if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY) {
-    return await generateQRCodeBase64(url);
+    return await generateQRCodeBase64(url, qrConfig);
   }
 
   const tempPath = path.join('/tmp', `qr-${Date.now()}.png`);
   try {
-    await QRCode.toFile(tempPath, url, {
-      errorCorrectionLevel: 'H',
-      type: 'image/png',
-      quality: 0.95,
-      width: 300,
-      margin: 1,
-    });
+    await QRCode.toFile(tempPath, url, qrOptions);
 
     const result = await cloudinaryBreaker.fire(tempPath);
     return result.secure_url;
   } catch (error) {
     logger.warn({ err: error }, 'Cloudinary QR code upload failed, falling back to Base64');
-    return await generateQRCodeBase64(url);
+    return await generateQRCodeBase64(url, qrConfig);
   } finally {
     if (fs.existsSync(tempPath)) {
       fs.unlinkSync(tempPath);
@@ -52,7 +58,7 @@ export const generateQRCode = async (url) => {
   }
 };
 
-export const generateQRCodeBase64 = async (url) => {
+export const generateQRCodeBase64 = async (url, qrConfig = {}) => {
   try {
     return await QRCode.toDataURL(url, {
       errorCorrectionLevel: 'H',
@@ -60,6 +66,10 @@ export const generateQRCodeBase64 = async (url) => {
       quality: 0.95,
       width: 300,
       margin: 1,
+      color: {
+        dark: qrConfig?.dotsColor || '#000000',
+        light: qrConfig?.isTransparent ? '#00000000' : (qrConfig?.bgColor || '#ffffff'),
+      },
     });
   } catch (error) {
     logger.error({ err: error }, 'Error generating QR code');

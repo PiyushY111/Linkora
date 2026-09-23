@@ -74,13 +74,20 @@ export default function QRCodeModal({ open, onClose, link, onSaveSuccess }) {
   const handleSaveToLink = async () => {
     setIsSaving(true);
     try {
-      // Generate clean base64 snapshot to store with link
-      const dataUrl = await qrViewerRef.current.getDataUrl(512);
+      // Generate clean base64 snapshot to store with link (safe fallback)
+      let dataUrl = null;
+      if (qrViewerRef.current?.getDataUrl) {
+        try {
+          dataUrl = await qrViewerRef.current.getDataUrl(512);
+        } catch (canvasErr) {
+          console.warn('Canvas export warning:', canvasErr);
+        }
+      }
 
-      const res = await linkService.updateLink(link._id, {
-        qrConfig: config,
-        qrCode: dataUrl,
-      });
+      const payload = { qrConfig: config };
+      if (dataUrl) payload.qrCode = dataUrl;
+
+      const res = await linkService.updateLink(link._id, payload);
 
       if (res?.link) {
         updateLink(res.link);

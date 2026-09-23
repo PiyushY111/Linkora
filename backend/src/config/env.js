@@ -71,8 +71,7 @@ const envSchema = z
     CLICK_STREAM_BATCH_SIZE: z.coerce.number().int().positive().default(500),
     // separate: the click consumer runs as its own process
     // (src/consumers/clickConsumer.js). embedded: server.js also runs it
-    // in-process, for single-instance hosting (e.g. one free web service).
-    WORKER_MODE: z.enum(['separate', 'embedded']).default('separate'),
+    WORKER_MODE: z.preprocess((v) => (typeof v === 'string' ? v.trim() : v), z.enum(['separate', 'embedded']).default('embedded')),
 
     // Consumer polling (Redis command budget, docs/redis-keys.md): the
     // blocking read starts at the min BLOCK and doubles while the stream is
