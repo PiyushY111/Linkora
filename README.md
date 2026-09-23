@@ -68,7 +68,7 @@
 ---
 
 ### 4. 📊 Real-Time Analytics & Telemetry
-* **Stream Ingestion**: Redirects append to a Redis stream; a consumer enriches events and writes them to MongoDB (see [docs/architecture.md](docs/architecture.md)).
+* **Stream Ingestion**: Redirects asynchronously append to a Redis stream (`stream:clicks`); an asynchronous consumer worker enriches click events (IP hashing, GeoIP resolution, device/OS/browser parsing) and commits them to MongoDB time-series and hourly/daily rollup collections.
 * **Multi-Dimensional Metrics**:
   * Total clicks and unique visitor counts.
   * Geolocation breakdown by country and city.
@@ -133,6 +133,10 @@ Inbound Request
 2. **Server-Side Request Forgery (SSRF) Guard**: URL inputs are resolved and screened against loopback, private IPv4/IPv6 subnets, and AWS cloud metadata endpoints.
 3. **One-Way Key Hashing**: API keys are hashed with `crypto.createHash('sha256')`. Raw secrets never touch the database.
 4. **Token-Bucket Rate Limiting**: Distributed Redis token-bucket limiter protects endpoints against DDoS and scraping.
+5. **Rotating Refresh Tokens with Reuse Detection**: Refresh tokens are single-use, family-linked tokens stored in Redis. Attempting to reuse an old or rotated token instantly revokes the entire token family.
+6. **Cross-Origin Cookie Security & Partitioning**: In production (`NODE_ENV=production`), refresh cookies are marked `HttpOnly; Secure; SameSite=None; Partitioned` (CHIPS) to securely support decoupled deployments (e.g. Vercel frontend + Render backend) across modern browsers. In development and test environments, cookies default to `SameSite=Strict`.
+7. **Session Persistence & Silent Background Revalidation**: The frontend preserves user sessions across page reloads via local state persistence coupled with graceful token revalidation (`GET /api/auth/me`), preventing sudden logouts on refresh.
+8. **CSRF Defense-in-Depth**: State-changing authentication endpoints (`/refresh`, `/logout`) verify the `Origin` and `Referer` headers against allowed domains (`FRONTEND_URL`, `.vercel.app`, and `localhost`).
 
 ---
 
@@ -148,7 +152,7 @@ Inbound Request
 | **Backend Runtime** | Node.js (ESM) + Express.js | High-throughput REST API server |
 | **Primary Database** | MongoDB + Mongoose | User records, links, webhooks, and API keys |
 | **Cache & Throttling** | Redis (ioredis) | Sub-millisecond redirects and token-bucket rate limiter |
-| **Analytics Engine** | MongoDB (behind an `AnalyticsRepository` interface) | Click storage and aggregation ([ADR 0005](docs/adr/0005-analytics-on-mongodb.md)) |
+| **Analytics Engine** | MongoDB (behind an `AnalyticsRepository` interface) | Time-series click storage with hourly and daily rollups |
 | **Validation & Security** | Helmet, bcryptjs, validator | Strict sanitization, hashing, and header protection |
 
 ---
@@ -184,22 +188,31 @@ FRONTEND_URL=http://localhost:3000
 MONGODB_URI=mongodb://localhost:27017/url_shortener
 REDIS_URL=redis://127.0.0.1:6379
 JWT_SECRET=super_secret_jwt_key_linkora_dev_32chars_min
-JWT_REFRESH_SECRET=super_secret_refresh_key_linkora_dev_32chars
-API_KEY_HEADER=x-api-key
+JWT_ACCESS_TOKEN_TTL=15m
+JWT_REFRESH_TOKEN_TTL_SECONDS=2592000
+RATE_LIMIT_WINDOW=15
+RATE_LIMIT_MAX_REQUESTS=100
+WORKER_MODE=separate
 ```
+
+Optional backend settings:
+* `COOKIE_SAMESITE`: `strict`, `lax`, or `none` (defaults to `none` in production, `strict` in dev/test)
+* `COOKIE_SECURE`: `true` or `false` (defaults to `true` in production, `false` in dev)
+* `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`: Cloudinary vector QR code storage
+* `SAFE_BROWSING_ENABLED`, `SAFE_BROWSING_API_KEY`: Google Safe Browsing threat detection
+* `VIRUSTOTAL_ENABLED`, `VIRUSTOTAL_API_KEY`: VirusTotal file and URL malware scanner
 
 #### Redis
 
-Linkora uses **one Redis database** (`REDIS_URL`), so it fits a free tier
-([ADR 0006](docs/adr/0006-single-redis-database.md)). Every key has a TTL or
-a hard size cap, and the instance should run `maxmemory-policy noeviction`.
-[docs/redis-keys.md](docs/redis-keys.md) has the key inventory, the memory
-budget for a 256 MB instance, and how to split the cache onto its own
-instance later.
+Linkora uses **one Redis database** (`REDIS_URL`), allowing it to fit easily within a free-tier hosting instance. Every key has a TTL or a bounded structure, and the Redis instance should run with `maxmemory-policy noeviction`.
 
-The short-code sequence counter lives in MongoDB, not Redis (see
-`src/models/Counter.js`), specifically because it must never repeat or go
-backwards — a property an evictable cache can't guarantee.
+Key schemas:
+* `cache:link:{code}` (string): Cached redirect metadata (TTL: 1 hour with probabilistic early refresh).
+* `stream:clicks` (stream): Stream of raw click events for asynchronous consumption.
+* `refresh:family:{id}:current` & `refresh:family:{id}:user`: Rotating refresh token families.
+* `ratelimit:...`: Distributed token-bucket and sliding window rate limits.
+
+The short-code sequence counter lives in MongoDB, not Redis (see `src/models/Counter.js`), specifically because it must never repeat or go backwards — a property an evictable cache cannot guarantee.
 
 Start the backend server:
 ```bash
@@ -209,24 +222,16 @@ npm run dev
 
 #### Worker mode
 
-Clicks are recorded by a click-consumer worker that reads the Redis stream.
-`WORKER_MODE` decides where it runs:
+Clicks are recorded by a click-consumer worker that reads the Redis stream. `WORKER_MODE` decides where it runs:
 
 | `WORKER_MODE` | What runs | Use it for |
 |---|---|---|
 | `separate` (default) | The API (`npm run dev` / `npm start`), plus the worker as its own process: `npm run consumer:dev` / `npm run consumer` | Scaling the API and the worker independently. Redirect latency is unaffected by ingestion load. |
 | `embedded` | One process: `server.js` also starts the consumer in-process | **Single-instance free hosting**, where running a second always-on process isn't available |
 
-Both modes shut down the same way on `SIGTERM`/`SIGINT`: stop accepting
-requests, stop polling, let the batch in flight finish and be acknowledged,
-then close MongoDB and Redis. In `separate` mode, without a running worker,
-redirects still work but clicks queue in the stream (capped at
-`CLICK_STREAM_MAXLEN`) until one starts.
+Both modes shut down the same way on `SIGTERM`/`SIGINT`: stop accepting requests, stop polling, let the batch in flight finish and be acknowledged, then close MongoDB and Redis. In `separate` mode, without a running worker, redirects still work but clicks queue in the stream (capped at `CLICK_STREAM_MAXLEN`) until one starts.
 
-Point your platform's health check at `GET /health/liveness`, which sends no
-Redis commands. `GET /health/readiness` checks Redis and MongoDB and costs
-Redis commands on every call, so poll it rarely (see
-[docs/redis-keys.md](docs/redis-keys.md#command-budget)).
+Point your platform's health check at `GET /health/liveness`, which responds immediately and sends no Redis commands. `GET /health/readiness` checks Redis and MongoDB connectivity, so poll it sparingly.
 
 ---
 
@@ -236,11 +241,51 @@ cd ../frontend
 npm install
 ```
 
+Create a `.env` file inside `frontend/`:
+```env
+# Backend API URL
+# - Local development: http://localhost:5001 (or leave blank to use Vite proxy)
+# - Production: https://<your-backend>.onrender.com
+VITE_API_URL=http://localhost:5001
+```
+
 Start the frontend development server:
 ```bash
 npm run dev
 # Client running on http://localhost:3000
 ```
+
+---
+
+## 🌐 Production Deployment
+
+Linkora is designed to run seamlessly on modern cloud free tiers (e.g., **Vercel** for frontend + **Render** or **Railway** for backend).
+
+### Backend (Render / Railway)
+1. Set the root directory to `backend`.
+2. **Build Command**: `npm install`
+3. **Start Command**: `npm start`
+4. **Environment Variables**:
+   ```env
+   NODE_ENV=production
+   PORT=5000
+   FRONTEND_URL=https://<your-linkora-frontend>.vercel.app
+   MONGODB_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/linkora
+   REDIS_URL=rediss://default:<password>@<host>.upstash.io:6379
+   JWT_SECRET=your_production_secret_at_least_32_chars
+   WORKER_MODE=embedded
+   ```
+   > **Note**: Setting `WORKER_MODE=embedded` lets the API server and the stream click-consumer run together in a single free-tier container without needing a separate worker service.
+
+### Frontend (Vercel)
+1. Set the root directory to `frontend`.
+2. **Framework Preset**: `Vite`
+3. **Build Command**: `npm run build`
+4. **Output Directory**: `dist`
+5. **Environment Variables**:
+   ```env
+   VITE_API_URL=https://<your-linkora-backend>.onrender.com
+   ```
 
 ---
 
