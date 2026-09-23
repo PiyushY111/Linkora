@@ -9,7 +9,8 @@
     "dev": "nodemon src/server.js",
     "consumer": "node src/consumers/clickConsumer.js",
     "consumer:dev": "nodemon src/consumers/clickConsumer.js",
-    "test": "node --test src/__tests__/*.test.js"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
     "url-shortener",

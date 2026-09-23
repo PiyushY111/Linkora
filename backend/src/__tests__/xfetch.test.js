@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import assert from 'node:assert';
 
 describe('XFetch Probabilistic Early Expiration Mathematical Model', () => {

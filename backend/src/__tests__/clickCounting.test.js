@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import mongoose from 'mongoose';
 import { connectTestDb, disconnectTestDb, createTestUser } from './testUtils.js';
@@ -11,7 +11,7 @@ import { applyClickCounts, processBatch, APPLIED_CLICK_ID_WINDOW } from '../cons
 let user;
 let originalClickHouseEnabled;
 
-before(async () => {
+beforeAll(async () => {
   await connectTestDb();
   ({ user } = await createTestUser());
   // processBatch writes to ClickHouse first; this suite is about the Mongo
@@ -20,7 +20,7 @@ before(async () => {
   env.CLICKHOUSE_ENABLED = false;
 });
 
-after(async () => {
+afterAll(async () => {
   env.CLICKHOUSE_ENABLED = originalClickHouseEnabled;
   await ClickEvent.deleteMany({ user: user._id });
   await Link.deleteMany({ user: user._id });

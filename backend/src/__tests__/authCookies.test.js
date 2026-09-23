@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import request from 'supertest';
 import app from '../app.js';
@@ -8,11 +8,11 @@ import { redis } from '../services/cacheService.js';
 
 const createdEmails = [];
 
-before(async () => {
+beforeAll(async () => {
   await connectTestDb();
   await resetRateLimits(['register', 'refresh']);
 });
-after(async () => {
+afterAll(async () => {
   await User.deleteMany({ email: { $in: createdEmails } });
   await disconnectTestDb();
   await redis.quit();

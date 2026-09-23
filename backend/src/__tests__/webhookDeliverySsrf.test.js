@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import http from 'http';
 import mongoose from 'mongoose';
@@ -20,7 +20,7 @@ let okPort;
 let redirectServer;
 let redirectPort;
 
-before(async () => {
+beforeAll(async () => {
   await connectTestDb();
   ({ user } = await createTestUser());
 
@@ -45,7 +45,7 @@ before(async () => {
   redirectPort = redirectServer.address().port;
 });
 
-after(async () => {
+afterAll(async () => {
   await new Promise((resolve) => okServer.close(resolve));
   await new Promise((resolve) => redirectServer.close(resolve));
   await Webhook.deleteMany({ user: user._id });

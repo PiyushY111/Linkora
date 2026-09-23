@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
@@ -12,12 +12,12 @@ import { migratePlaintextLinkPasswords } from '../../scripts/migrate-plaintext-l
 let user;
 let token;
 
-before(async () => {
+beforeAll(async () => {
   await connectTestDb();
   ({ user, token } = await createTestUser());
 });
 
-after(async () => {
+afterAll(async () => {
   await Link.deleteMany({ user: user._id });
   await mongoose.model('User').deleteOne({ _id: user._id });
   await disconnectTestDb();

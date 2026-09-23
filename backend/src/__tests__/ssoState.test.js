@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import request from 'supertest';
 import app from '../app.js';
@@ -14,7 +14,7 @@ let originalSsoEnabled;
 let originalClientId;
 let originalRedirectUri;
 
-before(() => {
+beforeAll(() => {
   originalSsoEnabled = env.SSO_ENABLED;
   originalClientId = env.WORKOS_CLIENT_ID;
   originalRedirectUri = env.WORKOS_REDIRECT_URI;
@@ -23,7 +23,7 @@ before(() => {
   env.WORKOS_REDIRECT_URI = 'http://localhost:5001/api/auth/sso/callback';
 });
 
-after(async () => {
+afterAll(async () => {
   env.SSO_ENABLED = originalSsoEnabled;
   env.WORKOS_CLIENT_ID = originalClientId;
   env.WORKOS_REDIRECT_URI = originalRedirectUri;

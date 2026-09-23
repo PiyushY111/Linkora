@@ -1,10 +1,10 @@
-import { describe, it, after } from 'node:test';
+import { describe, it, afterAll } from 'vitest';
 import assert from 'node:assert';
 import crypto from 'crypto';
 import { issueRefreshToken, consumeRefreshToken, revokeRefreshToken } from '../utils/jwt.js';
 import { redis } from '../services/cacheService.js';
 
-after(async () => {
+afterAll(async () => {
   await redis.quit();
 });
 

@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, beforeAll, afterAll } from 'vitest';
 import assert from 'node:assert';
 import request from 'supertest';
 import mongoose from 'mongoose';
@@ -12,13 +12,13 @@ let ownerToken;
 let intruder;
 let intruderToken;
 
-before(async () => {
+beforeAll(async () => {
   await connectTestDb();
   ({ user: owner, token: ownerToken } = await createTestUser());
   ({ user: intruder, token: intruderToken } = await createTestUser());
 });
 
-after(async () => {
+afterAll(async () => {
   await Link.deleteMany({ user: { $in: [owner._id, intruder._id] } });
   await mongoose.model('User').deleteMany({ _id: { $in: [owner._id, intruder._id] } });
   await disconnectTestDb();
