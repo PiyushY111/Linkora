@@ -39,7 +39,7 @@ flowchart LR
 
 ## Analytics
 
-All analytics reads and writes go through `AnalyticsRepository` (`backend/src/repositories/analytics/analyticsRepository.js`). It has one implementation, `MongoAnalyticsRepository`, and MongoDB was chosen over ClickHouse to stay on free tiers ([ADR 0005](adr/0005-analytics-on-mongodb.md)). Controllers and the consumer never touch analytics collections directly.
+All analytics reads and writes go through `AnalyticsRepository` (`backend/src/repositories/analytics/analyticsRepository.js`). It has one implementation, `MongoAnalyticsRepository`, and MongoDB was chosen so everything stays on free tiers ([ADR 0005](adr/0005-analytics-on-mongodb.md)). Controllers and the consumer never touch analytics collections directly.
 
 | Method | Used by |
 |---|---|

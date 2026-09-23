@@ -3,7 +3,7 @@ import { mongoAnalyticsRepository } from './mongoAnalyticsRepository.js';
 /**
  * The one boundary between click analytics and whatever stores it. The
  * controller and the click consumer only ever talk to this interface, so a
- * different store (e.g. a ClickHouse implementation, see
+ * different store (e.g. a columnar analytics database, see
  * docs/adr/0005-analytics-on-mongodb.md) can be added behind it without
  * touching either of them.
  *

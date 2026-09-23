@@ -1,11 +1,10 @@
-# ADR 0005: Analytics on MongoDB instead of ClickHouse
+# ADR 0005: Analytics on MongoDB
 
 - **Status:** Accepted (2026-09-23)
-- **Supersedes:** the earlier plan to make ClickHouse the analytics source of truth, which was never written up as an ADR
 
 ## Context
 
-Linkora has to run entirely on free tiers: MongoDB Atlas M0, one small Redis database, and one small app host. ClickHouse Cloud has no permanent free tier, and self-hosting it needs a machine with several GB of RAM. The earlier design wrote every click to both ClickHouse and a MongoDB `ClickEvent` collection. That meant two write paths, two failure modes, and a dashboard that behaved differently depending on `CLICKHOUSE_ENABLED`.
+Linkora has to run entirely on free tiers: MongoDB Atlas M0, one small Redis database, and one small app host. A dedicated analytics database would be one more service, one more set of credentials and, for columnar stores, one without a permanent free tier. It would also mean a second write path for every click.
 
 What the product actually needs from analytics:
 
@@ -38,9 +37,11 @@ The rollup design, indexes and query plans are in [docs/architecture.md](../arch
 - **Bucket granularity.** A range starting mid-bucket includes the whole first bucket: hourly buckets for ranges of 48 hours or less, daily buckets otherwise.
 - **Write amplification.** Each click costs one raw insert, two rollup updates, one `Link.clicks` update and one ledger write, all batched per consumer batch. This matters on Atlas M0's operation limits at high sustained traffic, and it's the main reason to move to a columnar store when traffic grows.
 
-## Adding ClickHouse back later
+## Adding a dedicated analytics store later
 
-1. Implement `ClickHouseAnalyticsRepository` with the same methods: `ensureReady`, `recordClicks`, `getLinkAnalytics`, `getUserSummary`, `exportEvents`, `deleteAnalytics`. Rows in `click_events` keyed by `eventId`, with `ReplacingMergeTree(eventId)` or insert deduplication tokens for idempotency, and the dashboard queries run directly over raw rows.
+If traffic outgrows the rollups (for example, ad-hoc queries over raw history, or Atlas M0 write limits):
+
+1. Implement another repository with the same methods: `ensureReady`, `recordClicks`, `getLinkAnalytics`, `getUserSummary`, `exportEvents`, `deleteAnalytics`. Key rows by `eventId`, so `recordClicks` stays idempotent under redelivery.
 2. Select it in `getAnalyticsRepository()` from an env flag.
-3. Backfill ClickHouse from the MongoDB time-series collection, which the `ClickEventRecord` shape maps onto directly, and run both implementations in parallel through a dual-writing repository for one retention window before switching reads.
+3. Backfill it from the MongoDB time-series collection, which the `ClickEventRecord` shape maps onto directly. Run both implementations through a dual-writing repository for one retention window before switching reads.
 4. Keep the endpoint tests in `backend/test/integration/analyticsEndpoints.test.js` as the contract both implementations must pass.
