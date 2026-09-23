@@ -2,10 +2,10 @@ import { describe, it, afterAll } from 'vitest';
 import assert from 'node:assert';
 import crypto from 'crypto';
 import { issueRefreshToken, consumeRefreshToken, revokeRefreshToken } from '../../src/utils/jwt.js';
-import { redis } from '../../src/services/cacheService.js';
+import { closeRedis } from '../../src/services/cacheService.js';
 
 afterAll(async () => {
-  await redis.quit();
+  await closeRedis();
 });
 
 describe('refresh token rotation', () => {

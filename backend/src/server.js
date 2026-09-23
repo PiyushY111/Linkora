@@ -5,7 +5,7 @@ import { logger } from './config/logger.js';
 import connectDB from './config/db.js';
 import { scheduleAbuseRescan } from './services/threatDetectionService.js';
 import { scheduleExpiryWebhookCheck } from './services/webhookService.js';
-import { redis } from './services/cacheService.js';
+import { getRedis } from './services/cacheService.js';
 import { getAnalyticsRepository } from './repositories/analytics/analyticsRepository.js';
 
 /**
@@ -37,12 +37,12 @@ const SHUTDOWN_DRAIN_MS = 15000;
 let shuttingDown = false;
 
 const closeConnections = async () => {
-  // redis.quit() (unlike disconnect()) waits for in-flight commands —
+  // getRedis().quit() (unlike disconnect()) waits for in-flight commands —
   // including any XADD click events still in the pipeline — to complete
   // before closing the connection.
   await Promise.allSettled([
     mongoose.connection.close().catch((err) => logger.error({ err }, 'Error closing MongoDB connection')),
-    redis.quit().catch((err) => logger.error({ err }, 'Error closing Redis connection')),
+    getRedis().quit().catch((err) => logger.error({ err }, 'Error closing Redis connection')),
   ]);
 };
 

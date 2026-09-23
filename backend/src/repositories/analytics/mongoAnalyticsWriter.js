@@ -3,7 +3,7 @@ import Link from '../../models/Link.js';
 import ClickEvent from '../../models/ClickEvent.js';
 import ProcessedEvent from '../../models/ProcessedEvent.js';
 import { LinkStatsHourly, LinkStatsDaily } from '../../models/LinkStats.js';
-import { redis } from '../../services/cacheService.js';
+import { getRedis } from '../../services/cacheService.js';
 import { logger } from '../../config/logger.js';
 import { DimensionKeyAssigner } from './rollupDimensions.js';
 import { ensureAnalyticsCollections } from './analyticsCollections.js';
@@ -202,12 +202,12 @@ let pfaddCountSha = null;
 async function pfaddAndCount(key, members) {
   const args = [key, HLL_TTL_SECONDS, ...members];
   try {
-    if (!pfaddCountSha) pfaddCountSha = await redis.script('LOAD', PFADD_COUNT_SCRIPT);
-    return await redis.evalsha(pfaddCountSha, 1, ...args);
+    if (!pfaddCountSha) pfaddCountSha = await getRedis().script('LOAD', PFADD_COUNT_SCRIPT);
+    return await getRedis().evalsha(pfaddCountSha, 1, ...args);
   } catch (err) {
     if (!String(err.message).includes('NOSCRIPT')) throw err;
-    pfaddCountSha = await redis.script('LOAD', PFADD_COUNT_SCRIPT);
-    return redis.evalsha(pfaddCountSha, 1, ...args);
+    pfaddCountSha = await getRedis().script('LOAD', PFADD_COUNT_SCRIPT);
+    return getRedis().evalsha(pfaddCountSha, 1, ...args);
   }
 }
 

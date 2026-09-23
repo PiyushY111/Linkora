@@ -4,24 +4,17 @@ import { logger } from '../config/logger.js';
 import { redisCacheHitsTotal, redisCacheMissesTotal, redisXfetchEarlyRefreshesTotal } from '../middleware/metrics.js';
 
 /**
- * Two Redis roles, two connections:
+ * One Redis database (REDIS_URL) holds everything: the link-meta cache,
+ * the click stream, rate limits, refresh-token families, short-lived
+ * tokens, locks, and unique-visitor HyperLogLogs. Every key has a TTL or a
+ * hard bound (see docs/redis-keys.md), so the instance can run
+ * maxmemory-policy noeviction without growing unbounded, which is what the
+ * non-cache data requires.
  *
- *  - `redis` (REDIS_URL): refresh-token families, rate limiters, the click
- *    stream, and per-link usage counters. None of this is reconstructible
- *    from Mongo on the spot, so this instance must run with
- *    maxmemory-policy noeviction — losing a key here is a correctness bug
- *    (a logged-in session vanishing, a rate limit resetting, a maxClicks
- *    cap silently loosening), not a cache miss.
- *  - `cacheRedis` (REDIS_CACHE_URL): the link:meta:{shortCode} read-through
- *    cache only. Every value in it is trivially re-derivable from Mongo, so
- *    this instance is the one that's safe to run with maxmemory-policy
- *    allkeys-lru — evicting a cold entry here just costs one extra Mongo
- *    read on the next request for that code.
- *
- * REDIS_CACHE_URL defaults to REDIS_URL, so a single-Redis dev setup keeps
- * working unchanged; only a production deployment that wants independent
- * eviction policies needs to actually point REDIS_CACHE_URL somewhere else.
- * See README.md "Redis roles" for the full rationale.
+ * Code still asks for a role: getRedis() for data whose loss is a
+ * correctness bug, getCacheRedis() for the re-derivable cache. Both return
+ * the same client today; splitting them onto two databases later is a
+ * change to getCacheRedis() alone (docs/redis-keys.md, "Splitting roles").
  */
 export function createRedisClient(url = env.REDIS_URL, options = {}) {
   const client = new Redis(url, {
@@ -45,46 +38,35 @@ function redactRedisUrl(url) {
   }
 }
 
-function makeLazyProxy(ensureFn) {
-  return new Proxy(
-    {},
-    {
-      get(_target, prop) {
-        const client = ensureFn();
-        const value = client[prop];
-        return typeof value === 'function' ? value.bind(client) : value;
-      },
-    }
-  );
+let activeClient = null;
+
+/** Refresh tokens, rate limits, streams, usage counters, locks, HLLs. */
+export function getRedis() {
+  if (!activeClient) activeClient = createRedisClient(env.REDIS_URL);
+  return activeClient;
 }
 
-let activeCoreClient = null;
-function ensureCoreClient() {
-  if (!activeCoreClient) activeCoreClient = createRedisClient(env.REDIS_URL);
-  return activeCoreClient;
+/** The link:meta:{shortCode} read-through cache. Same client as getRedis() today. */
+export function getCacheRedis() {
+  return getRedis();
 }
+
+/** Test/entrypoint hook: replace the client (e.g. with a stub or a duplicate). */
 export function setActiveRedisClient(client) {
-  activeCoreClient = client;
+  activeClient = client;
 }
-export function resetActiveRedisClient() {
-  activeCoreClient = null;
-}
-// Refresh tokens, rate limits, streams, usage counters — never evictable.
-export const redis = makeLazyProxy(ensureCoreClient);
 
-let activeCacheClient = null;
-function ensureCacheClient() {
-  if (!activeCacheClient) activeCacheClient = createRedisClient(env.REDIS_CACHE_URL || env.REDIS_URL);
-  return activeCacheClient;
+export function resetActiveRedisClient() {
+  activeClient = null;
 }
-export function setActiveCacheRedisClient(client) {
-  activeCacheClient = client;
+
+/** Closes the shared client, if one was ever created. */
+export async function closeRedis() {
+  if (!activeClient) return;
+  const client = activeClient;
+  activeClient = null;
+  await client.quit();
 }
-export function resetActiveCacheRedisClient() {
-  activeCacheClient = null;
-}
-// link:meta:{shortCode} read-through cache only — fine to run allkeys-lru.
-export const cacheRedis = makeLazyProxy(ensureCacheClient);
 
 export const NEGATIVE_CACHE_MARKER = '__NULL__';
 
@@ -156,7 +138,7 @@ export function buildLinkMetaFromDoc(link) {
  */
 export async function getLinkMeta(shortCode) {
   const key = linkMetaKey(shortCode);
-  const hash = await cacheRedis.hgetall(key);
+  const hash = await getCacheRedis().hgetall(key);
 
   if (!hash || Object.keys(hash).length === 0) {
     redisCacheMissesTotal.inc({ operation: 'link_meta' });
@@ -213,7 +195,7 @@ export async function getLinkMeta(shortCode) {
     if (xfetchThreshold >= remainingMs) {
       // Expiration is nearing; attempt atomic lock acquisition so only ONE request refreshes
       const lockKey = xfetchLockKey(shortCode);
-      const acquired = await cacheRedis.set(lockKey, '1', 'PX', 5000, 'NX');
+      const acquired = await getCacheRedis().set(lockKey, '1', 'PX', 5000, 'NX');
       if (acquired) {
         shouldRecomputeEarly = true;
         redisXfetchEarlyRefreshesTotal.inc();
@@ -243,7 +225,7 @@ export async function getLinkMeta(shortCode) {
  */
 export async function setLinkMeta(shortCode, meta) {
   const key = linkMetaKey(shortCode);
-  const pipeline = cacheRedis.pipeline();
+  const pipeline = getCacheRedis().pipeline();
   pipeline.hset(key, {
     shortCode: meta.shortCode || shortCode,
     customAlias: meta.customAlias || '',
@@ -278,7 +260,7 @@ export async function setLinkMeta(shortCode, meta) {
  */
 export async function setNegativeCache(shortCode) {
   const key = linkMetaKey(shortCode);
-  const pipeline = cacheRedis.pipeline();
+  const pipeline = getCacheRedis().pipeline();
   pipeline.hset(key, NEGATIVE_CACHE_MARKER, '1');
   pipeline.expire(key, env.REDIS_NEGATIVE_CACHE_TTL_SECONDS);
   await pipeline.exec();
@@ -292,7 +274,7 @@ export async function setNegativeCache(shortCode) {
  * @param {string} shortCode
  */
 export async function invalidateLinkMeta(shortCode) {
-  await cacheRedis.del(linkMetaKey(shortCode));
+  await getCacheRedis().del(linkMetaKey(shortCode));
 }
 
 /**
@@ -321,6 +303,11 @@ export async function invalidateLinkMetaForLink(linkOrMeta) {
  * only actually uses it the moment the key doesn't exist yet; every
  * subsequent call is a no-op seed followed by a plain atomic increment.
  *
+ * The key has a sliding USAGE_KEY_TTL_SECONDS TTL, refreshed on every
+ * click. A link idle that long has also dropped out of the link-meta cache,
+ * so the next click re-seeds from a fresh Mongo read of Link.clicks, which
+ * the consumer keeps current (lagging only by the stream backlog).
+ *
  * @param {string} linkId
  * @param {number} maxClicks - 0/undefined means unlimited (short-circuits, no Redis call)
  * @param {number} baseCount - current Mongo click count, used only to seed
@@ -330,12 +317,14 @@ const USAGE_SCRIPT = `
 local key = KEYS[1]
 local baseCount = tonumber(ARGV[1])
 local maxClicks = tonumber(ARGV[2])
+local ttlSeconds = tonumber(ARGV[3])
 
 if redis.call('EXISTS', key) == 0 then
   redis.call('SET', key, baseCount)
 end
 
 local current = redis.call('INCR', key)
+redis.call('EXPIRE', key, ttlSeconds)
 local allowed = 1
 if current > maxClicks then
   allowed = 0
@@ -349,21 +338,22 @@ return {allowed, current, reached}
 `;
 
 let usageScriptSha = null;
+const USAGE_KEY_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export async function checkAndIncrementUsage(linkId, maxClicks, baseCount = 0) {
   if (!maxClicks || maxClicks <= 0) return { allowed: true };
 
   const key = linkUsageKey(linkId);
-  const args = [key, baseCount, maxClicks];
+  const args = [key, baseCount, maxClicks, USAGE_KEY_TTL_SECONDS];
 
   let result;
   try {
-    if (!usageScriptSha) usageScriptSha = await redis.script('LOAD', USAGE_SCRIPT);
-    result = await redis.evalsha(usageScriptSha, 1, ...args);
+    if (!usageScriptSha) usageScriptSha = await getRedis().script('LOAD', USAGE_SCRIPT);
+    result = await getRedis().evalsha(usageScriptSha, 1, ...args);
   } catch (err) {
     if (!String(err.message).includes('NOSCRIPT')) throw err;
-    usageScriptSha = await redis.script('LOAD', USAGE_SCRIPT);
-    result = await redis.evalsha(usageScriptSha, 1, ...args);
+    usageScriptSha = await getRedis().script('LOAD', USAGE_SCRIPT);
+    result = await getRedis().evalsha(usageScriptSha, 1, ...args);
   }
 
   const [allowed, current, reached] = result;
@@ -378,14 +368,14 @@ export async function checkAndIncrementUsage(linkId, maxClicks, baseCount = 0) {
  */
 export async function getCurrentUsage(linkId) {
   const key = linkUsageKey(linkId);
-  const val = await redis.get(key);
+  const val = await getRedis().get(key);
   return Number(val) || 0;
 }
 
 /**
  * Returns cache diagnostics and XFetch early expiration statistics, read
  * from the Prometheus counters (the source of truth /metrics also reports)
- * rather than parallel redis.incr('stats:...') counters that existed only
+ * rather than parallel INCR 'stats:...' counters that existed only
  * to duplicate them and cost a write on every single cache lookup.
  */
 export async function getCacheDiagnostics() {
@@ -393,8 +383,8 @@ export async function getCacheDiagnostics() {
     redisCacheHitsTotal.get().then((m) => sumMetricValues(m)),
     redisCacheMissesTotal.get().then((m) => sumMetricValues(m)),
     redisXfetchEarlyRefreshesTotal.get().then((m) => sumMetricValues(m)),
-    cacheRedis.info('memory').catch(() => ''),
-    cacheRedis.dbsize().catch(() => 0),
+    getCacheRedis().info('memory').catch(() => ''),
+    getCacheRedis().dbsize().catch(() => 0),
   ]);
 
   const total = hits + misses;
@@ -420,7 +410,7 @@ export async function getCacheDiagnostics() {
     redisStats: {
       totalKeys: dbsize,
       usedMemory: usedMemoryHuman,
-      status: cacheRedis.status,
+      status: getCacheRedis().status,
     },
   };
 }
@@ -484,4 +474,4 @@ export async function simulateThunderingHerd(concurrency = 50) {
   };
 }
 
-export default redis;
+export default getRedis;

@@ -5,7 +5,7 @@ import { logger } from '../config/logger.js';
 import { getAuthorizationUrl, exchangeCodeForProfile, provisionUserFromProfile } from '../services/ssoService.js';
 import { issueRefreshToken } from '../utils/jwt.js';
 import { logAudit } from '../utils/auditLogger.js';
-import { redis } from '../services/cacheService.js';
+import { getRedis } from '../services/cacheService.js';
 import { setRefreshTokenCookie } from '../utils/authCookies.js';
 import { ValidationError, UnauthorizedError } from '../lib/errors.js';
 
@@ -27,7 +27,7 @@ router.get('/authorize', requireSsoEnabled, async (req, res) => {
 
   // Bind this state to this authorization attempt so the callback can
   // reject a forged or replayed `state` (CSRF on the OAuth/SAML dance).
-  await redis.set(ssoStateKey(state), '1', 'EX', SSO_STATE_TTL_SECONDS);
+  await getRedis().set(ssoStateKey(state), '1', 'EX', SSO_STATE_TTL_SECONDS);
 
   const url = getAuthorizationUrl({ organizationId, connectionId, state });
   res.redirect(url);
@@ -43,7 +43,7 @@ router.get('/callback', requireSsoEnabled, async (req, res) => {
   }
 
   // Atomic check-and-consume: a state can only ever complete one callback.
-  const validState = await redis.getdel(ssoStateKey(state));
+  const validState = await getRedis().getdel(ssoStateKey(state));
   if (!validState) {
     throw new UnauthorizedError('Invalid or expired SSO state');
   }

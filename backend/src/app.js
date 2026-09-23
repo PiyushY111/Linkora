@@ -9,7 +9,7 @@ import { env } from './config/env.js';
 import { httpLogger } from './config/logger.js';
 import { errorHandler, notFound } from './middleware/error.js';
 import { metricsMiddleware, metricsAuth, metricsHandler } from './middleware/metrics.js';
-import { redis } from './services/cacheService.js';
+import { getRedis } from './services/cacheService.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -86,7 +86,7 @@ app.get('/health/readiness', async (req, res) => {
 
   try {
     const start = Date.now();
-    await redis.ping();
+    await getRedis().ping();
     checks.redis = { ok: true, latencyMs: Date.now() - start };
   } catch (err) {
     checks.redis = { ok: false, error: err.message };
@@ -105,7 +105,7 @@ app.get('/health/readiness', async (req, res) => {
   }
 
   try {
-    await redis.xinfo('GROUPS', env.CLICK_STREAM_KEY);
+    await getRedis().xinfo('GROUPS', env.CLICK_STREAM_KEY);
     checks.streamConsumerGroup = { ok: true };
   } catch (err) {
     checks.streamConsumerGroup = { ok: false, note: 'group not yet created by consumer', error: err.message };

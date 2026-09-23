@@ -9,7 +9,7 @@ import ClickEvent from '../../src/models/ClickEvent.js';
 import ProcessedEvent, { PROCESSED_EVENT_TTL_SECONDS } from '../../src/models/ProcessedEvent.js';
 import { LinkStatsHourly, LinkStatsDaily } from '../../src/models/LinkStats.js';
 import { env } from '../../src/config/env.js';
-import { redis, cacheRedis } from '../../src/services/cacheService.js';
+import { closeRedis } from '../../src/services/cacheService.js';
 import { getAnalyticsRepository } from '../../src/repositories/analytics/analyticsRepository.js';
 import { selectRollupGranularity } from '../../src/repositories/analytics/mongoAnalyticsReader.js';
 import { hourBucket, dayBucket } from '../../src/repositories/analytics/mongoAnalyticsWriter.js';
@@ -88,8 +88,7 @@ afterAll(async () => {
   await Link.deleteMany({ user: user._id });
   await mongoose.model('User').deleteOne({ _id: user._id });
   await disconnectTestDb();
-  await redis.quit();
-  await cacheRedis.quit();
+  await closeRedis();
 });
 
 describe('analytics rollups: idempotency', () => {

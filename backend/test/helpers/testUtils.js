@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { env } from '../../src/config/env.js';
 import User from '../../src/models/User.js';
 import { generateToken } from '../../src/utils/jwt.js';
-import { redis } from '../../src/services/cacheService.js';
+import { getRedis } from '../../src/services/cacheService.js';
 
 /**
  * Tests never touch the real dev database: they connect to a sibling
@@ -58,8 +58,8 @@ export async function resetRateLimits(keyPrefixes) {
   for (const prefix of keyPrefixes) {
     let cursor = '0';
     do {
-      const [next, keys] = await redis.scan(cursor, 'MATCH', `ratelimit:${prefix}:*`, 'COUNT', 500);
-      if (keys.length > 0) await redis.del(...keys);
+      const [next, keys] = await getRedis().scan(cursor, 'MATCH', `ratelimit:${prefix}:*`, 'COUNT', 500);
+      if (keys.length > 0) await getRedis().del(...keys);
       cursor = next;
     } while (cursor !== '0');
   }

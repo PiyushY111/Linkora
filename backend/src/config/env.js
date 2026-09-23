@@ -53,17 +53,11 @@ const envSchema = z
     RATE_LIMIT_WINDOW: z.coerce.number().int().positive().default(15),
     RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
 
-    // Redis (cache, counters, streams, distributed rate limiting)
-    // Non-evictable: refresh-token families, rate limiters, the click
-    // stream, and per-link usage counters. Must run maxmemory-policy
-    // noeviction — see services/cacheService.js.
+    // Redis: one database for cache, streams, rate limits and tokens. Every
+    // key has a TTL or a hard bound (docs/redis-keys.md), so run it with
+    // maxmemory-policy noeviction.
     REDIS_URL: z.string().default('redis://127.0.0.1:6379'),
-    // Evictable read-through cache for link:meta:{shortCode} only. Falls
-    // back to REDIS_URL when unset, so a single-Redis dev setup keeps
-    // working; only set this separately in production if you want
-    // allkeys-lru on the cache without risking it on session/rate-limit data.
-    REDIS_CACHE_URL: z.string().optional(),
-    REDIS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
+    REDIS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
     REDIS_NEGATIVE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(120),
 
     // Redis Streams
@@ -71,7 +65,11 @@ const envSchema = z
     CLICK_STREAM_CONSUMER_GROUP: z.string().default('click-consumers'),
     CLICK_STREAM_BATCH_SIZE: z.coerce.number().int().positive().default(500),
     CLICK_STREAM_BATCH_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
+    // Approximate caps (XADD MAXLEN ~). If the consumer falls further behind
+    // than this, the oldest unprocessed clicks are trimmed and lost.
+    CLICK_STREAM_MAXLEN: z.coerce.number().int().positive().default(10000),
     WEBHOOK_DLQ_STREAM_KEY: z.string().default('stream:webhooks:dlq'),
+    WEBHOOK_DLQ_STREAM_MAXLEN: z.coerce.number().int().positive().default(1000),
 
     // Analytics: raw click events (time-series) and hourly rollups are
     // kept this long; daily rollups are kept indefinitely.

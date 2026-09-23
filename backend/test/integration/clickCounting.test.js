@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import mongoose from 'mongoose';
 import { connectTestDb, disconnectTestDb, createTestUser } from '../helpers/testUtils.js';
 import Link from '../../src/models/Link.js';
-import { redis, cacheRedis } from '../../src/services/cacheService.js';
+import { closeRedis } from '../../src/services/cacheService.js';
 import { processBatch } from '../../src/consumers/clickConsumer.js';
 import { getAnalyticsRepository } from '../../src/repositories/analytics/analyticsRepository.js';
 import { applyClickCounts, APPLIED_ID_WINDOW as APPLIED_CLICK_ID_WINDOW } from '../../src/repositories/analytics/mongoAnalyticsWriter.js';
@@ -24,8 +24,7 @@ afterAll(async () => {
   await Link.deleteMany({ user: user._id });
   await mongoose.model('User').deleteOne({ _id: user._id });
   await disconnectTestDb();
-  await redis.quit();
-  await cacheRedis.quit();
+  await closeRedis();
 });
 
 let codeSeq = 0;

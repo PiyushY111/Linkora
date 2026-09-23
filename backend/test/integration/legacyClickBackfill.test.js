@@ -5,7 +5,7 @@ import { connectTestDb, disconnectTestDb, createTestUser } from '../helpers/test
 import Link from '../../src/models/Link.js';
 import { LinkStatsDaily } from '../../src/models/LinkStats.js';
 import ClickEvent from '../../src/models/ClickEvent.js';
-import { redis, cacheRedis } from '../../src/services/cacheService.js';
+import { closeRedis } from '../../src/services/cacheService.js';
 import { getAnalyticsRepository } from '../../src/repositories/analytics/analyticsRepository.js';
 import { backfillLegacyClickEvents, LEGACY_COLLECTION } from '../../scripts/backfill-legacy-click-events.js';
 
@@ -40,8 +40,7 @@ afterAll(async () => {
   await Link.deleteMany({ user: user._id });
   await mongoose.model('User').deleteOne({ _id: user._id });
   await disconnectTestDb();
-  await redis.quit();
-  await cacheRedis.quit();
+  await closeRedis();
 });
 
 describe('backfill-legacy-click-events', () => {

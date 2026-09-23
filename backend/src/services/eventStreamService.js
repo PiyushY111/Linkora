@@ -1,4 +1,4 @@
-import { redis } from './cacheService.js';
+import { getRedis } from './cacheService.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
@@ -40,7 +40,7 @@ function toXAddArgs(fields) {
  */
 export async function emitClickEvent(click) {
   try {
-    await redis.xadd(env.CLICK_STREAM_KEY, '*', ...toXAddArgs(click));
+    await getRedis().xadd(env.CLICK_STREAM_KEY, 'MAXLEN', '~', env.CLICK_STREAM_MAXLEN, '*', ...toXAddArgs(click));
   } catch (err) {
     // Never let stream ingestion failures affect the redirect response;
     // the caller has already responded to the client by this point.
@@ -49,12 +49,15 @@ export async function emitClickEvent(click) {
 }
 
 /**
+ * Every stream is capped: `maxLen` is required, and trimming is
+ * approximate (MAXLEN ~), which lets Redis drop whole macro-nodes cheaply.
  * @param {string} streamKey
  * @param {Record<string, unknown>} fields
+ * @param {number} maxLen
  */
-export async function addToStream(streamKey, fields) {
+export async function addToStream(streamKey, fields, maxLen) {
   try {
-    return await redis.xadd(streamKey, '*', ...toXAddArgs(fields));
+    return await getRedis().xadd(streamKey, 'MAXLEN', '~', maxLen, '*', ...toXAddArgs(fields));
   } catch (err) {
     logger.error({ err, streamKey }, 'Failed to XADD to stream');
     return null;

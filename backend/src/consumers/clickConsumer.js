@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { UAParser } from 'ua-parser-js';
-import { redis } from '../services/cacheService.js';
+import { getRedis } from '../services/cacheService.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { lookupGeo, scheduleGeoIpUpdates } from '../services/geoipService.js';
@@ -30,7 +30,7 @@ function streamEntryToObject(fieldArray) {
 
 export async function ensureConsumerGroup() {
   try {
-    await redis.xgroup('CREATE', env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, '$', 'MKSTREAM');
+    await getRedis().xgroup('CREATE', env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, '$', 'MKSTREAM');
   } catch (err) {
     if (!String(err.message).includes('BUSYGROUP')) throw err;
   }
@@ -112,7 +112,7 @@ export async function processBatch(entries) {
   // Raw event, rollups, unique visitors and Link.clicks, all idempotent.
   const { applied } = await getAnalyticsRepository().recordClicks(events);
   if (ackIds.length > 0) {
-    await redis.xack(env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, ...ackIds);
+    await getRedis().xack(env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, ...ackIds);
   }
 
   // Fire-and-forget: click webhook subscribers, only for newly applied events.
@@ -141,7 +141,10 @@ export async function processBatch(entries) {
  */
 export async function claimStalePending() {
   try {
-    const [, entries] = await redis.xautoclaim(
+    // Redis 7+ also returns the IDs of pending entries that MAXLEN trimming
+    // deleted before anyone processed them; those clicks are gone, and
+    // leaving them pending would grow the PEL forever.
+    const [, entries, deletedIds = []] = await getRedis().xautoclaim(
       env.CLICK_STREAM_KEY,
       env.CLICK_STREAM_CONSUMER_GROUP,
       CONSUMER_NAME,
@@ -150,6 +153,10 @@ export async function claimStalePending() {
       'COUNT',
       env.CLICK_STREAM_BATCH_SIZE
     );
+    if (deletedIds.length > 0) {
+      logger.error({ count: deletedIds.length }, 'Pending click events were trimmed from the stream before processing; lost');
+      await getRedis().xack(env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, ...deletedIds);
+    }
     if (entries.length > 0) {
       logger.warn({ count: entries.length }, 'Reclaimed stale pending click events');
       await processBatch(entries);
@@ -162,7 +169,7 @@ export async function claimStalePending() {
 async function pollLoop() {
   while (running) {
     try {
-      const response = await redis.xreadgroup(
+      const response = await getRedis().xreadgroup(
         'GROUP',
         env.CLICK_STREAM_CONSUMER_GROUP,
         CONSUMER_NAME,

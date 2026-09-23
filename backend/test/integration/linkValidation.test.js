@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import app from '../../src/app.js';
 import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from '../helpers/testUtils.js';
 import Link from '../../src/models/Link.js';
-import { redis } from '../../src/services/cacheService.js';
+import { closeRedis } from '../../src/services/cacheService.js';
 
 let owner;
 let ownerToken;
@@ -22,7 +22,7 @@ afterAll(async () => {
   await Link.deleteMany({ user: { $in: [owner._id, intruder._id] } });
   await mongoose.model('User').deleteMany({ _id: { $in: [owner._id, intruder._id] } });
   await disconnectTestDb();
-  await redis.quit();
+  await closeRedis();
 });
 
 describe('redirect-target validation on create + update (dashboard API)', () => {

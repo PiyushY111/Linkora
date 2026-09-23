@@ -6,7 +6,7 @@ import { executeDelivery } from '../../src/services/webhookService.js';
 import { connectTestDb, disconnectTestDb, createTestUser } from '../helpers/testUtils.js';
 import Webhook from '../../src/models/Webhook.js';
 import WebhookDelivery from '../../src/models/WebhookDelivery.js';
-import { redis } from '../../src/services/cacheService.js';
+import { closeRedis } from '../../src/services/cacheService.js';
 
 // Passed as the `attempt` argument so a failing delivery is treated as the
 // final attempt (matches RETRY_DELAYS_MS.length) and does NOT schedule a
@@ -52,7 +52,7 @@ afterAll(async () => {
   await WebhookDelivery.deleteMany({ user: user._id });
   await mongoose.model('User').deleteOne({ _id: user._id });
   await disconnectTestDb();
-  await redis.quit();
+  await closeRedis();
 });
 
 describe('webhook delivery: DNS-pinned SSRF re-check + no redirects', () => {

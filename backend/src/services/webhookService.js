@@ -296,15 +296,19 @@ export async function executeDelivery(
       } else {
         // Send to Dead Letter Queue (DLQ)
         logger.error({ webhookId: webhook._id, url: webhook.url }, 'Webhook delivery exhausted all retries; enqueued to DLQ');
-        await addToStream(env.WEBHOOK_DLQ_STREAM_KEY, {
-          webhookId: String(webhook._id),
-          deliveryId,
-          url: webhook.url,
-          event,
-          payload: payloadString,
-          failedAt: Date.now(),
-          finalError: errorMsg || 'Exhausted retry budget',
-        });
+        await addToStream(
+          env.WEBHOOK_DLQ_STREAM_KEY,
+          {
+            webhookId: String(webhook._id),
+            deliveryId,
+            url: webhook.url,
+            event,
+            payload: payloadString,
+            failedAt: Date.now(),
+            finalError: errorMsg || 'Exhausted retry budget',
+          },
+          env.WEBHOOK_DLQ_STREAM_MAXLEN
+        );
       }
     }
   } catch (metaErr) {

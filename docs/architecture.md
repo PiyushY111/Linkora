@@ -28,7 +28,7 @@ flowchart LR
 | API | HTTP API and the redirect hot path. Never writes analytics synchronously. | `backend/src/app.js`, `backend/src/server.js` |
 | Click consumer | Reads the click stream, enriches events (GeoIP, user agent), records them, updates `Link.clicks`, dispatches click webhooks | `backend/src/consumers/clickConsumer.js` |
 | MongoDB | Source of truth for users, links, webhooks, API keys **and analytics** | `backend/src/models/`, `backend/src/repositories/` |
-| Redis | Link metadata cache, click stream, rate limits, refresh tokens, short-lived tokens | `backend/src/services/cacheService.js` |
+| Redis (one database) | Link metadata cache, click stream, rate limits, refresh tokens, short-lived tokens, unique-visitor HyperLogLogs. Every key has a TTL or a cap ([redis-keys.md](redis-keys.md), [ADR 0006](adr/0006-single-redis-database.md)). | `backend/src/services/cacheService.js` |
 
 ## Click flow
 

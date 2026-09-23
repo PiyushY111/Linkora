@@ -11,11 +11,10 @@ import { env } from '../config/env.js';
  * don't reveal creation order.
  *
  * Why Mongo and not Redis: this counter must never repeat or go backwards.
- * The Redis instance this app uses for caching (cacheService.js's
- * `cacheRedis`) runs maxmemory-policy allkeys-lru, so a key here can be
- * evicted under memory pressure — for a counter, that means a silent reset
- * back toward zero and duplicate short codes handed out afterward. Mongo's
- * atomic increment doesn't have that failure mode.
+ * Redis is treated as a cache (a flush, a failover without persistence, or
+ * a move to an evicting policy can drop any key), and for a counter that
+ * means a silent reset back toward zero and duplicate short codes handed
+ * out afterward. Mongo's atomic increment doesn't have that failure mode.
  */
 
 const BASE62_CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';

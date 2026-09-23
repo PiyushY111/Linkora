@@ -8,16 +8,7 @@ import { logger } from '../config/logger.js';
 import { env } from '../config/env.js';
 import { calculateTimeRange } from '../services/analyticsTimeRange.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
-import {
-  getLinkMeta,
-  setLinkMeta,
-  setNegativeCache,
-  invalidateLinkMetaForLink,
-  checkAndIncrementUsage,
-  getCurrentUsage,
-  buildLinkMetaFromDoc,
-  redis,
-} from '../services/cacheService.js';
+import { getLinkMeta, setLinkMeta, setNegativeCache, invalidateLinkMetaForLink, checkAndIncrementUsage, getCurrentUsage, buildLinkMetaFromDoc, getRedis } from '../services/cacheService.js';
 import { emitClickEvent } from '../services/eventStreamService.js';
 import { dispatchEvent } from '../services/webhookService.js';
 import { detectBot } from '../utils/botDetector.js';
@@ -54,7 +45,7 @@ async function verifyPasswordAndIssueUnlockToken(storedPasswordHash, providedPas
   if (!ok) return null;
 
   const jti = crypto.randomBytes(16).toString('hex');
-  await redis.set(unlockConsumedKey(jti), '1', 'EX', UNLOCK_TOKEN_TTL_SECONDS);
+  await getRedis().set(unlockConsumedKey(jti), '1', 'EX', UNLOCK_TOKEN_TTL_SECONDS);
 
   return jwt.sign({ shortCode, jti }, env.JWT_SECRET, {
     expiresIn: UNLOCK_TOKEN_TTL_SECONDS,
@@ -80,7 +71,7 @@ async function redeemUnlockToken(token, shortCode) {
 
   if (payload.shortCode !== shortCode || !payload.jti) return false;
 
-  const consumed = await redis.getdel(unlockConsumedKey(payload.jti));
+  const consumed = await getRedis().getdel(unlockConsumedKey(payload.jti));
   return Boolean(consumed);
 }
 

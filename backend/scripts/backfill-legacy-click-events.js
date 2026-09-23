@@ -13,7 +13,7 @@
 import mongoose from 'mongoose';
 import { env } from '../src/config/env.js';
 import { logger } from '../src/config/logger.js';
-import { redis } from '../src/services/cacheService.js';
+import { getRedis } from '../src/services/cacheService.js';
 import { getAnalyticsRepository } from '../src/repositories/analytics/analyticsRepository.js';
 
 export const LEGACY_COLLECTION = 'clickevents';
@@ -92,6 +92,6 @@ if (isMainModule) {
     process.exitCode = 1;
   } finally {
     await mongoose.disconnect();
-    await redis.quit();
+    await getRedis().quit();
   }
 }

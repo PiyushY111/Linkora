@@ -4,7 +4,7 @@ import request from 'supertest';
 import app from '../../src/app.js';
 import { connectTestDb, disconnectTestDb, resetRateLimits } from '../helpers/testUtils.js';
 import User from '../../src/models/User.js';
-import { redis } from '../../src/services/cacheService.js';
+import { closeRedis } from '../../src/services/cacheService.js';
 
 const createdEmails = [];
 
@@ -15,7 +15,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await User.deleteMany({ email: { $in: createdEmails } });
   await disconnectTestDb();
-  await redis.quit();
+  await closeRedis();
 });
 
 function findCookie(setCookieHeader, name) {
