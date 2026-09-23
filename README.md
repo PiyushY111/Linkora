@@ -183,10 +183,27 @@ NODE_ENV=development
 FRONTEND_URL=http://localhost:3000
 MONGODB_URI=mongodb://localhost:27017/url_shortener
 REDIS_URL=redis://127.0.0.1:6379
+# Optional in dev - falls back to REDIS_URL. See "Redis roles" below.
+# REDIS_CACHE_URL=redis://127.0.0.1:6380
 JWT_SECRET=super_secret_jwt_key_linkora_dev_32chars_min
 JWT_REFRESH_SECRET=super_secret_refresh_key_linkora_dev_32chars
 API_KEY_HEADER=x-api-key
 ```
+
+#### Redis roles
+
+Linkora talks to two logical Redis roles, which can be the same instance in
+development (`REDIS_CACHE_URL` defaults to `REDIS_URL`) but should be
+separate instances in production:
+
+| Role | Env var | Holds | Eviction policy |
+|---|---|---|---|
+| Core | `REDIS_URL` | Refresh-token families, rate limiters, the click stream, per-link usage counters | **`noeviction`** — none of this is reconstructible on the spot; losing a key here is a correctness bug, not a cache miss |
+| Cache | `REDIS_CACHE_URL` | `link:meta:{shortCode}` read-through cache only | `allkeys-lru` is safe — every value is trivially re-derived from MongoDB, so evicting a cold entry just costs one extra DB read |
+
+The short-code sequence counter lives in MongoDB, not Redis (see
+`src/models/Counter.js`), specifically because it must never repeat or go
+backwards — a property an evictable cache can't guarantee.
 
 Start the backend server:
 ```bash

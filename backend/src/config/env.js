@@ -54,7 +54,15 @@ const envSchema = z
     RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
 
     // Redis (cache, counters, streams, distributed rate limiting)
+    // Non-evictable: refresh-token families, rate limiters, the click
+    // stream, and per-link usage counters. Must run maxmemory-policy
+    // noeviction — see services/cacheService.js.
     REDIS_URL: z.string().default('redis://127.0.0.1:6379'),
+    // Evictable read-through cache for link:meta:{shortCode} only. Falls
+    // back to REDIS_URL when unset, so a single-Redis dev setup keeps
+    // working; only set this separately in production if you want
+    // allkeys-lru on the cache without risking it on session/rate-limit data.
+    REDIS_CACHE_URL: z.string().optional(),
     REDIS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
     REDIS_NEGATIVE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(120),
 

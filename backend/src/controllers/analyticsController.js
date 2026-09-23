@@ -13,11 +13,10 @@ import {
   getLinkMeta,
   setLinkMeta,
   setNegativeCache,
-  invalidateLinkMeta,
-  incrementClickCounter,
+  invalidateLinkMetaForLink,
   checkAndIncrementUsage,
   getCurrentUsage,
-  seedLinkUsage,
+  buildLinkMetaFromDoc,
   redis,
 } from '../services/cacheService.js';
 import { emitClickEvent } from '../services/eventStreamService.js';
@@ -173,28 +172,14 @@ export const redirectLink = async (req, res) => {
 
   // Feature 4: XFetch Probabilistic Early Expiration recomputation
   if (cached.status === 'hit' && cached.shouldRecomputeEarly) {
+    const fetchStart = Date.now();
     Link.findOne({ $or: [{ shortCode }, { customAlias: shortCode }] })
       .read('nearest')
       .lean()
       .then((fresh) => {
         if (fresh) {
-          setLinkMeta(shortCode, {
-            originalUrl: fresh.originalUrl,
-            isActive: fresh.isActive,
-            expiryDate: fresh.expiryDate ? new Date(fresh.expiryDate).getTime() : 0,
-            passwordHash: fresh.password || '',
-            linkId: String(fresh._id),
-            userId: String(fresh.user),
-            maxClicks: fresh.maxClicks || 0,
-            iosRedirect: fresh.iosRedirect || '',
-            androidRedirect: fresh.androidRedirect || '',
-            expiredRedirectUrl: fresh.expiredRedirectUrl || '',
-            routingType: fresh.routingType || 'direct',
-            variants: fresh.variants || [],
-            ogTitle: fresh.ogTitle || null,
-            ogDescription: fresh.ogDescription || null,
-            ogImage: fresh.ogImage || null,
-          }).catch(() => {});
+          const computeDelta = Date.now() - fetchStart;
+          setLinkMeta(shortCode, { ...buildLinkMetaFromDoc(fresh), computeDelta }).catch(() => {});
         }
       })
       .catch((err) => logger.warn({ err, shortCode }, 'Background XFetch refresh failed'));
@@ -203,39 +188,27 @@ export const redirectLink = async (req, res) => {
   let meta = cached.status === 'hit' ? cached.meta : null;
 
   if (!meta) {
+    const fetchStart = Date.now();
     const link = await Link.findOne({
       $or: [{ shortCode }, { customAlias: shortCode }],
     })
       .read('nearest')
       .lean();
+    const computeDelta = Date.now() - fetchStart;
 
     if (!link) {
       setNegativeCache(shortCode).catch((err) => logger.error({ err, shortCode }, 'Failed to set negative cache'));
       return res.status(404).json({ success: false, message: 'Link not found' });
     }
 
-    meta = {
-      originalUrl: link.originalUrl,
-      isActive: link.isActive,
-      expiryDate: link.expiryDate ? new Date(link.expiryDate).getTime() : 0,
-      passwordHash: link.password || '',
-      linkId: String(link._id),
-      userId: String(link.user),
-      maxClicks: link.maxClicks || 0,
-      iosRedirect: link.iosRedirect || '',
-      androidRedirect: link.androidRedirect || '',
-      expiredRedirectUrl: link.expiredRedirectUrl || '',
-      routingType: link.routingType || 'direct',
-      variants: link.variants || [],
-      ogTitle: link.ogTitle || null,
-      ogDescription: link.ogDescription || null,
-      ogImage: link.ogImage || null,
-    };
+    meta = buildLinkMetaFromDoc(link);
 
-    seedLinkUsage(meta.linkId, link.clicks || 0).catch((err) =>
-      logger.error({ err, linkId: meta.linkId }, 'Failed to seed link usage counter')
+    // computeDelta is XFetch's Δ (the real cost of a cache-miss recompute,
+    // measured here rather than a hardcoded guess) — it drives how
+    // aggressively getLinkMeta() schedules an early background refresh.
+    setLinkMeta(shortCode, { ...meta, computeDelta }).catch((err) =>
+      logger.error({ err, shortCode }, 'Failed to populate link cache')
     );
-    setLinkMeta(shortCode, meta).catch((err) => logger.error({ err, shortCode }, 'Failed to populate link cache'));
   }
 
   if (!meta.isActive) {
@@ -297,7 +270,7 @@ export const redirectLink = async (req, res) => {
         });
       }
     } else {
-      const usage = await checkAndIncrementUsage(meta.linkId, meta.maxClicks);
+      const usage = await checkAndIncrementUsage(meta.linkId, meta.maxClicks, meta.clicks);
       if (!usage.allowed) {
         if (meta.expiredRedirectUrl) {
           return res.redirect(307, meta.expiredRedirectUrl);
@@ -317,7 +290,10 @@ export const redirectLink = async (req, res) => {
         Link.findByIdAndUpdate(meta.linkId, { isActive: false }).catch((err) =>
           logger.error({ err, linkId: meta.linkId }, 'Failed to auto-disable link after reaching maxClicks')
         );
-        invalidateLinkMeta(shortCode).catch((err) =>
+        // `meta` carries both shortCode and customAlias (buildLinkMetaFromDoc),
+        // so both cache keys clear even if this request came in through
+        // whichever one of the two ISN'T `shortCode` here.
+        invalidateLinkMetaForLink(meta).catch((err) =>
           logger.error({ err, shortCode }, 'Failed to invalidate link meta after reaching maxClicks')
         );
         dispatchEvent(meta.userId, 'link.limit_reached', {
@@ -449,13 +425,16 @@ export const redirectLink = async (req, res) => {
     return res.status(200).json({ success: true, originalUrl: destinationUrl, variantId, variantName });
   }
 
-  res.set('Cache-Control', 'private, max-age=60');
+  // no-store, not a short max-age: this is a tracked link, and any browser
+  // or intermediary cache serving a stale 307 from cache means that click
+  // never reaches emitClickEvent below at all.
+  res.set('Cache-Control', 'no-store');
   res.redirect(307, destinationUrl);
 
   // Fire-and-forget: never await Mongo writes or streaming on the hot path.
-  incrementClickCounter(meta.linkId).catch((err) =>
-    logger.error({ err, linkId: meta.linkId }, 'Failed to increment click counter')
-  );
+  // Link.clicks itself is incremented by the stream consumer as part of
+  // processing this same event (see consumers/clickConsumer.js) — there is
+  // no separate Redis click-counter path to keep in sync with it anymore.
   emitClickEvent({
     linkId: meta.linkId,
     shortCode,

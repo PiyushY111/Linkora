@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import app from '../app.js';
 import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from './testUtils.js';
 import Link from '../models/Link.js';
-import { redis, getCurrentUsage } from '../services/cacheService.js';
+import { redis, cacheRedis, getCurrentUsage } from '../services/cacheService.js';
 
 let user;
 let token;
@@ -20,6 +20,7 @@ after(async () => {
   await mongoose.model('User').deleteOne({ _id: user._id });
   await disconnectTestDb();
   await redis.quit();
+  await cacheRedis.quit();
 });
 
 describe('POST /api/r/:shortCode/unlock + GET /api/r/:shortCode (password gating)', () => {

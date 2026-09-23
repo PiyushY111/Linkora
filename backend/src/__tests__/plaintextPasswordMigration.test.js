@@ -6,7 +6,7 @@ import request from 'supertest';
 import app from '../app.js';
 import { connectTestDb, disconnectTestDb, createTestUser, authHeader } from './testUtils.js';
 import Link from '../models/Link.js';
-import { redis } from '../services/cacheService.js';
+import { redis, cacheRedis } from '../services/cacheService.js';
 import { migratePlaintextLinkPasswords } from '../../scripts/migrate-plaintext-link-passwords.js';
 
 let user;
@@ -22,6 +22,7 @@ after(async () => {
   await mongoose.model('User').deleteOne({ _id: user._id });
   await disconnectTestDb();
   await redis.quit();
+  await cacheRedis.quit();
 });
 
 describe('legacy plaintext link passwords', () => {

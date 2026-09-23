@@ -1,22 +1,27 @@
 import Redis from 'ioredis';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
-import { redisCacheHitsTotal, redisCacheMissesTotal } from '../middleware/metrics.js';
+import { redisCacheHitsTotal, redisCacheMissesTotal, redisXfetchEarlyRefreshesTotal } from '../middleware/metrics.js';
 
 /**
- * Sizing guidance (Phase 4.3): each link:meta:{shortCode} hash is roughly
- * 250 bytes (6 fields incl. a URL). At 10M active links that's ~2.5GB of
- * cache footprint. Provision Redis with headroom on top of that for the
- * link:link_sequence counter, per-day link:counters:{date} hashes,
- * stream:clicks (trimmed by the consumer's XACK+XAUTOCLAIM cycle), and the
- * Phase 5 sliding-window rate-limit keys — 4-6GB maxmemory is a reasonable
- * starting point for that scale, with maxmemory-policy allkeys-lru so cold
- * entries evict before hot ones under pressure.
- */
-/**
- * Factory, not a singleton: nothing connects at import time. server.js (and
- * test setup, pointed at a testcontainers URL) decide when and to what to
- * connect by calling this.
+ * Two Redis roles, two connections:
+ *
+ *  - `redis` (REDIS_URL): refresh-token families, rate limiters, the click
+ *    stream, and per-link usage counters. None of this is reconstructible
+ *    from Mongo on the spot, so this instance must run with
+ *    maxmemory-policy noeviction — losing a key here is a correctness bug
+ *    (a logged-in session vanishing, a rate limit resetting, a maxClicks
+ *    cap silently loosening), not a cache miss.
+ *  - `cacheRedis` (REDIS_CACHE_URL): the link:meta:{shortCode} read-through
+ *    cache only. Every value in it is trivially re-derivable from Mongo, so
+ *    this instance is the one that's safe to run with maxmemory-policy
+ *    allkeys-lru — evicting a cold entry here just costs one extra Mongo
+ *    read on the next request for that code.
+ *
+ * REDIS_CACHE_URL defaults to REDIS_URL, so a single-Redis dev setup keeps
+ * working unchanged; only a production deployment that wants independent
+ * eviction policies needs to actually point REDIS_CACHE_URL somewhere else.
+ * See README.md "Redis roles" for the full rationale.
  */
 export function createRedisClient(url = env.REDIS_URL, options = {}) {
   const client = new Redis(url, {
@@ -25,52 +30,67 @@ export function createRedisClient(url = env.REDIS_URL, options = {}) {
     enableAutoPipelining: false,
     ...options,
   });
-  client.on('error', (err) => logger.error({ err }, 'Redis connection error'));
-  client.on('connect', () => logger.info('Redis connected'));
+  client.on('error', (err) => logger.error({ err, url: redactRedisUrl(url) }, 'Redis connection error'));
+  client.on('connect', () => logger.info({ url: redactRedisUrl(url) }, 'Redis connected'));
   return client;
 }
 
-let activeClient = null;
-
-function ensureActiveClient() {
-  if (!activeClient) activeClient = createRedisClient();
-  return activeClient;
-}
-
-/**
- * Swaps the client every `redis.<method>()` call below resolves against.
- * Test setup uses this to point every already-imported module at a
- * testcontainers Redis without needing to change any of their imports.
- */
-export function setActiveRedisClient(client) {
-  activeClient = client;
-}
-
-export function resetActiveRedisClient() {
-  activeClient = null;
-}
-
-// A thin proxy, not the client itself: every property/method access is
-// resolved against whatever `activeClient` currently is (lazily created on
-// first use), so the many `import { redis } from './cacheService.js'`
-// call sites across the app never need to change, while still never
-// connecting anything just by being imported.
-export const redis = new Proxy(
-  {},
-  {
-    get(_target, prop) {
-      const client = ensureActiveClient();
-      const value = client[prop];
-      return typeof value === 'function' ? value.bind(client) : value;
-    },
+function redactRedisUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.password) parsed.password = '***';
+    return parsed.toString();
+  } catch {
+    return 'redis://[unparseable]';
   }
-);
+}
+
+function makeLazyProxy(ensureFn) {
+  return new Proxy(
+    {},
+    {
+      get(_target, prop) {
+        const client = ensureFn();
+        const value = client[prop];
+        return typeof value === 'function' ? value.bind(client) : value;
+      },
+    }
+  );
+}
+
+let activeCoreClient = null;
+function ensureCoreClient() {
+  if (!activeCoreClient) activeCoreClient = createRedisClient(env.REDIS_URL);
+  return activeCoreClient;
+}
+export function setActiveRedisClient(client) {
+  activeCoreClient = client;
+}
+export function resetActiveRedisClient() {
+  activeCoreClient = null;
+}
+// Refresh tokens, rate limits, streams, usage counters — never evictable.
+export const redis = makeLazyProxy(ensureCoreClient);
+
+let activeCacheClient = null;
+function ensureCacheClient() {
+  if (!activeCacheClient) activeCacheClient = createRedisClient(env.REDIS_CACHE_URL || env.REDIS_URL);
+  return activeCacheClient;
+}
+export function setActiveCacheRedisClient(client) {
+  activeCacheClient = client;
+}
+export function resetActiveCacheRedisClient() {
+  activeCacheClient = null;
+}
+// link:meta:{shortCode} read-through cache only — fine to run allkeys-lru.
+export const cacheRedis = makeLazyProxy(ensureCacheClient);
 
 export const NEGATIVE_CACHE_MARKER = '__NULL__';
 
 export const linkMetaKey = (shortCode) => `link:meta:${shortCode}`;
-export const linkCountersKey = (date) => `link:counters:${date}`;
-export const linkSequenceKey = () => 'key:link_sequence';
+export const linkUsageKey = (linkId) => `link:usage:${linkId}`;
+export const xfetchLockKey = (shortCode) => `lock:xfetch:${shortCode}`;
 
 /**
  * @typedef {Object} LinkMeta
@@ -81,10 +101,44 @@ export const linkSequenceKey = () => 'key:link_sequence';
  * @property {string} linkId
  * @property {string} userId
  * @property {number} [maxClicks] - 0 if no click limit
+ * @property {number} [clicks] - Mongo's click count as of when this was cached;
+ *   used only to seed the Redis usage counter the first time it's touched.
  */
 
-export const linkUsageKey = (linkId) => `link:usage:${linkId}`;
-export const xfetchLockKey = (shortCode) => `lock:xfetch:${shortCode}`;
+/**
+ * Builds the cache-hash-shaped LinkMeta object from a Link Mongoose
+ * document (or lean object). This used to be duplicated inline at every
+ * call site that populates the cache (the XFetch background refresh and
+ * the cache-miss path both hand-built the same shape); now there's exactly
+ * one place that defines what "the cached shape of a link" is.
+ * @param {import('mongoose').Document | Record<string, unknown>} link
+ * @returns {LinkMeta}
+ */
+export function buildLinkMetaFromDoc(link) {
+  return {
+    // Carried through so any code path holding only a cached `meta` (not
+    // the live Mongo doc) can still invalidate BOTH cache keys a link is
+    // reachable under — see invalidateLinkMetaForLink() below.
+    shortCode: link.shortCode,
+    customAlias: link.customAlias || null,
+    originalUrl: link.originalUrl,
+    isActive: link.isActive,
+    expiryDate: link.expiryDate ? new Date(link.expiryDate).getTime() : 0,
+    passwordHash: link.password || '',
+    linkId: String(link._id),
+    userId: String(link.user),
+    maxClicks: link.maxClicks || 0,
+    clicks: link.clicks || 0,
+    iosRedirect: link.iosRedirect || '',
+    androidRedirect: link.androidRedirect || '',
+    expiredRedirectUrl: link.expiredRedirectUrl || '',
+    routingType: link.routingType || 'direct',
+    variants: link.variants || [],
+    ogTitle: link.ogTitle || null,
+    ogDescription: link.ogDescription || null,
+    ogImage: link.ogImage || null,
+  };
+}
 
 /**
  * Reads link:meta:{shortCode} via a single HGETALL with XFetch Probabilistic Early Expiration.
@@ -102,22 +156,19 @@ export const xfetchLockKey = (shortCode) => `lock:xfetch:${shortCode}`;
  */
 export async function getLinkMeta(shortCode) {
   const key = linkMetaKey(shortCode);
-  const hash = await redis.hgetall(key);
+  const hash = await cacheRedis.hgetall(key);
 
   if (!hash || Object.keys(hash).length === 0) {
     redisCacheMissesTotal.inc({ operation: 'link_meta' });
-    redis.incr('stats:cache_misses').catch(() => {});
     return { status: 'miss' };
   }
 
   if (hash[NEGATIVE_CACHE_MARKER]) {
     redisCacheHitsTotal.inc({ operation: 'link_meta' });
-    redis.incr('stats:cache_hits').catch(() => {});
     return { status: 'negative' };
   }
 
   redisCacheHitsTotal.inc({ operation: 'link_meta' });
-  redis.incr('stats:cache_hits').catch(() => {});
 
   let variants = [];
   try {
@@ -125,6 +176,8 @@ export async function getLinkMeta(shortCode) {
   } catch {}
 
   const meta = {
+    shortCode: hash.shortCode || shortCode,
+    customAlias: hash.customAlias || null,
     originalUrl: hash.originalUrl,
     isActive: hash.isActive === 'true',
     expiryDate: Number(hash.expiryDate) || 0,
@@ -132,6 +185,7 @@ export async function getLinkMeta(shortCode) {
     linkId: hash.linkId,
     userId: hash.userId,
     maxClicks: Number(hash.maxClicks) || 0,
+    clicks: Number(hash.clicks) || 0,
     iosRedirect: hash.iosRedirect || '',
     androidRedirect: hash.androidRedirect || '',
     expiredRedirectUrl: hash.expiredRedirectUrl || '',
@@ -149,7 +203,7 @@ export async function getLinkMeta(shortCode) {
     const ttlSeconds = Number(hash.ttlSeconds) || env.REDIS_CACHE_TTL_SECONDS;
     const elapsedMs = Math.max(0, Date.now() - cachedAt);
     const remainingMs = Math.max(0, ttlSeconds * 1000 - elapsedMs);
-    const delta = Number(hash.computeDelta) || 25; // measured or default 25ms Mongo fetch time
+    const delta = Number(hash.computeDelta) || 25; // measured Mongo fetch time this entry was populated with
     const beta = 1.0; // Aggressiveness parameter
     const rand = Math.random();
 
@@ -159,10 +213,10 @@ export async function getLinkMeta(shortCode) {
     if (xfetchThreshold >= remainingMs) {
       // Expiration is nearing; attempt atomic lock acquisition so only ONE request refreshes
       const lockKey = xfetchLockKey(shortCode);
-      const acquired = await redis.set(lockKey, '1', 'PX', 5000, 'NX');
+      const acquired = await cacheRedis.set(lockKey, '1', 'PX', 5000, 'NX');
       if (acquired) {
         shouldRecomputeEarly = true;
-        redis.incr('stats:xfetch_early_refreshes').catch(() => {});
+        redisXfetchEarlyRefreshesTotal.inc();
       }
     }
   } catch (err) {
@@ -178,13 +232,21 @@ export async function getLinkMeta(shortCode) {
 
 /**
  * Populates link:meta:{shortCode} via a pipeline (HSET + EXPIRE) with telemetry for XFetch.
+ * `computeDelta` should be the actual measured Mongo fetch time (ms) for this
+ * lookup, not a hardcoded guess — see analyticsController.js's redirectLink,
+ * which times its own `Link.findOne` and passes the result through here.
+ * `cachedAt` defaults to now but can be overridden — used by
+ * simulateThunderingHerd() below to backdate an entry so XFetch actually
+ * treats it as near-expiry, instead of the override being silently dropped.
  * @param {string} shortCode
- * @param {LinkMeta} meta
+ * @param {LinkMeta & { computeDelta?: number, cachedAt?: number }} meta
  */
 export async function setLinkMeta(shortCode, meta) {
   const key = linkMetaKey(shortCode);
-  const pipeline = redis.pipeline();
+  const pipeline = cacheRedis.pipeline();
   pipeline.hset(key, {
+    shortCode: meta.shortCode || shortCode,
+    customAlias: meta.customAlias || '',
     originalUrl: meta.originalUrl || '',
     isActive: String(meta.isActive !== false),
     expiryDate: String(meta.expiryDate || 0),
@@ -192,6 +254,7 @@ export async function setLinkMeta(shortCode, meta) {
     linkId: meta.linkId || '',
     userId: meta.userId || '',
     maxClicks: String(meta.maxClicks || 0),
+    clicks: String(meta.clicks || 0),
     iosRedirect: meta.iosRedirect || '',
     androidRedirect: meta.androidRedirect || '',
     expiredRedirectUrl: meta.expiredRedirectUrl || '',
@@ -200,7 +263,7 @@ export async function setLinkMeta(shortCode, meta) {
     ogTitle: meta.ogTitle || '',
     ogDescription: meta.ogDescription || '',
     ogImage: meta.ogImage || '',
-    cachedAt: String(Date.now()),
+    cachedAt: String(meta.cachedAt ?? Date.now()),
     ttlSeconds: String(env.REDIS_CACHE_TTL_SECONDS),
     computeDelta: String(meta.computeDelta || 25),
   });
@@ -215,7 +278,7 @@ export async function setLinkMeta(shortCode, meta) {
  */
 export async function setNegativeCache(shortCode) {
   const key = linkMetaKey(shortCode);
-  const pipeline = redis.pipeline();
+  const pipeline = cacheRedis.pipeline();
   pipeline.hset(key, NEGATIVE_CACHE_MARKER, '1');
   pipeline.expire(key, env.REDIS_NEGATIVE_CACHE_TTL_SECONDS);
   await pipeline.exec();
@@ -223,41 +286,93 @@ export async function setNegativeCache(shortCode) {
 
 /**
  * Invalidates the cache entry immediately on edit/delete/status toggle.
+ * Callers are responsible for invalidating BOTH the shortCode and (if set)
+ * the customAlias — the redirect resolves by either, so a stale entry under
+ * either key would keep serving old data.
  * @param {string} shortCode
  */
 export async function invalidateLinkMeta(shortCode) {
-  await redis.del(linkMetaKey(shortCode));
+  await cacheRedis.del(linkMetaKey(shortCode));
 }
 
 /**
- * Atomically bumps the per-day, per-link click counter used to avoid
- * synchronous MongoDB writes on the redirect hot path.
- * @param {string} linkId
- * @param {Date} [when]
+ * Invalidates both cache keys a link is reachable under in one call.
+ * Accepts either a live Link doc/lean object ({ shortCode, customAlias })
+ * or an already-cached LinkMeta (which now carries the same two fields via
+ * buildLinkMetaFromDoc) — so a hot-path caller holding only `meta`, not a
+ * fresh Mongo doc, can still clear both entries.
+ * @param {{ shortCode?: string, customAlias?: string | null }} linkOrMeta
  */
-export async function incrementClickCounter(linkId, when = new Date()) {
-  const date = when.toISOString().slice(0, 10);
-  await redis.hincrby(linkCountersKey(date), linkId, 1);
+export async function invalidateLinkMetaForLink(linkOrMeta) {
+  const keys = [linkOrMeta?.shortCode, linkOrMeta?.customAlias].filter(Boolean);
+  await Promise.all(keys.map((k) => invalidateLinkMeta(k)));
 }
 
 /**
- * Atomically evaluates and records click usage against maxClicks.
+ * Atomically seeds-if-missing, increments, and evaluates a link's usage
+ * counter against its maxClicks cap, in one Lua script. Replaces the old
+ * seedLinkUsage() (fire-and-forget SET NX) + checkAndIncrementUsage()
+ * (plain INCR) pair: seeding and incrementing used to be two separate,
+ * unordered round trips, so an INCR from a concurrent request could land
+ * before the seed did and silently drop however many clicks Mongo already
+ * had on record for this link.
+ *
+ * `baseCount` is passed on every call (not just the first) — the script
+ * only actually uses it the moment the key doesn't exist yet; every
+ * subsequent call is a no-op seed followed by a plain atomic increment.
+ *
  * @param {string} linkId
- * @param {number} maxClicks
+ * @param {number} maxClicks - 0/undefined means unlimited (short-circuits, no Redis call)
+ * @param {number} baseCount - current Mongo click count, used only to seed
  * @returns {Promise<{ allowed: boolean, current: number, max: number, reached: boolean }>}
  */
-export async function checkAndIncrementUsage(linkId, maxClicks) {
+const USAGE_SCRIPT = `
+local key = KEYS[1]
+local baseCount = tonumber(ARGV[1])
+local maxClicks = tonumber(ARGV[2])
+
+if redis.call('EXISTS', key) == 0 then
+  redis.call('SET', key, baseCount)
+end
+
+local current = redis.call('INCR', key)
+local allowed = 1
+if current > maxClicks then
+  allowed = 0
+end
+local reached = 0
+if current >= maxClicks then
+  reached = 1
+end
+
+return {allowed, current, reached}
+`;
+
+let usageScriptSha = null;
+
+export async function checkAndIncrementUsage(linkId, maxClicks, baseCount = 0) {
   if (!maxClicks || maxClicks <= 0) return { allowed: true };
+
   const key = linkUsageKey(linkId);
-  const current = await redis.incr(key);
-  if (current > maxClicks) {
-    return { allowed: false, current, max: maxClicks, reached: true };
+  const args = [key, baseCount, maxClicks];
+
+  let result;
+  try {
+    if (!usageScriptSha) usageScriptSha = await redis.script('LOAD', USAGE_SCRIPT);
+    result = await redis.evalsha(usageScriptSha, 1, ...args);
+  } catch (err) {
+    if (!String(err.message).includes('NOSCRIPT')) throw err;
+    usageScriptSha = await redis.script('LOAD', USAGE_SCRIPT);
+    result = await redis.evalsha(usageScriptSha, 1, ...args);
   }
-  return { allowed: true, current, max: maxClicks, reached: current >= maxClicks };
+
+  const [allowed, current, reached] = result;
+  return { allowed: allowed === 1, current, max: maxClicks, reached: reached === 1 };
 }
 
 /**
- * Returns the current recorded usage count from Redis.
+ * Returns the current recorded usage count from Redis (0 if never touched
+ * yet — the probe path uses this read-only, so it must not seed).
  * @param {string} linkId
  * @returns {Promise<number>}
  */
@@ -268,25 +383,18 @@ export async function getCurrentUsage(linkId) {
 }
 
 /**
- * Seeds the link usage counter in Redis (only if not already set).
- * @param {string} linkId
- * @param {number} currentClicks
- */
-export async function seedLinkUsage(linkId, currentClicks) {
-  const key = linkUsageKey(linkId);
-  await redis.set(key, currentClicks || 0, 'NX');
-}
-
-/**
- * Returns cache diagnostics and XFetch early expiration statistics.
+ * Returns cache diagnostics and XFetch early expiration statistics, read
+ * from the Prometheus counters (the source of truth /metrics also reports)
+ * rather than parallel redis.incr('stats:...') counters that existed only
+ * to duplicate them and cost a write on every single cache lookup.
  */
 export async function getCacheDiagnostics() {
   const [hits, misses, earlyRefreshes, memoryInfo, dbsize] = await Promise.all([
-    redis.get('stats:cache_hits').then((v) => Number(v) || 0),
-    redis.get('stats:cache_misses').then((v) => Number(v) || 0),
-    redis.get('stats:xfetch_early_refreshes').then((v) => Number(v) || 0),
-    redis.info('memory').catch(() => ''),
-    redis.dbsize().catch(() => 0),
+    redisCacheHitsTotal.get().then((m) => sumMetricValues(m)),
+    redisCacheMissesTotal.get().then((m) => sumMetricValues(m)),
+    redisXfetchEarlyRefreshesTotal.get().then((m) => sumMetricValues(m)),
+    cacheRedis.info('memory').catch(() => ''),
+    cacheRedis.dbsize().catch(() => 0),
   ]);
 
   const total = hits + misses;
@@ -312,13 +420,21 @@ export async function getCacheDiagnostics() {
     redisStats: {
       totalKeys: dbsize,
       usedMemory: usedMemoryHuman,
-      status: redis.status,
+      status: cacheRedis.status,
     },
   };
 }
 
+function sumMetricValues(metric) {
+  return (metric?.values || []).reduce((sum, v) => sum + (v.value || 0), 0);
+}
+
 /**
- * Runs a controlled thundering-herd simulation to demonstrate XFetch in action.
+ * Runs a controlled thundering-herd simulation to demonstrate XFetch in
+ * action. Honest by construction now: setLinkMeta() actually respects the
+ * `cachedAt` override below (it used to always stamp `Date.now()`,
+ * silently discarding this backdate and making the "near expiry" premise
+ * of the simulation false).
  * @param {number} concurrency
  */
 export async function simulateThunderingHerd(concurrency = 50) {
@@ -369,4 +485,3 @@ export async function simulateThunderingHerd(concurrency = 50) {
 }
 
 export default redis;
-
