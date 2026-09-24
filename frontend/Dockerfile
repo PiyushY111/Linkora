@@ -3,7 +3,7 @@
 # Builds the SPA and serves it with nginx, which also proxies /api and
 # /health to the API, so the browser sees one origin.
 
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
