@@ -139,7 +139,7 @@ export async function resetAuthFailures(ip) {
 }
 
 /**
- * Token-bucket rate limiter (Phase 7.4's public API gateway). Unlike the
+ * Token-bucket rate limiter for the public API. Unlike the
  * sliding-window limiter above, this allows short bursts up to `capacity`
  * while enforcing a steady-state `refillPerSecond` average — the shape
  * expected of a public API gateway.
@@ -202,11 +202,22 @@ async function evalTokenBucket(key, capacity, refillPerSecond, cost) {
 }
 
 /**
+ * One bucket per API key (by its database ID, never the secret itself,
+ * which would otherwise sit in plain text in the Redis keyspace), per user
+ * for dashboard-session requests without a key, else per client IP.
+ */
+function bucketIdentifier(req) {
+  if (req.apiKeyUser?.keyId) return `key:${req.apiKeyUser.keyId}`;
+  if (req.apiKeyUser?.id) return `user:${req.apiKeyUser.id}`;
+  return `ip:${getClientIp(req)}`;
+}
+
+/**
  * @param {{ capacity: number, refillPerSecond: number, keyPrefix: string, cost?: number }} options
  */
 export function createTokenBucketLimiter({ capacity, refillPerSecond, keyPrefix, cost = 1 }) {
   return async (req, res, next) => {
-    const identifier = req.apiKeyUser?.apiKey || getClientIp(req);
+    const identifier = bucketIdentifier(req);
     const key = `ratelimit:${keyPrefix}:${identifier}`;
 
     try {

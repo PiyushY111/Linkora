@@ -54,7 +54,6 @@ export async function apiKeyAuth(req, res, next) {
         req.scopes = keyDoc?.scopes || ['*'];
         req.apiKeyUser = {
           id: String(user._id),
-          apiKey: keyDoc ? keyDoc.maskedKey : 'dashboard-session',
           keyId: keyDoc ? keyDoc._id : null,
           prefix: keyDoc ? keyDoc.prefix : 'session',
           environment: keyDoc ? keyDoc.environment : 'live',
@@ -115,7 +114,6 @@ export async function apiKeyAuth(req, res, next) {
       req.scopes = keyDoc.scopes || ['*'];
       req.apiKeyUser = {
         id: String(user._id),
-        apiKey: rawKey,
         keyId: keyDoc._id,
         prefix: keyDoc.prefix,
         environment: keyDoc.environment,
