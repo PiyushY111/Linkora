@@ -65,3 +65,19 @@ describe('request body limits', () => {
     assert.strictEqual(res.status, 413);
   });
 });
+
+describe('malformed request bodies', () => {
+  it('returns 400, not 500, for malformed JSON, without echoing parser details', async () => {
+    const res = await request(app).post(ORDINARY_ROUTE).set('Content-Type', 'application/json').send('{"broken": ');
+    assert.strictEqual(res.status, 400);
+    assert.doesNotMatch(res.body.message, /Unexpected|JSON\.parse|position/i);
+  });
+
+  it('returns 415 for an unsupported body charset', async () => {
+    const res = await request(app)
+      .post(ORDINARY_ROUTE)
+      .set('Content-Type', 'application/json; charset=klingon')
+      .send('{}');
+    assert.strictEqual(res.status, 415);
+  });
+});

@@ -82,6 +82,18 @@ export function toClientError(err) {
     return { status: 413, message: 'Request payload too large' };
   }
 
+  // Other body-parser failures are the client's fault. Their messages can
+  // quote the parser's internals, so each gets a fixed message.
+  if (err?.type === 'entity.parse.failed') {
+    return { status: 400, message: 'Malformed request body' };
+  }
+  if (err?.type === 'charset.unsupported' || err?.type === 'encoding.unsupported') {
+    return { status: 415, message: 'Unsupported request body encoding' };
+  }
+  if (err?.type === 'request.aborted' || err?.type === 'request.size.invalid') {
+    return { status: 400, message: 'Invalid request body' };
+  }
+
   if (err?.name === 'ValidationError' && err.errors) {
     // Mongoose schema validation error — safe to surface field-level messages.
     const firstMessage = Object.values(err.errors)[0]?.message || 'Validation failed';
