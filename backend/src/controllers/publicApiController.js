@@ -1,3 +1,4 @@
+import fs from 'fs';
 import Link from '../models/Link.js';
 import { createLinkRecord } from './linkController.js';
 import { getLinkAnalytics as fetchLinkAnalytics } from './analyticsController.js';
@@ -9,6 +10,7 @@ import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepos
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { ValidationError, NotFoundError, toClientError } from '../lib/errors.js';
+import { PUBLIC_API_RATE_LIMIT } from '../middleware/rateLimiter.js';
 
 const MAX_BULK_SIZE = 1000;
 const VALIDATION_CONCURRENCY = 50;
@@ -360,8 +362,6 @@ export const bulkCreateLinks = async (req, res) => {
  * Telemetry endpoint returning rate limit and quota information.
  */
 export const getUsage = async (req, res) => {
-  const capacity = req.apiKeyDoc?.rateLimit?.capacity || 20;
-  const refillRate = req.apiKeyDoc?.rateLimit?.refillPerSecond || 5;
 
   res.status(200).json({
     success: true,
@@ -375,8 +375,8 @@ export const getUsage = async (req, res) => {
     },
     rateLimits: {
       algorithm: 'token-bucket',
-      burstCapacity: capacity,
-      refillPerSecond: refillRate,
+      burstCapacity: PUBLIC_API_RATE_LIMIT.capacity,
+      refillPerSecond: PUBLIC_API_RATE_LIMIT.refillPerSecond,
       standardWindow: '1 second',
     },
   });
@@ -384,85 +384,16 @@ export const getUsage = async (req, res) => {
 
 /**
  * GET /api/public/v1/openapi.json
- * Official OpenAPI 3.1.0 specification.
+ * Serves docs/openapi.json, the single source for the public API's
+ * contract (test/contract/openapi.test.js keeps it in step with the
+ * routes and their responses). Read once, on first request.
  */
-export const getOpenApiSpec = (req, res) => {
-  const spec = {
-    openapi: '3.1.0',
-    info: {
-      title: 'Linkora Public REST API',
-      version: '1.0.0',
-      description: 'Enterprise API for short link creation, management, analytics, and bulk provisioning.',
-      contact: { name: 'Linkora Developer Support', email: 'support@linkora.dev' },
-    },
-    servers: [{ url: `${env.FRONTEND_URL}/api/public/v1`, description: 'Current Environment API Server' }],
-    security: [{ ApiKeyAuth: [] }],
-    components: {
-      securitySchemes: {
-        ApiKeyAuth: {
-          type: 'apiKey',
-          in: 'header',
-          name: 'x-api-key',
-          description: 'Pass your API Key via the x-api-key header.',
-        },
-      },
-    },
-    paths: {
-      '/links': {
-        get: {
-          summary: 'List user links',
-          parameters: [
-            { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
-            { name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } },
-            { name: 'search', in: 'query', schema: { type: 'string' } },
-            { name: 'tag', in: 'query', schema: { type: 'string' } },
-            { name: 'sort', in: 'query', schema: { type: 'string', enum: ['createdAt_desc', 'clicks_desc'] } },
-          ],
-          responses: { 200: { description: 'Paginated links' } },
-        },
-        post: {
-          summary: 'Create a new short link',
-          requestBody: {
-            required: true,
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['originalUrl'],
-                  properties: {
-                    originalUrl: { type: 'string', format: 'uri' },
-                    customAlias: { type: 'string' },
-                    title: { type: 'string' },
-                    tags: { type: 'array', items: { type: 'string' } },
-                    password: { type: 'string' },
-                    expiryDate: { type: 'string', format: 'date-time' },
-                    maxClicks: { type: 'integer' },
-                  },
-                },
-              },
-            },
-          },
-          responses: { 201: { description: 'Link created' } },
-        },
-      },
-      '/links/{code}': {
-        get: { summary: 'Get link details by code or ID' },
-        patch: { summary: 'Update link settings' },
-        delete: { summary: 'Delete link' },
-      },
-      '/links/{code}/analytics': {
-        get: { summary: 'Get aggregate click analytics for a link' },
-      },
-      '/links/bulk': {
-        post: { summary: 'Bulk create up to 1,000 links' },
-      },
-      '/usage': {
-        get: { summary: 'Retrieve API rate limits and quota status' },
-      },
-    },
-  };
+const OPENAPI_PATH = new URL('../../../docs/openapi.json', import.meta.url);
+let openApiSpec = null;
 
-  res.status(200).json(spec);
+export const getOpenApiSpec = (req, res) => {
+  openApiSpec ??= JSON.parse(fs.readFileSync(OPENAPI_PATH, 'utf8'));
+  res.status(200).json(openApiSpec);
 };
 
 export default {

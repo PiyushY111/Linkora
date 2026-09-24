@@ -1,113 +1,50 @@
 import crypto from 'crypto';
 import dns from 'dns';
 import cron from 'node-cron';
-import { Agent, fetch as undiciFetch } from 'undici';
 import Webhook from '../models/Webhook.js';
 import WebhookDelivery from '../models/WebhookDelivery.js';
 import Link from '../models/Link.js';
 import { addToStream } from './eventStreamService.js';
+import { validateUrlSafety } from '../middleware/ssrfValidator.js';
+import { ssrfSafeFetch, BlockedDestinationError } from '../lib/ssrfSafeDispatcher.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
-// Exponential backoff delays: 10s, 1m, 5m, 30m, 2h
-const RETRY_DELAYS_MS = [10000, 60000, 300000, 1800000, 7200000];
+// Five attempts in total. RETRY_DELAYS_MS[n] is the wait (plus jitter)
+// before attempt n + 2.
+const MAX_ATTEMPTS = 5;
+const RETRY_DELAYS_MS = [10000, 60000, 300000, 1800000];
+const RETRY_JITTER_MS = 2000;
 
-const WEBHOOK_METADATA_IPS = new Set(['169.254.169.254']);
-
-function isPrivateOrLoopbackIp(ip) {
-  return (
-    ip === '127.0.0.1' ||
-    ip === '::1' ||
-    ip.startsWith('10.') ||
-    ip.startsWith('192.168.') ||
-    ip.startsWith('169.254.') ||
-    ip.startsWith('127.') ||
-    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)
-  );
-}
+const DELIVERY_TIMEOUT_MS = 10000;
+const METADATA_HOSTNAMES = ['metadata.google.internal'];
 
 /**
- * The single source of truth for "is this IP okay to send a webhook to",
- * shared by registration-time validation (isSafeEndpointUrl) and the
- * delivery-time re-check below — so the two can never drift apart. Cloud
- * metadata is blocked unconditionally; private/loopback ranges are blocked
- * only in production, preserving the local-testing convenience of pointing
- * a webhook at this app's own built-in echo endpoint in development.
- */
-function isBlockedWebhookAddress(ip) {
-  if (WEBHOOK_METADATA_IPS.has(ip)) return true;
-  return env.NODE_ENV === 'production' && isPrivateOrLoopbackIp(ip);
-}
-
-/**
- * Validates endpoint URL and guards against Server-Side Request Forgery (SSRF).
- * Blocks loopback, private RFC 1918, link-local, and cloud metadata addresses.
- */
-export async function isSafeEndpointUrl(urlStr, { lookup = dns.promises.lookup } = {}) {
-  try {
-    const parsed = new URL(urlStr);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return { safe: false, reason: 'URL must use HTTP or HTTPS protocol' };
-    }
-
-    const host = parsed.hostname.toLowerCase();
-
-    // Block cloud metadata services unconditionally (by hostname, ahead of
-    // the DNS lookup below which only checks the resolved IP).
-    if (
-      host === '169.254.169.254' ||
-      host === 'metadata.google.internal' ||
-      host.endsWith('.metadata.google.internal')
-    ) {
-      return { safe: false, reason: 'Access to cloud metadata endpoints is forbidden' };
-    }
-
-    const lookupResult = await lookup(host);
-    if (isBlockedWebhookAddress(lookupResult.address)) {
-      return { safe: false, reason: 'This destination resolves to a blocked/private address' };
-    }
-
-    return { safe: true, ip: lookupResult.address };
-  } catch (err) {
-    return { safe: false, reason: `URL resolution failed: ${err.message}` };
-  }
-}
-
-/**
- * Re-resolves `hostname` and returns the first address that passes the same
- * SSRF policy as isSafeEndpointUrl, throwing if none do. isSafeEndpointUrl
- * only runs at registration time; without a second check *immediately*
- * before each delivery, an attacker can point DNS at a safe IP during
- * registration and then repoint it at an internal address before the next
- * delivery — a classic DNS-rebinding bypass of a validate-then-fetch
- * pattern.
+ * Registration-time check for a webhook URL, with the same IP policy as
+ * link destinations (lib/ipBlocklist.js). Private and loopback targets are
+ * refused unless WEBHOOK_ALLOW_PRIVATE_TARGETS is set, which env.js
+ * forbids in production; cloud metadata is refused regardless. Delivery
+ * re-checks at connect time (lib/ssrfSafeDispatcher.js), so passing here
+ * is necessary but not sufficient.
  *
- * `lookup` is injectable so tests can simulate exactly that rebinding
- * scenario (a hostname that resolves safely once and privately the next).
+ * @param {string} urlStr
+ * @param {{ lookup?: typeof dns.promises.lookup, allowPrivate?: boolean }} [options]
+ * @returns {Promise<{ safe: boolean, reason?: string }>}
  */
-async function resolveSafeDeliveryAddress(hostname, lookup = dns.promises.lookup) {
-  const addresses = await lookup(hostname, { all: true, verbatim: true });
-  const safe = addresses.find((addr) => !isBlockedWebhookAddress(addr.address));
-  if (!safe) {
-    throw new Error(`Destination "${hostname}" resolves only to blocked/private addresses`);
+export async function isSafeEndpointUrl(
+  urlStr,
+  { lookup = dns.promises.lookup, allowPrivate = env.WEBHOOK_ALLOW_PRIVATE_TARGETS } = {}
+) {
+  let host;
+  try {
+    host = new URL(urlStr).hostname.toLowerCase();
+  } catch {
+    return { safe: false, reason: 'Invalid URL' };
   }
-  return safe;
-}
-
-/**
- * Builds an undici Agent whose connector ignores whatever DNS says at
- * connect time and always dials the single, already-validated address —
- * closing the gap between "we checked this hostname" and "we connected to
- * this hostname" that a plain re-check-then-fetch still leaves open.
- */
-function buildPinnedDispatcher(address) {
-  return new Agent({
-    connect: {
-      lookup: (_hostname, _options, callback) => {
-        callback(null, address.address, address.family);
-      },
-    },
-  });
+  if (METADATA_HOSTNAMES.some((name) => host === name || host.endsWith(`.${name}`))) {
+    return { safe: false, reason: 'Access to cloud metadata endpoints is forbidden' };
+  }
+  return validateUrlSafety(urlStr, { lookup, allowPrivate });
 }
 
 /**
@@ -127,7 +64,39 @@ export function generateSignature(payloadString, secret, timestamp) {
 }
 
 /**
- * Executes a single HTTP webhook delivery attempt, records telemetry and response preview.
+ * A delivery error message for the webhook owner's delivery log. Built from
+ * error codes, not raw error text.
+ */
+function describeDeliveryError(err, url) {
+  const cause = err?.cause;
+  if (err instanceof BlockedDestinationError || cause instanceof BlockedDestinationError) {
+    return 'Destination resolves to a private or restricted address; delivery blocked';
+  }
+  if (err?.name === 'TimeoutError' || cause?.code === 'UND_ERR_CONNECT_TIMEOUT' || cause?.code === 'ETIMEDOUT') {
+    return `Request timed out after ${DELIVERY_TIMEOUT_MS}ms: destination did not respond in time`;
+  }
+  if (cause?.code === 'ECONNREFUSED') return `Connection refused: no server listening at ${url}`;
+  if (cause?.code === 'ENOTFOUND') return 'DNS resolution failed: hostname could not be found';
+  if (cause?.code === 'ECONNRESET') return 'Connection reset by the destination';
+  if (cause?.code) return `Network error (${cause.code})`;
+  return 'Network request failed';
+}
+
+/**
+ * Executes a single HTTP webhook delivery attempt, records telemetry and
+ * response preview, and schedules the next attempt on failure.
+ *
+ * Every attempt of one delivery, and a manual replay of it, sends the same
+ * event `id` and `createdAt`, so a receiver can recognise an event it has
+ * already processed. The signature timestamp is fresh for each attempt.
+ *
+ * @param {{
+ *   lookup?: typeof dns.promises.lookup,
+ *   allowPrivateNetworks?: boolean,
+ *   schedule?: (fn: () => Promise<unknown>, delayMs: number) => unknown,
+ *   eventId?: string,
+ *   createdAt?: string,
+ * }} [options] - `schedule` is injectable so tests can run retries directly.
  */
 export async function executeDelivery(
   webhook,
@@ -135,16 +104,21 @@ export async function executeDelivery(
   data,
   attempt = 1,
   existingDeliveryId = null,
-  { lookup = dns.promises.lookup } = {}
+  options = {}
 ) {
+  const {
+    lookup = dns.promises.lookup,
+    allowPrivateNetworks = env.WEBHOOK_ALLOW_PRIVATE_TARGETS,
+    schedule = setTimeout,
+  } = options;
   const deliveryId = existingDeliveryId || `del_${crypto.randomBytes(12).toString('hex')}`;
-  const eventId = `evt_${crypto.randomBytes(12).toString('hex')}`;
+  const eventId = options.eventId || `evt_${crypto.randomBytes(12).toString('hex')}`;
   const now = Date.now();
 
   const payload = {
     id: eventId,
     event,
-    createdAt: new Date(now).toISOString(),
+    createdAt: options.createdAt || new Date(now).toISOString(),
     data,
   };
 
@@ -153,11 +127,13 @@ export async function executeDelivery(
 
   const headers = {
     'Content-Type': 'application/json',
-    'User-Agent': 'Linkora-Webhooks/1.0 (+https://linkora.dev)',
+    'User-Agent': 'Linkora-Webhooks/1.0 (+https://github.com/PiyushY111/Linkora)',
     'Linkora-Delivery': deliveryId,
     'Linkora-Event': event,
     'Linkora-Signature': sigInfo.signature,
     'X-Linkora-Signature': sigInfo.legacySignature,
+    // Deprecated pre-rename copies, kept for receivers built before Linkora
+    // was renamed; documented in docs/architecture.md (Webhooks).
     'Linkly-Delivery': deliveryId,
     'Linkly-Event': event,
     'Linkly-Signature': sigInfo.signature,
@@ -170,69 +146,38 @@ export async function executeDelivery(
   let errorMsg = null;
   let isSuccess = false;
   const startTime = Date.now();
-  let pinnedDispatcher = null;
 
   try {
-    const targetHostname = new URL(webhook.url).hostname;
-    const safeAddress = await resolveSafeDeliveryAddress(targetHostname, lookup);
-    pinnedDispatcher = buildPinnedDispatcher(safeAddress);
-
-    // Uses undici's own fetch (not Node's global fetch) so it always shares
-    // an undici version with the Agent/dispatcher below — a version
-    // mismatch between Node's bundled undici and a globally-fetched
-    // dispatcher throws (UND_ERR_INVALID_ARG) rather than pinning anything.
-    const response = await undiciFetch(webhook.url, {
-      method: 'POST',
-      headers,
-      body: payloadString,
-      signal: AbortSignal.timeout(10000), // 10 second timeout
-      dispatcher: pinnedDispatcher,
-      // A malicious endpoint could otherwise 3xx this request to an
-      // internal address after passing the SSRF check on its own URL.
-      redirect: 'manual',
-    });
+    const response = await ssrfSafeFetch(
+      webhook.url,
+      {
+        method: 'POST',
+        headers,
+        body: payloadString,
+        signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
+      },
+      { lookup, allowPrivate: allowPrivateNetworks }
+    );
 
     responseStatus = response.status;
-    response.headers.forEach((val, key) => {
-      responseHeaders[key] = val;
-    });
+    responseHeaders = response.headers;
+    responseBody = response.body;
 
-    const rawText = await response.text();
-    responseBody = rawText ? rawText.slice(0, 2048) : ''; // Store up to 2KB preview
-
-    const isRedirect = response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400);
-    if (isRedirect) {
+    if (response.status >= 300 && response.status < 400) {
+      // A redirect could point anywhere, including an internal address, so
+      // it is recorded as a failure rather than followed.
       errorMsg = 'Endpoint attempted to redirect the webhook request, which is not permitted';
-    } else if (response.ok) {
+    } else if (response.status >= 200 && response.status < 300) {
       isSuccess = true;
     } else {
       errorMsg = `Endpoint returned HTTP status ${response.status} (${response.statusText || 'Error'})`;
     }
   } catch (err) {
-    const cause = err.cause;
-    let detail = '';
-    if (cause) {
-      detail = cause.code
-        ? `${cause.code} - ${cause.message || cause.code}`
-        : cause.message || String(cause);
-    }
-    if (detail.includes('ECONNREFUSED')) {
-      errorMsg = `Connection refused (ECONNREFUSED): No active server listening at ${webhook.url}`;
-    } else if (detail.includes('ETIMEDOUT') || err.name === 'TimeoutError') {
-      errorMsg = `Request timed out after 10,000ms: Destination did not respond in time`;
-    } else if (detail.includes('ENOTFOUND')) {
-      errorMsg = `DNS resolution failed (ENOTFOUND): Hostname could not be found`;
-    } else {
-      errorMsg = detail ? `${err.message}: ${detail}` : err.message || 'Network request failed';
-    }
-  } finally {
-    if (pinnedDispatcher) {
-      await pinnedDispatcher.close().catch(() => {});
-    }
+    errorMsg = describeDeliveryError(err, webhook.url);
   }
 
   const latencyMs = Date.now() - startTime;
-  const isFinalAttempt = attempt >= RETRY_DELAYS_MS.length;
+  const isFinalAttempt = attempt >= MAX_ATTEMPTS;
   const deliveryStatus = isSuccess ? 'success' : isFinalAttempt ? 'failed' : 'retrying';
 
   // Persist delivery log to MongoDB
@@ -287,12 +232,16 @@ export async function executeDelivery(
 
       // Schedule retry with exponential backoff if not final attempt
       if (!isFinalAttempt) {
-        const nextDelay = RETRY_DELAYS_MS[attempt - 1] + Math.floor(Math.random() * 2000);
-        setTimeout(() => {
-          executeDelivery(webhook, event, data, attempt + 1, deliveryId).catch((retryErr) =>
-            logger.error({ err: retryErr, webhookId: webhook._id }, 'Failed during webhook retry execution')
-          );
-        }, nextDelay);
+        // In-process timer: lost if this process restarts (docs/KNOWN_BUGS.md).
+        const nextDelay = RETRY_DELAYS_MS[attempt - 1] + Math.floor(Math.random() * RETRY_JITTER_MS);
+        const retryOptions = { lookup, allowPrivateNetworks, schedule, eventId, createdAt: payload.createdAt };
+        schedule(
+          () =>
+            executeDelivery(webhook, event, data, attempt + 1, deliveryId, retryOptions).catch((retryErr) =>
+              logger.error({ err: retryErr, webhookId: webhook._id }, 'Failed during webhook retry execution')
+            ),
+          nextDelay
+        );
       } else {
         // Send to Dead Letter Queue (DLQ)
         logger.error({ webhookId: webhook._id, url: webhook.url }, 'Webhook delivery exhausted all retries; enqueued to DLQ');
@@ -461,7 +410,7 @@ export async function testWebhookEndpoint(webhookId, userId, eventType = 'endpoi
     case 'endpoint.test':
     default:
       sampleData = {
-        message: 'This is a test webhook event from Linkora Enterprise.',
+        message: 'This is a test webhook event from Linkora.',
         testTimestamp: new Date().toISOString(),
         status: 'operational',
       };
@@ -486,12 +435,12 @@ export async function retryDelivery(deliveryId, userId) {
     throw new Error('Associated webhook endpoint no longer exists');
   }
 
-  return await executeDelivery(
-    webhook,
-    delivery.event,
-    delivery.requestPayload?.data || {},
-    (delivery.attempt || 1) + 1
-  );
+  // Same event id and createdAt as the original, so a receiver that did
+  // process it can tell this is a replay.
+  return await executeDelivery(webhook, delivery.event, delivery.requestPayload?.data || {}, (delivery.attempt || 1) + 1, null, {
+    eventId: delivery.requestPayload?.id,
+    createdAt: delivery.requestPayload?.createdAt,
+  });
 }
 
 /**

@@ -9,7 +9,7 @@ import { createLinkRecord } from '../src/controllers/linkController.js';
 async function run() {
   console.log('=== Starting Developer Platform & Public API Verification ===');
 
-  await mongoose.connect('mongodb://127.0.0.1:27017/linkly');
+  await mongoose.connect('mongodb://127.0.0.1:27017/linkora_verify');
   console.log('Connected to MongoDB');
 
   // 1. Fetch test user
@@ -58,17 +58,13 @@ async function run() {
 
   // 4. Test Public Link Creation & Retrieval
   console.log('\n[4/6] Testing Public API Link Creation and Retrieval...');
-  const createResult = await createLinkRecord(user._id, {
+  // createLinkRecord returns the link, or throws on a validation error.
+  const link = await createLinkRecord(user._id, {
     originalUrl: 'https://docs.stripe.com/api',
     title: 'Stripe Documentation E2E',
     tags: ['stripe', 'api-test'],
     maxClicks: 1000,
   });
-
-  if (!createResult.success) {
-    throw new Error(`Public Link creation failed: ${createResult.message}`);
-  }
-  const link = createResult.link;
   console.log('Created short link:', link.shortCode, '->', link.originalUrl);
 
   const fetchedLink = await Link.findOne({ shortCode: link.shortCode, user: user._id });
@@ -88,7 +84,7 @@ async function run() {
     statusCode: 201,
     latencyMs: 24,
     ipAddress: '127.0.0.1',
-    userAgent: 'Linkly-Playground/1.0',
+    userAgent: 'Linkora-Playground/1.0',
   });
   console.log('Created ApiLog record:', logRecord._id, 'Status:', logRecord.statusCode, 'Latency:', logRecord.latencyMs, 'ms');
 

@@ -182,6 +182,8 @@ export const createLink = async (req, res) => {
   res.status(201).json({ success: true, link });
 };
 
+const MAX_PAGE_SIZE = 100;
+
 // Get user's links with optional filtering, search, and sorting
 export const getUserLinks = async (req, res) => {
   const { page = 1, limit = 50, sort = '-createdAt', search, status, category, tag } = req.query;
@@ -215,10 +217,14 @@ export const getUserLinks = async (req, res) => {
     query.tags = tag.trim();
   }
 
+  // One capped page size for the query, the skip, and the page count.
+  const pageSize = Math.min(Math.max(parseInt(limit, 10) || 50, 1), MAX_PAGE_SIZE);
+  const pageNumber = Math.max(parseInt(page, 10) || 1, 1);
+
   const links = await Link.find(query)
     .sort(sort)
-    .limit(Math.min(parseInt(limit, 10) || 50, 100))
-    .skip((Math.max(parseInt(page, 10) || 1, 1) - 1) * (parseInt(limit, 10) || 50))
+    .limit(pageSize)
+    .skip((pageNumber - 1) * pageSize)
     .populate('analytics')
     .read('secondaryPreferred');
 
@@ -229,8 +235,8 @@ export const getUserLinks = async (req, res) => {
     links,
     pagination: {
       totalCount,
-      page: parseInt(page, 10),
-      pages: Math.ceil(totalCount / (parseInt(limit, 10) || 50)),
+      page: pageNumber,
+      pages: Math.ceil(totalCount / pageSize),
     },
   });
 };

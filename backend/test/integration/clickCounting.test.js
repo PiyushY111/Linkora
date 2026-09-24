@@ -123,3 +123,21 @@ describe('click counting (stream consumer -> Link.clicks)', () => {
     assert.ok(refreshed.lastAccessedAt instanceof Date);
   });
 });
+
+describe('processBatch with an event that cannot be recorded', () => {
+  it('acknowledges an event with an invalid linkId instead of redelivering it forever', async () => {
+    const acks = [];
+    const stubRedis = {
+      async xack(...args) {
+        acks.push(...args.slice(2));
+        return 1;
+      },
+    };
+    const id = `${runId}-900`;
+    await processBatch(
+      [streamEntry(id, { linkId: 'not-an-object-id', shortCode: 'x', userId: String(user._id), ip: '203.0.113.9', ua: '', referer: 'direct', timestamp: Date.now() })],
+      { redis: stubRedis }
+    );
+    assert.deepStrictEqual(acks, [id]);
+  });
+});

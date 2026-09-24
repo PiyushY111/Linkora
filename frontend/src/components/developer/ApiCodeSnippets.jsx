@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Copy, Check, Terminal, Code2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getApiOrigin } from '../../services/api';
 
 const SNIPPET_ENDPOINTS = [
   { id: 'create', label: 'Create Link (POST /links)' },
@@ -10,7 +11,11 @@ const SNIPPET_ENDPOINTS = [
   { id: 'bulk', label: 'Bulk Shorten (POST /links/bulk)' },
 ];
 
-function generateSnippets(apiKey = 'YOUR_API_KEY', baseUrl = 'https://api.yourdomain.com/api/public/v1') {
+// The API this dashboard talks to: VITE_API_URL, or this page's origin when
+// the API is served (or proxied) under the same origin.
+const publicApiBaseUrl = () => `${getApiOrigin() || window.location.origin}/api/public/v1`;
+
+function generateSnippets(apiKey = 'YOUR_API_KEY', baseUrl = publicApiBaseUrl()) {
   return {
     curl: {
       create: `curl -X POST ${baseUrl}/links \\

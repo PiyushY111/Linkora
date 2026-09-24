@@ -10,6 +10,7 @@ import { httpLogger } from './config/logger.js';
 import { errorHandler, notFound } from './middleware/error.js';
 import { metricsMiddleware, metricsAuth, metricsHandler } from './middleware/metrics.js';
 import { getRedis } from './services/cacheService.js';
+import { isAllowedOrigin } from './config/allowedOrigins.js';
 
 import { getClientIp } from './utils/helpers.js';
 
@@ -17,6 +18,7 @@ import { getClientIp } from './utils/helpers.js';
 import authRoutes from './routes/auth.js';
 import linkRoutes from './routes/links.js';
 import analyticsRoutes from './routes/analytics.js';
+import redirectRoutes from './routes/redirect.js';
 import workspaceRoutes from './routes/workspaces.js';
 import webhookRoutes from './routes/webhooks.js';
 import publicApiRoutes from './routes/publicApi.js';
@@ -39,20 +41,11 @@ app.use(httpLogger);
 
 // Middleware
 app.use(helmet());
+// Credentialed CORS only for explicitly allowed origins (FRONTEND_URL,
+// ALLOWED_ORIGINS, and localhost outside production). Requests with no
+// Origin (same-origin, curl, server-to-server) aren't CORS requests at all.
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    let allowedHost = null;
-    try {
-      allowedHost = new URL(env.FRONTEND_URL).origin;
-    } catch {
-      allowedHost = null;
-    }
-    if (origin === allowedHost || origin.endsWith('.vercel.app') || origin === 'http://localhost:3000' || origin === 'http://localhost:5173') {
-      return callback(null, true);
-    }
-    callback(null, false);
-  },
+  origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin)),
   credentials: true,
 }));
 app.use(cookieParser());
@@ -71,14 +64,21 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-// The bulk link-creation endpoint (up to 1,000 URLs per request) needs a
-// larger body allowance than every other route. This must be registered
-// before the general parser below: body-parser skips re-parsing once
-// `req._body` is set, so the first matching parser in the chain wins.
+// Body size limits. Most routes take small JSON, so the default is 100 KB.
+// Two routes need more, and their parsers must be registered first:
+// body-parser skips re-parsing once `req._body` is set, so the first
+// matching parser wins.
+// - Bulk link creation takes up to 1,000 URLs per request.
+// - Dashboard link create/update can carry a QR logo as a data URL in
+//   qrConfig (the UI allows a 2 MB image, about 2.7 MB as base64).
+const DEFAULT_BODY_LIMIT = '100kb';
 app.use('/api/public/v1/links/bulk', express.json({ limit: '2mb' }));
+const qrLogoBody = express.json({ limit: '3mb' });
+app.post('/api/links', qrLogoBody);
+app.put('/api/links/:id', qrLogoBody);
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(express.json({ limit: DEFAULT_BODY_LIMIT }));
+app.use(express.urlencoded({ limit: DEFAULT_BODY_LIMIT, extended: true }));
 
 // Health check (kept for backward compatibility)
 app.get('/health', (req, res) => {
@@ -142,8 +142,8 @@ app.get('/metrics', metricsAuth, metricsHandler);
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/links', linkRoutes);
-app.use('/api/r', analyticsRoutes); // Redirect route & analytics
-app.use('/api/analytics', analyticsRoutes); // Analytics API
+app.use('/api/r', redirectRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/public', publicApiRoutes);

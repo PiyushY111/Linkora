@@ -1,17 +1,16 @@
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import ApiKey from '../models/ApiKey.js';
 import { env } from '../config/env.js';
 import { getClientIp } from '../utils/helpers.js';
 import { logger } from '../config/logger.js';
+import { verifyJwt } from '../utils/jwt.js';
 
 /**
  * Authenticates public API requests via the X-API-Key header.
  * Supports:
  *  1. Hashed API keys (SHA-256 lookup in ApiKey collection)
  *  2. Masked key references from authenticated in-browser playground/CLI
- *  3. Backward-compatible legacy keys stored on User.apiKey
  */
 export async function apiKeyAuth(req, res, next) {
   const headerKey = env.API_KEY_HEADER || 'x-api-key';
@@ -30,7 +29,7 @@ export async function apiKeyAuth(req, res, next) {
   if (isBearerAuth && isMaskedKeyOrPlaceholder) {
     try {
       const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || env.JWT_SECRET);
+      const decoded = verifyJwt(token);
       const user = await User.findById(decoded.id);
 
       if (user) {
@@ -55,7 +54,6 @@ export async function apiKeyAuth(req, res, next) {
         req.scopes = keyDoc?.scopes || ['*'];
         req.apiKeyUser = {
           id: String(user._id),
-          apiKey: keyDoc ? keyDoc.maskedKey : 'dashboard-session',
           keyId: keyDoc ? keyDoc._id : null,
           prefix: keyDoc ? keyDoc.prefix : 'session',
           environment: keyDoc ? keyDoc.environment : 'live',
@@ -116,7 +114,6 @@ export async function apiKeyAuth(req, res, next) {
       req.scopes = keyDoc.scopes || ['*'];
       req.apiKeyUser = {
         id: String(user._id),
-        apiKey: rawKey,
         keyId: keyDoc._id,
         prefix: keyDoc.prefix,
         environment: keyDoc.environment,
@@ -130,22 +127,6 @@ export async function apiKeyAuth(req, res, next) {
         $inc: { totalRequests: 1 },
       }).catch((err) => logger.error({ err }, 'Failed to update ApiKey lastUsedAt'));
 
-      return next();
-    }
-
-    // 3. Fallback to legacy User.apiKey for backward compatibility
-    const legacyUser = await User.findOne({ apiKey: rawKey });
-    if (legacyUser) {
-      req.user = legacyUser;
-      req.apiKeyDoc = null;
-      req.scopes = ['*'];
-      req.apiKeyUser = {
-        id: String(legacyUser._id),
-        apiKey: rawKey,
-        keyId: null,
-        prefix: 'legacy',
-        environment: 'live',
-      };
       return next();
     }
 

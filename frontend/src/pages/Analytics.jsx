@@ -160,7 +160,7 @@ const Analytics = () => {
   return (
     <>
       <Helmet>
-        <title>Analytics Engine — Linkora Enterprise</title>
+        <title>Analytics — Linkora</title>
       </Helmet>
       <AppShell>
         {/* Executive Header Toolbar */}

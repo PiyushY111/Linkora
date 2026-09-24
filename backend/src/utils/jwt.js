@@ -5,18 +5,39 @@ import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
 /**
+ * Every JWT this app issues is HS256 with env.JWT_SECRET. Pinning the
+ * algorithm on verify matters: without `algorithms`, jsonwebtoken also
+ * accepts HS384/HS512 for an HMAC secret. All signing and verification goes
+ * through these two helpers so the pin can't be forgotten at a call site.
+ */
+export const JWT_ALGORITHM = 'HS256';
+
+/**
+ * @param {object} payload
+ * @param {import('jsonwebtoken').SignOptions} [options]
+ */
+export function signJwt(payload, options = {}) {
+  return jwt.sign(payload, env.JWT_SECRET, { ...options, algorithm: JWT_ALGORITHM });
+}
+
+/**
+ * Throws on an invalid, expired, or wrongly-signed token.
+ * @param {string} token
+ * @param {import('jsonwebtoken').VerifyOptions} [options]
+ */
+export function verifyJwt(token, options = {}) {
+  return jwt.verify(token, env.JWT_SECRET, { ...options, algorithms: [JWT_ALGORITHM] });
+}
+
+/**
  * Short-lived (15m) signed access token. Kept as `generateToken` for the
  * existing call sites / frontend response shape (`{ token }`).
  */
-export const generateToken = (id) => {
-  return jwt.sign({ id }, env.JWT_SECRET, {
-    expiresIn: env.JWT_ACCESS_TOKEN_TTL,
-  });
-};
+export const generateToken = (id) => signJwt({ id }, { expiresIn: env.JWT_ACCESS_TOKEN_TTL });
 
 export const verifyToken = (token) => {
   try {
-    return jwt.verify(token, env.JWT_SECRET);
+    return verifyJwt(token);
   } catch {
     return null;
   }

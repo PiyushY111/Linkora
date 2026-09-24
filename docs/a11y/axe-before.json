@@ -1,0 +1,69 @@
+{
+  "analytics": {
+    "violations": [
+      {
+        "id": "select-name",
+        "impact": "critical",
+        "help": "Select element must have an accessible name",
+        "nodes": 1,
+        "targets": [
+          "select"
+        ]
+      }
+    ],
+    "passes": 19,
+    "incomplete": []
+  },
+  "dashboard": {
+    "violations": [
+      {
+        "id": "select-name",
+        "impact": "critical",
+        "help": "Select element must have an accessible name",
+        "nodes": 2,
+        "targets": [
+          "select:nth-child(2)",
+          "select:nth-child(3)"
+        ]
+      }
+    ],
+    "passes": 19,
+    "incomplete": []
+  },
+  "developer": {
+    "violations": [],
+    "passes": 17,
+    "incomplete": []
+  },
+  "landing": {
+    "violations": [],
+    "passes": 11,
+    "incomplete": [
+      "color-contrast"
+    ]
+  },
+  "login": {
+    "violations": [],
+    "passes": 16,
+    "incomplete": [
+      "color-contrast"
+    ]
+  },
+  "register": {
+    "violations": [],
+    "passes": 16,
+    "incomplete": [
+      "color-contrast"
+    ]
+  },
+  "settings": {
+    "violations": [],
+    "passes": 20,
+    "incomplete": []
+  },
+  "webhooks": {
+    "violations": [],
+    "passes": 17,
+    "incomplete": []
+  }
+}

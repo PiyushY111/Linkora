@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { parseAllowedOrigins } from '../lib/originPolicy.js';
 
 dotenv.config();
 
@@ -21,6 +22,21 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(5000),
     FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+    // Extra browser origins allowed to make credentialed requests, besides
+    // FRONTEND_URL: comma-separated bare origins, no wildcards
+    // (lib/originPolicy.js).
+    ALLOWED_ORIGINS: z
+      .string()
+      .optional()
+      .default('')
+      .transform((value, ctx) => {
+        try {
+          return parseAllowedOrigins(value);
+        } catch (err) {
+          ctx.addIssue({ code: 'custom', message: err.message });
+          return z.NEVER;
+        }
+      }),
     COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).optional(),
     COOKIE_SECURE: z
       .enum(['true', 'false'])
@@ -48,6 +64,11 @@ const envSchema = z
     // Falls back to JWT_SECRET when unset; separate so the Feistel cipher key
     // can be rotated independently of the auth signing secret.
     LINK_SEQUENCE_CIPHER_KEY: z.string().optional().default(''),
+    // Key for the visitor-IP HMAC used in unique-visitor counts
+    // (utils/ipPrivacy.js). Falls back to JWT_SECRET when unset. Changing it
+    // changes every visitor's hash, so uniques are over-counted for the day
+    // of the change.
+    IP_HASH_SECRET: z.string().optional().default(''),
 
     // Cloudinary (optional - falls back to local base64 QR codes)
     CLOUDINARY_CLOUD_NAME: z.string().optional().default(''),
@@ -112,6 +133,10 @@ const envSchema = z
 
     // Webhooks
     WEBHOOK_SIGNING_SECRET: z.string().optional().default(''),
+    // Local development only: lets webhooks target loopback/private
+    // addresses (e.g. this API's own /api/webhooks/debug/echo). Refused in
+    // production below. Cloud metadata stays blocked either way.
+    WEBHOOK_ALLOW_PRIVATE_TARGETS: booleanFromEnv,
 
     // Public API
     API_KEY_HEADER: z.string().default('x-api-key'),
@@ -145,6 +170,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['WORKOS_API_KEY'],
         message: 'WORKOS_API_KEY and WORKOS_CLIENT_ID are required when SSO_ENABLED=true',
+      });
+    }
+    if (env.NODE_ENV === 'production' && env.WEBHOOK_ALLOW_PRIVATE_TARGETS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['WEBHOOK_ALLOW_PRIVATE_TARGETS'],
+        message: 'WEBHOOK_ALLOW_PRIVATE_TARGETS must not be enabled in production',
       });
     }
     if (env.NODE_ENV === 'production' && env.JWT_SECRET.includes('your_')) {

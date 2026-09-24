@@ -12,19 +12,14 @@ import {
 } from '../controllers/publicApiController.js';
 import { apiKeyAuth, requireScope } from '../middleware/apiKeyAuth.js';
 import { apiTelemetry } from '../middleware/apiTelemetry.js';
-import { createTokenBucketLimiter } from '../middleware/rateLimiter.js';
+import { createTokenBucketLimiter, PUBLIC_API_RATE_LIMIT } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
 // Public OpenAPI specification endpoint (no key required for docs)
 router.get('/v1/openapi.json', getOpenApiSpec);
 
-// Token-bucket limiter: Burst up to 30 requests, sustained ~10 req/s per API key
-const publicApiLimiter = createTokenBucketLimiter({
-  capacity: 30,
-  refillPerSecond: 10,
-  keyPrefix: 'public-api',
-});
+const publicApiLimiter = createTokenBucketLimiter({ ...PUBLIC_API_RATE_LIMIT, keyPrefix: 'public-api' });
 
 // Authenticated Public API V1 router
 const v1 = express.Router();

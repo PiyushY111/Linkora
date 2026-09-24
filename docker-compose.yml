@@ -1,0 +1,87 @@
+# Local stack: MongoDB, Redis, the API, a separate click consumer, and the
+# frontend (nginx serving the SPA and proxying /api), on http://localhost:8080.
+#
+#   echo "JWT_SECRET=$(openssl rand -hex 32)" > .env
+#   docker compose up --build
+#
+# This runs the production images with production settings, except that
+# cookies are not marked Secure (plain http on localhost). It is not a
+# production deployment: no TLS, no backups, single instances.
+
+x-backend-env: &backend-env
+  NODE_ENV: production
+  PORT: 5001
+  MONGODB_URI: mongodb://mongo:27017/linkora
+  REDIS_URL: redis://redis:6379
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (see the top of docker-compose.yml)}
+  FRONTEND_URL: http://localhost:8080
+  # nginx in the frontend container is the one proxy in front of the API.
+  TRUST_PROXY_HOPS: 1
+  WORKER_MODE: separate
+  # Frontend and API share one origin through nginx, over plain http.
+  COOKIE_SAMESITE: strict
+  COOKIE_SECURE: "false"
+  LOG_LEVEL: info
+
+services:
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # noeviction: refresh tokens and the click stream are not a cache
+    # (docs/redis-keys.md). appendonly keeps them across restarts.
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: *backend-env
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  consumer:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["node", "src/consumers/clickConsumer.js"]
+    environment: *backend-env
+    # No HTTP server in the consumer, so the image's HTTP healthcheck
+    # doesn't apply.
+    healthcheck:
+      disable: true
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
+  redis-data:

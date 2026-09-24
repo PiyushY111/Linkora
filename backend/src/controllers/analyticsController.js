@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 import helmet from 'helmet';
 import Link from '../models/Link.js';
 import { getClientIp, getUserAgent } from '../utils/helpers.js';
@@ -14,6 +13,7 @@ import { dispatchEvent } from '../services/webhookService.js';
 import { detectBot } from '../utils/botDetector.js';
 import { calculateAbTestStatistics } from '../services/statisticsService.js';
 import { NotFoundError, ValidationError, UnauthorizedError } from '../lib/errors.js';
+import { signJwt, verifyJwt } from '../utils/jwt.js';
 
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$/;
 
@@ -47,10 +47,7 @@ async function verifyPasswordAndIssueUnlockToken(storedPasswordHash, providedPas
   const jti = crypto.randomBytes(16).toString('hex');
   await getRedis().set(unlockConsumedKey(jti), '1', 'EX', UNLOCK_TOKEN_TTL_SECONDS);
 
-  return jwt.sign({ shortCode, jti }, env.JWT_SECRET, {
-    expiresIn: UNLOCK_TOKEN_TTL_SECONDS,
-    audience: UNLOCK_TOKEN_AUDIENCE,
-  });
+  return signJwt({ shortCode, jti }, { expiresIn: UNLOCK_TOKEN_TTL_SECONDS, audience: UNLOCK_TOKEN_AUDIENCE });
 }
 
 /**
@@ -64,7 +61,7 @@ async function redeemUnlockToken(token, shortCode) {
 
   let payload;
   try {
-    payload = jwt.verify(token, env.JWT_SECRET, { audience: UNLOCK_TOKEN_AUDIENCE });
+    payload = verifyJwt(token, { audience: UNLOCK_TOKEN_AUDIENCE });
   } catch {
     return false;
   }

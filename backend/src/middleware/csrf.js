@@ -1,31 +1,24 @@
-import { env } from '../config/env.js';
+import { isAllowedOrigin } from '../config/allowedOrigins.js';
 import { ForbiddenError } from '../lib/errors.js';
 
 /**
- * Origin-check CSRF guard for cookie-authenticated, state-changing routes
- * (refresh token rotation, logout). SameSite=Strict on the refresh cookie
- * already blocks the browser from attaching it to a cross-site request in
- * virtually all cases; this is defense-in-depth for older/misconfigured
- * clients and proxies that might not honor SameSite.
+ * Origin-check CSRF guard for the cookie-authenticated, state-changing
+ * routes (refresh-token rotation, logout). Uses the same allowlist as CORS
+ * (config/allowedOrigins.js).
  *
- * A request with no Origin/Referer at all (plain server-to-server or a
- * non-browser client) is allowed through — the cookie's SameSite attribute
- * is the primary defense there, since only a browser can be tricked into a
- * forged cross-site request in the first place.
+ * In production the refresh cookie is SameSite=None so a frontend on a
+ * different site can use it (utils/authCookies.js), which makes this check
+ * the primary CSRF defence there, not just defence in depth.
+ *
+ * A request with neither Origin nor Referer is let through: browsers send
+ * Origin on cross-site POSTs, so a missing one means a non-browser client,
+ * which cannot be tricked into sending someone else's cookie.
  */
 export function verifyOriginForCsrf(req, res, next) {
   const origin = req.headers.origin || refererOrigin(req.headers.referer);
   if (!origin) return next();
 
-  let allowed = null;
-  try {
-    allowed = new URL(env.FRONTEND_URL).origin;
-  } catch {
-    allowed = null;
-  }
-
-  const isAllowedOrigin = origin.endsWith('.vercel.app') || (allowed && origin === allowed) || origin === 'http://localhost:3000' || origin === 'http://localhost:5173';
-  if (!isAllowedOrigin) {
+  if (!isAllowedOrigin(origin)) {
     throw new ForbiddenError('Cross-origin request rejected');
   }
 

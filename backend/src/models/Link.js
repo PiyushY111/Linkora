@@ -48,11 +48,6 @@ const linkSchema = new mongoose.Schema(
       enum: ['business', 'personal', 'social', 'marketing', 'other'],
       default: 'other',
     },
-    customDomain: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'CustomDomain',
-      default: null,
-    },
     qrCode: {
       type: String,
       default: null,

@@ -8,7 +8,7 @@ const CODE_SNIPPETS = {
 
 // Express middleware handler example
 app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-  const signatureHeader = req.headers['linkora-signature'] || req.headers['linkly-signature'];
+  const signatureHeader = req.headers['linkora-signature'];
   const webhookSecret = process.env.LINKORA_WEBHOOK_SECRET;
 
   if (!signatureHeader) {
@@ -65,7 +65,7 @@ WEBHOOK_SECRET = "whsec_your_secret_here"
 
 @app.route("/webhook", methods=["POST"])
 def handle_webhook():
-    signature_header = request.headers.get("Linkora-Signature") or request.headers.get("Linkly-Signature")
+    signature_header = request.headers.get("Linkora-Signature")
     if not signature_header:
         abort(400, "Missing Linkora-Signature header")
 
@@ -115,9 +115,6 @@ var webhookSecret = "whsec_your_secret_here"
 
 func webhookHandler(w http.ResponseWriter, r *http.Request) {
 	sigHeader := r.Header.Get("Linkora-Signature")
-	if sigHeader == "" {
-		sigHeader = r.Header.Get("Linkly-Signature")
-	}
 	if sigHeader == "" {
 		http.Error(w, "Missing Linkora-Signature header", http.StatusBadRequest)
 		return

@@ -14,7 +14,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'suites',
-          include: ['test/{unit,security,integration}/**/*.test.js'],
+          include: ['test/{unit,security,integration,contract}/**/*.test.js'],
           globalSetup: ['test/setup/redisTestDb.js'],
         },
       },
