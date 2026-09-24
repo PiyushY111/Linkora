@@ -21,7 +21,6 @@
   "license": "MIT",
   "dependencies": {
     "@maxmind/geoip2-node": "^7.1.0",
-    "axios": "^1.6.2",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.11.0",
     "cookie-parser": "^1.4.7",
@@ -44,7 +43,6 @@
     "qrcode": "^1.5.3",
     "ua-parser-js": "^2.0.10",
     "undici": "^8.11.0",
-    "validator": "^13.11.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
