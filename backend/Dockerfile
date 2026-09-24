@@ -8,13 +8,13 @@
 #   docker build -f backend/Dockerfile .
 
 # ---- dependencies: production packages only ----
-FROM node:22-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # ---- runtime ----
-FROM node:22-alpine AS runtime
+FROM node:25-alpine AS runtime
 ENV NODE_ENV=production \
     PORT=5001
 WORKDIR /app
