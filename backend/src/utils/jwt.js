@@ -4,31 +4,53 @@ import { getRedis } from '../services/cacheService.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
+const JWT_ALGORITHM = 'HS256';
+
+/**
+ * Every JWT this app issues is HS256 over JWT_SECRET, so the audience claim
+ * is what tells one kind from another. verifyJwt() requires it, so an unlock
+ * token can't be presented as an access token or the reverse. (Refresh
+ * tokens and SSO state aren't JWTs: they're random values checked against
+ * Redis.)
+ */
+export const TOKEN_AUDIENCE = Object.freeze({
+  ACCESS: 'access',
+  LINK_UNLOCK: 'link-unlock',
+});
+
+/**
+ * @param {object} payload
+ * @param {{ audience: string, expiresIn: string | number }} options
+ * @returns {string}
+ */
+export function signJwt(payload, { audience, expiresIn }) {
+  return jwt.sign(payload, env.JWT_SECRET, { algorithm: JWT_ALGORITHM, audience, expiresIn });
+}
+
+/**
+ * Verifies signature, algorithm (HS256 only; `none` and every other
+ * algorithm are rejected), expiry and audience. Throws a jsonwebtoken error
+ * if any check fails.
+ * @param {string} token
+ * @param {string} audience
+ * @returns {object} the payload
+ */
+export function verifyJwt(token, audience) {
+  return jwt.verify(token, env.JWT_SECRET, { algorithms: [JWT_ALGORITHM], audience });
+}
+
 /**
  * Short-lived (15m) signed access token. Kept as `generateToken` for the
  * existing call sites / frontend response shape (`{ token }`).
  */
-export const generateToken = (id) => {
-  return jwt.sign({ id }, env.JWT_SECRET, {
-    expiresIn: env.JWT_ACCESS_TOKEN_TTL,
-  });
-};
+export const generateToken = (id) =>
+  signJwt({ id }, { audience: TOKEN_AUDIENCE.ACCESS, expiresIn: env.JWT_ACCESS_TOKEN_TTL });
 
-export const verifyToken = (token) => {
-  try {
-    return jwt.verify(token, env.JWT_SECRET);
-  } catch {
-    return null;
-  }
-};
-
-export const decodeToken = (token) => {
-  try {
-    return jwt.decode(token);
-  } catch {
-    return null;
-  }
-};
+/**
+ * @param {string} token
+ * @returns {object} the payload; throws if the token isn't a valid access token
+ */
+export const verifyAccessToken = (token) => verifyJwt(token, TOKEN_AUDIENCE.ACCESS);
 
 /**
  * Refresh tokens are issued as `${familyId}.${secret}` and rotated on every

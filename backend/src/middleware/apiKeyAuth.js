@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import ApiKey from '../models/ApiKey.js';
 import { env } from '../config/env.js';
+import { verifyAccessToken } from '../utils/jwt.js';
 import { getClientIp } from '../utils/helpers.js';
 import { logger } from '../config/logger.js';
 
@@ -30,7 +31,7 @@ export async function apiKeyAuth(req, res, next) {
   if (isBearerAuth && isMaskedKeyOrPlaceholder) {
     try {
       const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || env.JWT_SECRET);
+      const decoded = verifyAccessToken(token);
       const user = await User.findById(decoded.id);
 
       if (user) {
@@ -72,8 +73,11 @@ export async function apiKeyAuth(req, res, next) {
 
         return next();
       }
-    } catch (jwtErr) {
-      // Fall through to standard API key authentication if JWT validation fails
+    } catch (err) {
+      // An invalid or expired session token falls through to API key
+      // authentication below; anything else (e.g. a MongoDB error) is a real
+      // failure and goes to the error handler.
+      if (!(err instanceof jwt.JsonWebTokenError)) throw err;
     }
   }
 
