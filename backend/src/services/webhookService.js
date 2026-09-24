@@ -111,6 +111,8 @@ export async function executeDelivery(
     'Linkora-Event': event,
     'Linkora-Signature': sigInfo.signature,
     'X-Linkora-Signature': sigInfo.legacySignature,
+    // Deprecated pre-rename copies, kept for receivers built before Linkora
+    // was renamed; documented in docs/architecture.md (Webhooks).
     'Linkly-Delivery': deliveryId,
     'Linkly-Event': event,
     'Linkly-Signature': sigInfo.signature,

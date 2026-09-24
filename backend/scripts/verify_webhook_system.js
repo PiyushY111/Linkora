@@ -14,7 +14,7 @@ import {
 async function run() {
   console.log('--- Starting Webhook Integration Verification ---');
 
-  await mongoose.connect('mongodb://127.0.0.1:27017/linkly');
+  await mongoose.connect('mongodb://127.0.0.1:27017/linkora_verify');
   console.log('Connected to MongoDB');
 
   // 1. SSRF Protection Tests
@@ -85,11 +85,11 @@ async function run() {
 
   // 5. Signature Verification
   console.log('\n[5/6] Verifying HMAC-SHA256 signature and replay protection...');
-  const sigHeader = lastReceivedHeaders['linkly-signature'];
-  console.log('Received Linkly-Signature:', sigHeader);
+  const sigHeader = lastReceivedHeaders['linkora-signature'];
+  console.log('Received Linkora-Signature:', sigHeader);
 
   if (!sigHeader) {
-    throw new Error('Linkly-Signature header was not received by endpoint!');
+    throw new Error('Linkora-Signature header was not received by endpoint!');
   }
 
   const parts = sigHeader.split(',').reduce((acc, pair) => {

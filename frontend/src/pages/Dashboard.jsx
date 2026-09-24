@@ -60,7 +60,7 @@ export default function Dashboard() {
 
   // View preferences
   const [viewMode, setViewMode] = useState(() => {
-    return localStorage.getItem('linkora_view_mode') || localStorage.getItem('linkly_view_mode') || 'table';
+    return localStorage.getItem('linkora_view_mode') || 'table';
   });
 
   // Filters & Search
