@@ -7,17 +7,19 @@ import { invalidateLinkMeta } from './cacheService.js';
 import { dispatchEvent } from './webhookService.js';
 
 const BREAKER_OPTIONS = {
-  timeout: 3000, // Phase 6.3: 3s timeout
-  errorThresholdPercentage: 50, // Phase 6.3: 50% error trip threshold
+  timeout: 3000,
+  errorThresholdPercentage: 50,
   resetTimeout: 30000,
 };
 
 async function callSafeBrowsing(url) {
+  // The key goes in a header, not the ?key= query parameter: URLs end up in
+  // proxy and error logs.
   const response = await fetch(
-    `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${env.SAFE_BROWSING_API_KEY}`,
+    'https://safebrowsing.googleapis.com/v4/threatMatches:find',
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': env.SAFE_BROWSING_API_KEY },
       body: JSON.stringify({
         client: { clientId: 'linkora', clientVersion: '1.0.0' },
         threatInfo: {
