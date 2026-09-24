@@ -33,12 +33,22 @@ as "coming soon").
 
 ## Quick start
 
-Requirements: Node.js 22+, MongoDB 7+, Redis 7+ running locally.
+With Docker:
 
 ```bash
 git clone https://github.com/PiyushY111/Linkora.git && cd Linkora
+echo "JWT_SECRET=$(openssl rand -hex 32)" > .env
+docker compose up --build
+```
 
-# Backend: API on :5001 with the click consumer in the same process
+Open http://localhost:8080. This starts MongoDB, Redis, the API, a separate
+click consumer, and nginx serving the frontend and proxying `/api`.
+`scripts/smoke-test.sh` runs register → create link → redirect → check the
+click shows up in analytics against it.
+
+Without Docker (Node.js 22+, MongoDB 7+ and Redis 7+ running locally):
+
+```bash
 cd backend
 cp .env.example .env
 #   set MONGODB_URI=mongodb://127.0.0.1:27017/linkora, a JWT_SECRET of 32+
@@ -46,11 +56,10 @@ cp .env.example .env
 npm ci
 WORKER_MODE=embedded npm run dev
 
-# Frontend: http://localhost:3000, proxies /api to :5001
-cd ../frontend
+cd ../frontend            # in a second terminal
 cp .env.example .env
 npm ci
-npm run dev
+npm run dev               # http://localhost:3000, proxies /api to :5001
 ```
 
 Run Redis with `maxmemory-policy noeviction`: some keys (refresh tokens,
