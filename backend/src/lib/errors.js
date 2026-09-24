@@ -94,6 +94,12 @@ export function toClientError(err) {
     return { status: 400, message: 'Invalid request body' };
   }
 
+  // A value that can't be cast to its schema type, e.g. a malformed
+  // ObjectId in a URL. The path is a schema field name, safe to show.
+  if (err?.name === 'CastError') {
+    return { status: 400, message: `Invalid ${err.path || 'value'}` };
+  }
+
   if (err?.name === 'ValidationError' && err.errors) {
     // Mongoose schema validation error — safe to surface field-level messages.
     const firstMessage = Object.values(err.errors)[0]?.message || 'Validation failed';
