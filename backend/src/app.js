@@ -12,6 +12,7 @@ import { metricsMiddleware, metricsAuth, metricsHandler } from './middleware/met
 import { getRedis } from './services/cacheService.js';
 
 import { getClientIp } from './utils/helpers.js';
+import { isAllowedOrigin } from './utils/corsOrigins.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -37,18 +38,29 @@ app.set('trust proxy', env.TRUST_PROXY_HOPS);
 // Structured logging with request-ID propagation (must run before routes)
 app.use(httpLogger);
 
-// Middleware
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
+        connectSrc: ["'self'", 'https:', 'wss:'],
+        fontSrc: ["'self'", 'https:', 'data:'],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  })
+);
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    let allowedHost = null;
-    try {
-      allowedHost = new URL(env.FRONTEND_URL).origin;
-    } catch {
-      allowedHost = null;
-    }
-    if (origin === allowedHost || origin.endsWith('.vercel.app') || origin === 'http://localhost:3000' || origin === 'http://localhost:5173') {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
     callback(null, false);
@@ -66,7 +78,7 @@ const limiter = rateLimit({
   max: env.NODE_ENV === 'development' ? 5000 : env.RATE_LIMIT_MAX_REQUESTS,
   message: { success: false, message: 'Too many requests, please try again later' },
   keyGenerator: (req) => getClientIp(req),
-  skip: (req) => req.path.startsWith('/health') || req.path === '/metrics',
+  skip: (req) => req.path.startsWith('/health') || req.path === '/metrics' || (env.NODE_ENV !== 'production' && req.headers['x-benchmark'] === 'true'),
 });
 
 app.use(limiter);
@@ -138,6 +150,10 @@ app.get('/health/readiness', async (req, res) => {
 
 // Metrics (protected)
 app.get('/metrics', metricsAuth, metricsHandler);
+
+// Documentation Redirects
+app.get('/docs', (req, res) => res.redirect('/api/public/v1/docs'));
+app.get('/api/docs', (req, res) => res.redirect('/api/public/v1/docs'));
 
 // API Routes
 app.use('/api/auth', authRoutes);

@@ -39,6 +39,13 @@ describe('verifyOriginForCsrf', () => {
     assert.strictEqual(nextCalled, true);
   });
 
+  it('rejects an arbitrary *.vercel.app wildcard Origin', async () => {
+    const { nextCalled, thrown } = await run({ origin: 'https://attacker-app.vercel.app' });
+    assert.strictEqual(nextCalled, false);
+    assert.ok(thrown);
+    assert.strictEqual(thrown.status, 403);
+  });
+
   it('allows a request with neither Origin nor Referer (non-browser client)', async () => {
     const { nextCalled, thrown } = await run({});
     assert.strictEqual(nextCalled, true);

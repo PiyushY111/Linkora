@@ -297,16 +297,18 @@ export const exportAccountData = async (req, res) => {
 // Permanently delete user account and cascade delete all associated resources
 export const deleteAccount = async (req, res) => {
   const { password } = req.body;
+  if (!password || typeof password !== 'string') {
+    throw new ValidationError('Password is required to delete account');
+  }
+
   const user = await User.findById(req.user.id).select('+password');
   if (!user) {
     throw new NotFoundError('User not found');
   }
 
-  if (password) {
-    const isMatch = await user.matchPassword(password);
-    if (!isMatch) {
-      throw new ValidationError('Incorrect password');
-    }
+  const isMatch = await user.matchPassword(password);
+  if (!isMatch) {
+    throw new ValidationError('Incorrect password');
   }
 
   // Cascade deletion of all user records

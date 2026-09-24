@@ -27,7 +27,7 @@ import CreateApiKeyModal from '../components/developer/CreateApiKeyModal';
 import ApiPlayground from '../components/developer/ApiPlayground';
 import ApiCodeSnippets from '../components/developer/ApiCodeSnippets';
 import ApiLogsViewer from '../components/developer/ApiLogsViewer';
-import LinkoraCliTerminal from '../components/developer/LinklyCliTerminal';
+import LinkoraCliTerminal from '../components/developer/LinkoraCliTerminal';
 import CacheArchitectureViewer from '../components/developer/CacheArchitectureViewer';
 import { useConfirm } from '../context/ConfirmContext';
 import { developerService, authService } from '../services';

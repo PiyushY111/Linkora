@@ -19,6 +19,24 @@ const router = express.Router();
 // Public OpenAPI specification endpoint (no key required for docs)
 router.get('/v1/openapi.json', getOpenApiSpec);
 
+// Interactive OpenAPI reference UI (no key required for docs)
+router.get('/v1/docs', (req, res) => {
+  res.setHeader('Content-Security-Policy', "default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:;");
+  res.type('html').send(`<!doctype html>
+<html>
+  <head>
+    <title>Linkora Public REST API — Reference & Explorer</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>body { margin: 0; background-color: #0A0A0B; }</style>
+  </head>
+  <body>
+    <script id="api-reference" data-url="/api/public/v1/openapi.json"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>`);
+});
+
 // Token-bucket limiter: Burst up to 30 requests, sustained ~10 req/s per API key
 const publicApiLimiter = createTokenBucketLimiter({
   capacity: 30,

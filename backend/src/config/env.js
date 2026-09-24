@@ -21,6 +21,7 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(5000),
     FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+    ALLOWED_ORIGINS: z.string().optional().default(''),
     COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).optional(),
     COOKIE_SECURE: z
       .enum(['true', 'false'])

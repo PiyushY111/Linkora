@@ -1,67 +1,37 @@
 import { create } from 'zustand';
 
-const TOKEN_KEY = 'linkora_token';
-const USER_KEY = 'linkora_user';
+// Clean up any legacy tokens stored in localStorage by earlier versions
+try {
+  localStorage.removeItem('linkora_token');
+  localStorage.removeItem('linkora_user');
+} catch {}
 
-const getStoredToken = () => {
-  try {
-    return localStorage.getItem(TOKEN_KEY) || null;
-  } catch {
-    return null;
-  }
-};
-
-const getStoredUser = () => {
-  try {
-    const raw = localStorage.getItem(USER_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-};
-
-const initialToken = getStoredToken();
-const initialUser = getStoredUser();
-
+/**
+ * Global authentication store.
+ * The access token and user state are strictly held in-memory (Zustand state).
+ * Neither is persisted to browser localStorage or sessionStorage, closing the
+ * window for script-based token exfiltration (XSS).
+ *
+ * Session persistence across tab reloads is handled exclusively via the
+ * SameSite=Strict, HttpOnly refresh cookie verified in bootstrapSession().
+ */
 const useAuthStore = create((set) => ({
-  user: initialUser,
-  token: initialToken,
+  user: null,
+  token: null,
   isLoading: false,
-  // If we already have a persisted token, we don't need a full-screen block,
-  // but bootstrapSession() will silently re-validate in the background.
-  isBootstrapping: !initialToken,
+  isBootstrapping: true,
   error: null,
 
-  setUser: (user) => {
-    try {
-      if (user) {
-        localStorage.setItem(USER_KEY, JSON.stringify(user));
-      } else {
-        localStorage.removeItem(USER_KEY);
-      }
-    } catch {}
-    set({ user });
-  },
-
-  setToken: (token) => {
-    try {
-      if (token) {
-        localStorage.setItem(TOKEN_KEY, token);
-      } else {
-        localStorage.removeItem(TOKEN_KEY);
-      }
-    } catch {}
-    set({ token });
-  },
-
+  setUser: (user) => set({ user }),
+  setToken: (token) => set({ token }),
   setLoading: (isLoading) => set({ isLoading }),
   setBootstrapped: () => set({ isBootstrapping: false }),
   setError: (error) => set({ error }),
 
   logout: () => {
     try {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem('linkora_token');
+      localStorage.removeItem('linkora_user');
     } catch {}
     set({ user: null, token: null });
   },
