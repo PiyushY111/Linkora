@@ -30,11 +30,18 @@
     "zustand": "^4.4.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@vitejs/plugin-react": "^5.2.0",
     "autoprefixer": "^10.4.16",
+    "axe-core": "^4.13.0",
     "eslint": "^8.55.0",
     "eslint-plugin-react": "^7.33.2",
     "eslint-plugin-react-hooks": "^4.6.2",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.32",
     "vite": "^7.3.6",
     "vitest": "^4.1.11"
