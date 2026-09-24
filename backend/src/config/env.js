@@ -64,6 +64,11 @@ const envSchema = z
     // Falls back to JWT_SECRET when unset; separate so the Feistel cipher key
     // can be rotated independently of the auth signing secret.
     LINK_SEQUENCE_CIPHER_KEY: z.string().optional().default(''),
+    // Key for the visitor-IP HMAC used in unique-visitor counts
+    // (utils/ipPrivacy.js). Falls back to JWT_SECRET when unset. Changing it
+    // changes every visitor's hash, so uniques are over-counted for the day
+    // of the change.
+    IP_HASH_SECRET: z.string().optional().default(''),
 
     // Cloudinary (optional - falls back to local base64 QR codes)
     CLOUDINARY_CLOUD_NAME: z.string().optional().default(''),

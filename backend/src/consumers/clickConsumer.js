@@ -9,6 +9,8 @@ import { lookupGeo, scheduleGeoIpUpdates } from '../services/geoipService.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
 import connectDB from '../config/db.js';
 import { dispatchEvent } from '../services/webhookService.js';
+import User from '../models/User.js';
+import { anonymizeIp, hashVisitorIp } from '../utils/ipPrivacy.js';
 
 /**
  * Redis Streams consumer-group worker for click events. Runs as its own
@@ -44,10 +46,6 @@ export async function ensureConsumerGroup() {
   }
 }
 
-function hashIp(ip) {
-  return crypto.createHash('sha256').update(ip || '').digest('hex');
-}
-
 function parseUserAgent(ua) {
   const result = new UAParser(ua || '').getResult();
   return {
@@ -67,13 +65,33 @@ function extractDomain(referer) {
 }
 
 /**
+ * The owners (by user ID) in this batch who have turned on visitor-IP
+ * anonymization. Read fresh for every batch, so the setting applies to
+ * clicks processed after it is changed. A failed lookup throws and leaves
+ * the batch pending: storing a raw IP by mistake can't be undone.
+ * @param {string[][]} entries
+ * @returns {Promise<Set<string>>}
+ */
+async function ownersAnonymizingIps(entries) {
+  const userIds = new Set();
+  for (const [, fieldArray] of entries) {
+    const { userId } = streamEntryToObject(fieldArray);
+    if (userId && mongoose.isValidObjectId(userId)) userIds.add(userId);
+  }
+  if (userIds.size === 0) return new Set();
+  const owners = await User.find({ _id: { $in: [...userIds] }, anonymizeVisitorIps: true }).select('_id').lean();
+  return new Set(owners.map((u) => String(u._id)));
+}
+
+/**
  * Turns one raw stream entry into a ClickEventRecord: GeoIP (MaxMind) and
- * user-agent parsing happen here, never on the redirect hot path. The
- * stream entry ID becomes the event ID, which is what makes every
- * downstream write idempotent under redelivery.
+ * user-agent parsing happen here, never on the redirect hot path. GeoIP and
+ * the visitor hash use the full IP; the stored IP is masked if the owner
+ * asked for it. The stream entry ID becomes the event ID, which is what
+ * makes every downstream write idempotent under redelivery.
  * @returns {Promise<import('../repositories/analytics/analyticsRepository.js').ClickEventRecord>}
  */
-async function enrichEvent(id, fields) {
+async function enrichEvent(id, fields, { anonymize = false } = {}) {
   const [geo, ua] = [await lookupGeo(fields.ip), parseUserAgent(fields.ua)];
   return {
     eventId: id,
@@ -81,8 +99,8 @@ async function enrichEvent(id, fields) {
     userId: fields.userId || '',
     shortCode: fields.shortCode,
     timestamp: new Date(Number(fields.timestamp) || Date.now()),
-    ip: fields.ip || '',
-    ipHash: hashIp(fields.ip),
+    ip: anonymize ? anonymizeIp(fields.ip) : fields.ip || '',
+    ipHash: hashVisitorIp(fields.ip),
     referrerDomain: extractDomain(fields.referer),
     device: ua.deviceType,
     browser: ua.browserFamily,
@@ -108,10 +126,12 @@ async function enrichEvent(id, fields) {
 export async function processBatch(entries, { redis = getRedis() } = {}) {
   const events = [];
   const ackIds = [];
+  const anonymizingOwners = await ownersAnonymizingIps(entries);
 
   for (const [id, fieldArray] of entries) {
     try {
-      events.push(await enrichEvent(id, streamEntryToObject(fieldArray)));
+      const fields = streamEntryToObject(fieldArray);
+      events.push(await enrichEvent(id, fields, { anonymize: anonymizingOwners.has(fields.userId) }));
       ackIds.push(id);
     } catch (err) {
       logger.error({ err, id }, 'Failed to enrich click event; leaving unacked for XAUTOCLAIM retry');

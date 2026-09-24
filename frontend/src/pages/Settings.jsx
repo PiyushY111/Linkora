@@ -823,21 +823,26 @@ export default function Settings() {
                   </p>
                 </div>
 
-                {/* GDPR IP Anonymization Toggle */}
+                {/* Visitor IP anonymization toggle */}
                 <div className="flex items-start justify-between rounded-xl border border-ink-700 bg-ink-950 p-4">
                   <div>
-                    <h3 className="text-sm font-semibold text-paper-100 flex items-center gap-2">
-                      <Shield size={16} className="text-emerald-400" />
-                      <span>Visitor IP Anonymization (GDPR Compliance)</span>
+                    <h3 id="anonymize-ips-label" className="text-sm font-semibold text-paper-100 flex items-center gap-2">
+                      <Shield size={16} className="text-emerald-400" aria-hidden="true" />
+                      <span>Visitor IP Anonymization</span>
                     </h3>
-                    <p className="mt-1 text-xs text-paper-400 max-w-xl leading-relaxed">
-                      Automatically mask the last octet of visitor IP addresses (e.g.{' '}
-                      <code className="text-accent-400 font-mono text-[11px]">192.168.1.xxx</code>) before
-                      recording click analytics into the database.
+                    <p id="anonymize-ips-description" className="mt-1 text-xs text-paper-400 max-w-xl leading-relaxed">
+                      Mask visitor IP addresses before they are stored: IPv4 keeps its first three octets
+                      (e.g. <code className="text-accent-400 font-mono text-[11px]">203.0.113.0</code>), IPv6 its
+                      first 48 bits. Applies to clicks recorded after you turn it on; clicks already stored are
+                      not changed.
                     </p>
                   </div>
                   <button
                     type="button"
+                    role="switch"
+                    aria-checked={anonymizeIps}
+                    aria-labelledby="anonymize-ips-label"
+                    aria-describedby="anonymize-ips-description"
                     onClick={() => setAnonymizeIps(!anonymizeIps)}
                     className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
                       anonymizeIps ? 'bg-accent-400' : 'bg-ink-700'
