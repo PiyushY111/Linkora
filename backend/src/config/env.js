@@ -56,7 +56,7 @@ const envSchema = z
 
     // Rate limiting (legacy local fallback + Redis-backed tiers)
     RATE_LIMIT_WINDOW: z.coerce.number().int().positive().default(15),
-    RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
+    RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(1500),
 
     // Redis: one database for cache, streams, rate limits and tokens. Every
     // key has a TTL or a hard bound (docs/redis-keys.md), so run it with

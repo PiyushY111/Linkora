@@ -17,3 +17,10 @@ Production-grade security and architecture. Correctness over features. Every cla
 - If a change requires a product decision (remove vs complete a feature), STOP and ask me.
 - Remove leftover tooling comments ("Phase N", "Feature N", "source spec", "coding-style rule") when touching a file.
 - Naming: the product is "Linkora". Replace "Linkly" everywhere, including headers (Linkora-Signature etc.), keeping a backward-compatible legacy header only if documented.
+
+## Testing & CI
+- Backend test suite: `cd backend && npm test` (Vitest, runs 23 suites and 86 tests against isolated MongoDB & Redis).
+- Frontend test suite: `cd frontend && npm test` (Vitest unit tests).
+- Frontend linting & build: `cd frontend && npm run lint && npm run build`.
+- CI Pipeline: GitHub Actions (`.github/workflows/ci.yml`) executes both test suites, ESLint, production build, and a unified status gate (`ci-status`).
+

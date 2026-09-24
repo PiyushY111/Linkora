@@ -36,7 +36,7 @@ const COMMANDS_LIST = [
  * Tokenizes a command string respecting quoted arguments.
  * e.g. links create https://example.com --title "My Title" -> ['links', 'create', 'https://example.com', '--title', 'My Title']
  */
-function tokenize(input) {
+export function tokenize(input) {
   const tokens = [];
   const regex = /[^\s"']+|"([^"]*)"|'([^']*)'/g;
   let match;
@@ -55,7 +55,7 @@ function tokenize(input) {
 /**
  * Parses flags like --custom <val>, --limit <n>, --title <val>
  */
-function parseFlags(tokens) {
+export function parseFlags(tokens) {
   const args = [];
   const flags = {};
   for (let i = 0; i < tokens.length; i++) {

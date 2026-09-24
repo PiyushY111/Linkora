@@ -384,6 +384,35 @@ function verifyLinkoraSignature(rawBody, signatureHeader, secret) {
 
 ---
 
+## 🧪 Testing & Continuous Integration (CI)
+
+Linkora features an automated CI/CD pipeline built on **GitHub Actions** ([`.github/workflows/ci.yml`](file:///.github/workflows/ci.yml)). Every pull request and push to `main` triggers automated parallel testing and validation gates:
+
+### 1. Backend Integration & Unit Testing
+- **Test Engine**: Vitest with isolated MongoDB and Redis test databases.
+- **Coverage**: 23 test suites and 86+ automated tests covering link validation, SSRF protection, token rotation, click streaming, rollups, and time-series analytics.
+- **Service Containers**: In CI, official Docker service containers (`mongo:7.0` and `redis:7-alpine`) run alongside the test runner to ensure 100% environment fidelity with zero mock drift.
+```bash
+cd backend
+npm test
+```
+
+### 2. Frontend Validation & Testing
+- **Test Suite**: Vitest unit testing covering CLI parsing, QR engine presets, and API helpers.
+- **Linting**: ESLint with React 18 and React Hooks rules.
+- **Production Build**: Full Vite bundle compilation check.
+```bash
+cd frontend
+npm run lint      # Static code analysis
+npm test          # Vitest unit test suite
+npm run build     # Production asset bundling
+```
+
+### 3. CI Status Gate
+- The `ci-status` aggregation job provides a single required status check for repository branch protection.
+
+---
+
 ## 👨‍💻 Author
 
 **Piyush Yadav**

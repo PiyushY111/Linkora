@@ -54,7 +54,7 @@ export default function LinkTableView({
 
   const handleToggle = async (link, e) => {
     e?.stopPropagation();
-    setMenuOpenId(null);
+    setActiveMenu(null);
     try {
       const data = await linkService.toggleLinkStatus(link._id);
       updateLink(data.link);
@@ -66,7 +66,7 @@ export default function LinkTableView({
 
   const handleDelete = async (id, e) => {
     e?.stopPropagation();
-    setMenuOpenId(null);
+    setActiveMenu(null);
     const linkToDelete = links.find((l) => l._id === id);
     const confirmed = await confirm({
       title: 'Delete Short Link',

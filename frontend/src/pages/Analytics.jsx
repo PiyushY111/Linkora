@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import {
@@ -9,13 +9,11 @@ import {
   Download,
   RefreshCw,
   Activity,
-  Layers,
-  ArrowRight,
   Globe,
-  ChevronDown,
   ShieldCheck,
   Split,
   Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppShell from '../components/layout/AppShell';
@@ -46,6 +44,7 @@ const Analytics = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [excludeBots, setExcludeBots] = useState(false);
+  const [fetchError, setFetchError] = useState(null);
 
   // Fetch analytics dataset
   const fetchAnalytics = useCallback(
@@ -54,6 +53,7 @@ const Analytics = () => {
       else setIsRefreshing(true);
 
       try {
+        setFetchError(null);
         const queryParams = {
           timeRange,
           startDate: customStart || undefined,
@@ -75,8 +75,14 @@ const Analytics = () => {
           setRecentClicks(data.recentClicks || []);
         }
       } catch (err) {
+        const errorMsg =
+          err.response?.data?.message ||
+          (err.code === 'ECONNABORTED' ? 'Request timed out. Server may be warming up.' : null) ||
+          err.message ||
+          'Failed to load analytics data';
+        setFetchError(errorMsg);
         if (!background) {
-          toast.error('Failed to load analytics data');
+          toast.error(errorMsg);
         }
       } finally {
         setIsLoading(false);
@@ -322,6 +328,31 @@ const Analytics = () => {
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Error / Cold Start Recovery Banner */}
+            {fetchError && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-3.5 backdrop-blur-md">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-red-500/20 text-red-400">
+                    <AlertCircle size={16} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-red-300">
+                      Failed to sync analytics stream
+                    </p>
+                    <p className="text-[11px] text-paper-400">{fetchError}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchAnalytics(false)}
+                  className="btn-secondary inline-flex h-8 items-center gap-1.5 px-3 text-xs font-semibold text-paper-200 hover:text-white"
+                >
+                  <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} />
+                  <span>Retry</span>
+                </button>
+              </div>
+            )}
+
             {/* Top Stat KPI Cards */}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <StatCard

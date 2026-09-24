@@ -6,6 +6,7 @@ import { env } from '../../config/env.js';
 import { calculateGrowth, fillTimeSeries } from '../../services/analyticsTimeRange.js';
 import { DIMENSION_NAMES, OTHER_KEY, decodeKey } from './rollupDimensions.js';
 import { hourBucket, dayBucket } from './mongoAnalyticsWriter.js';
+import { logger } from '../../config/logger.js';
 
 const TOP_N = 10;
 const RECENT_CLICKS_LIMIT = 50;
@@ -157,23 +158,29 @@ async function recentClicks(metaScope) {
   }));
 }
 
-export async function getLinkAnalytics(linkId, timeInfo, { excludeBots }) {
+export async function getLinkAnalytics(linkId, timeInfo, { excludeBots } = {}) {
   const id = new mongoose.Types.ObjectId(linkId);
   const [analytics, recent] = await Promise.all([
     aggregate({ linkId: id }, timeInfo, { excludeBots }),
-    recentClicks({ 'meta.linkId': id }),
+    recentClicks({ 'meta.linkId': id }).catch((err) => {
+      logger.warn({ err, linkId }, 'Failed to fetch recent clicks for link analytics; returning empty list');
+      return [];
+    }),
   ]);
   return { analytics, recentClicks: recent };
 }
 
-export async function getUserSummary(userId, timeInfo) {
+export async function getUserSummary(userId, timeInfo, options = {}) {
   const id = new mongoose.Types.ObjectId(userId);
-  const [{ botBreakdown, ...summary }, recent, totalLinks] = await Promise.all([
-    aggregate({ userId: id }, timeInfo, { excludeBots: false }),
-    recentClicks({ 'meta.userId': id }),
-    Link.countDocuments({ user: id }),
+  const [aggregated, recent, totalLinks] = await Promise.all([
+    aggregate({ userId: id }, timeInfo, { excludeBots: Boolean(options.excludeBots) }),
+    recentClicks({ 'meta.userId': id }).catch((err) => {
+      logger.warn({ err, userId }, 'Failed to fetch recent clicks for user summary; returning empty list');
+      return [];
+    }),
+    Link.countDocuments({ user: id }).catch(() => 0),
   ]);
-  return { ...summary, totalLinks, recentClicks: recent };
+  return { ...aggregated, totalLinks, recentClicks: recent };
 }
 
 export async function* exportEvents({ linkId, userId, start, end, limit }) {

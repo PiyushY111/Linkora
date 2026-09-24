@@ -11,7 +11,7 @@ const API_BASE_URL = getApiOrigin() ? `${getApiOrigin()}/api` : '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 25000,
   // Send the httpOnly refresh-token cookie on same-origin requests to
   // /api/auth/*; it is never exposed to JavaScript.
   withCredentials: true,
@@ -34,7 +34,7 @@ async function refreshAccessToken() {
   const response = await axios.post(
     `${API_BASE_URL}/auth/refresh`,
     {},
-    { withCredentials: true, timeout: 2500 }
+    { withCredentials: true, timeout: 10000 }
   );
   const { token, user } = response.data;
   useAuthStore.getState().setToken(token);
@@ -85,6 +85,19 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     const isAuthEndpoint = AUTH_ENDPOINTS.some((path) => originalRequest?.url?.includes(path));
+
+    // Auto-retry once on cold starts, gateway timeouts, or transient network timeouts for idempotent GETs
+    const isGet = originalRequest?.method?.toLowerCase() === 'get';
+    const isTransient =
+      error.code === 'ECONNABORTED' ||
+      !error.response ||
+      [502, 503, 504].includes(error.response?.status);
+
+    if (isGet && isTransient && originalRequest && !originalRequest._retryCount) {
+      originalRequest._retryCount = 1;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return api(originalRequest);
+    }
 
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true;

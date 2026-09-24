@@ -11,6 +11,8 @@ import { errorHandler, notFound } from './middleware/error.js';
 import { metricsMiddleware, metricsAuth, metricsHandler } from './middleware/metrics.js';
 import { getRedis } from './services/cacheService.js';
 
+import { getClientIp } from './utils/helpers.js';
+
 // Import routes
 import authRoutes from './routes/auth.js';
 import linkRoutes from './routes/links.js';
@@ -62,7 +64,8 @@ app.use(metricsMiddleware);
 const limiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW * 60 * 1000,
   max: env.NODE_ENV === 'development' ? 5000 : env.RATE_LIMIT_MAX_REQUESTS,
-  message: 'Too many requests, please try again later',
+  message: { success: false, message: 'Too many requests, please try again later' },
+  keyGenerator: (req) => getClientIp(req),
   skip: (req) => req.path.startsWith('/health') || req.path === '/metrics',
 });
 

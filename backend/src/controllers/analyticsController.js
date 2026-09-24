@@ -472,7 +472,9 @@ export const getLinkAnalytics = async (req, res) => {
 // Get aggregated analytics summary across all of the user's links
 export const getAnalyticsSummary = async (req, res) => {
   const timeInfo = calculateTimeRange(req.query.timeRange, req.query.startDate, req.query.endDate);
-  const summary = await getAnalyticsRepository().getUserSummary(req.user.id, timeInfo);
+  const summary = await getAnalyticsRepository().getUserSummary(req.user.id, timeInfo, {
+    excludeBots: req.query.excludeBots === 'true',
+  });
   res.status(200).json({ success: true, summary });
 };
 
