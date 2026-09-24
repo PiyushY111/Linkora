@@ -220,8 +220,8 @@ export async function getLinkMeta(shortCode) {
  * lookup, not a hardcoded guess — see analyticsController.js's redirectLink,
  * which times its own `Link.findOne` and passes the result through here.
  * `cachedAt` defaults to now but can be overridden — used by
- * simulateThunderingHerd() below to backdate an entry so XFetch actually
- * treats it as near-expiry, instead of the override being silently dropped.
+ * scripts/run_xfetch_benchmark.js to backdate an entry so XFetch treats it
+ * as near-expiry.
  * @param {string} shortCode
  * @param {LinkMeta & { computeDelta?: number, cachedAt?: number }} meta
  */
@@ -419,61 +419,6 @@ export async function getCacheDiagnostics() {
 
 function sumMetricValues(metric) {
   return (metric?.values || []).reduce((sum, v) => sum + (v.value || 0), 0);
-}
-
-/**
- * Runs a controlled thundering-herd simulation to demonstrate XFetch in
- * action. Honest by construction now: setLinkMeta() actually respects the
- * `cachedAt` override below (it used to always stamp `Date.now()`,
- * silently discarding this backdate and making the "near expiry" premise
- * of the simulation false).
- * @param {number} concurrency
- */
-export async function simulateThunderingHerd(concurrency = 50) {
-  const startTime = Date.now();
-  const testKey = 'benchmark-stampede-link';
-
-  // Seed an entry that is mathematically near expiration so XFetch activates
-  await setLinkMeta(testKey, {
-    originalUrl: 'https://linkora.dev/benchmark',
-    isActive: true,
-    expiryDate: 0,
-    passwordHash: '',
-    linkId: 'bench-link-id',
-    userId: 'bench-user-id',
-    maxClicks: 0,
-    routingType: 'direct',
-    computeDelta: 35,
-    cachedAt: Date.now() - (env.REDIS_CACHE_TTL_SECONDS * 1000 - 60),
-  });
-
-  let earlyRefreshesTriggered = 0;
-  let cacheHits = 0;
-  let dbQueriesMade = 0;
-
-  const requests = Array.from({ length: concurrency }).map(async () => {
-    const res = await getLinkMeta(testKey);
-    if (res.status === 'hit') {
-      cacheHits++;
-      if (res.shouldRecomputeEarly) {
-        earlyRefreshesTriggered++;
-        dbQueriesMade++; // Only 1 lucky worker gets the lock to recompute!
-      }
-    }
-  });
-
-  await Promise.all(requests);
-  const durationMs = Date.now() - startTime;
-
-  return {
-    concurrency,
-    durationMs,
-    cacheHits,
-    earlyRefreshesTriggered,
-    dbQueriesMade,
-    stampedesAvoided: concurrency - dbQueriesMade,
-    savedDatabaseLoadPercent: Number((((concurrency - dbQueriesMade) / concurrency) * 100).toFixed(1)),
-  };
 }
 
 export default getRedis;

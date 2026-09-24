@@ -227,11 +227,6 @@ export const developerService = {
     const response = await api.get('/developer/cache/diagnostics');
     return response.data;
   },
-
-  simulateStampede: async (concurrency = 50) => {
-    const response = await api.post('/developer/cache/simulate-stampede', { concurrency });
-    return response.data;
-  },
 };
 
 export const publicApiService = {

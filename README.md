@@ -52,18 +52,18 @@ Empirical load test metrics measured using `autocannon` (100 concurrent TCP conn
 | **p90 Latency** | **23 ms** | Autocannon 8.0.0 (10s run) |
 | **p99 Latency** | **48 ms** | Autocannon 8.0.0 (10s run) |
 | **Error Rate** | **0.00% (0 errors / 69,017 requests)** | 100% successful HTTP 307 |
-| **Cache Stampede Defense** | **99.8% database load reduction** | `npm run benchmark:xfetch` |
+| **Cache Stampede Defense** | **99.8% fewer loader calls at 500 concurrent reads** | `npm run benchmark:xfetch` |
 
 ### XFetch Cache Stampede Prevention Under Load
-Under a thundering herd of 500 concurrent requests hitting an expiring cache key, Linkora's probabilistic early recomputation algorithm ensured that **exactly 1 background worker** regenerated the cache while 499 requests were served stale data with zero database lock contention:
+A herd of concurrent reads hits a hot key. In the baseline the entry has already expired and every request calls the loader (a 35 ms stub for the MongoDB read). With XFetch the entry is near expiry, and the Redis lock lets at most one request refresh it in the background while the rest are served from cache. Mean [min-max] over 5 runs per level; method and caveats in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md#2-xfetch-probabilistic-early-expiration-benchmark):
 
-```
-----------------------------------------------------------------
-| Concurrency | Cache Hits | DB Queries | Stampedes Blocked | DB Load Saved |
-|-------------|------------|------------|-------------------|---------------|
-| 500 workers | 500        | 1          | 499               | 99.8%         |
-----------------------------------------------------------------
-```
+| Concurrency | Baseline loader calls | XFetch loader calls | DB load saved |
+| :--- | :--- | :--- | :--- |
+| 10 | 10.0 [10-10] | 1.0 [1-1] | 90.0% |
+| 50 | 50.0 [50-50] | 1.0 [1-1] | 98.0% |
+| 100 | 100.0 [100-100] | 1.0 [1-1] | 99.0% |
+| 250 | 250.0 [250-250] | 1.0 [1-1] | 99.6% |
+| 500 | 500.0 [500-500] | 1.0 [1-1] | 99.8% |
 
 ---
 
