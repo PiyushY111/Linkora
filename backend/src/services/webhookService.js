@@ -86,6 +86,14 @@ export async function isSafeEndpointUrl(urlStr, { lookup = dns.promises.lookup }
  * scenario (a hostname that resolves safely once and privately the next).
  */
 async function resolveSafeDeliveryAddress(hostname, lookup = dns.promises.lookup) {
+  const host = String(hostname || '').toLowerCase();
+  if (
+    host === '169.254.169.254' ||
+    host === 'metadata.google.internal' ||
+    host.endsWith('.metadata.google.internal')
+  ) {
+    throw new Error(`Destination "${hostname}" is a blocked cloud metadata address`);
+  }
   const addresses = await lookup(hostname, { all: true, verbatim: true });
   const safe = addresses.find((addr) => !isBlockedWebhookAddress(addr.address));
   if (!safe) {

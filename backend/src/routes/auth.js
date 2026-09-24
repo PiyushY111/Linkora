@@ -13,7 +13,7 @@ import {
 } from '../controllers/authController.js';
 import { protect } from '../middleware/auth.js';
 import { validateRegister, validateLogin, handleValidationErrors } from '../middleware/validation.js';
-import { authRateLimitMiddleware, registerRateLimiter, refreshRateLimiter } from '../middleware/rateLimiter.js';
+import { authRateLimitMiddleware, registerRateLimiter, refreshRateLimiter, loginRateLimiter } from '../middleware/rateLimiter.js';
 import { verifyOriginForCsrf } from '../middleware/csrf.js';
 import ssoRoutes from './sso.js';
 
@@ -29,7 +29,7 @@ function requireRefreshTokenCookie(req, res, next) {
 }
 
 router.post('/register', registerRateLimiter, validateRegister, handleValidationErrors, register);
-router.post('/login', authRateLimitMiddleware, validateLogin, handleValidationErrors, login);
+router.post('/login', loginRateLimiter, authRateLimitMiddleware, validateLogin, handleValidationErrors, login);
 router.post('/refresh', verifyOriginForCsrf, requireRefreshTokenCookie, refreshRateLimiter, refresh);
 router.post('/logout', verifyOriginForCsrf, logout);
 router.get('/me', protect, getCurrentUser);

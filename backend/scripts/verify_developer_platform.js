@@ -9,7 +9,7 @@ import { createLinkRecord } from '../src/controllers/linkController.js';
 async function run() {
   console.log('=== Starting Developer Platform & Public API Verification ===');
 
-  await mongoose.connect('mongodb://127.0.0.1:27017/linkly');
+  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/linkora');
   console.log('Connected to MongoDB');
 
   // 1. Fetch test user
@@ -88,7 +88,7 @@ async function run() {
     statusCode: 201,
     latencyMs: 24,
     ipAddress: '127.0.0.1',
-    userAgent: 'Linkly-Playground/1.0',
+    userAgent: 'Linkora-Playground/1.0',
   });
   console.log('Created ApiLog record:', logRecord._id, 'Status:', logRecord.statusCode, 'Latency:', logRecord.latencyMs, 'ms');
 

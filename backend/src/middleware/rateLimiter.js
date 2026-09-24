@@ -250,6 +250,13 @@ export const unlockRateLimiter = createSlidingWindowLimiter({
   keyFn: (req) => `${getClientIp(req)}:${req.params.shortCode}`,
 });
 
+// Login attempts: 20 per 15 min per IP in production (protects CPU & bcrypt hashing against request flooding).
+export const loginRateLimiter = createSlidingWindowLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 1000 : 20,
+  keyPrefix: 'login',
+});
+
 export const authRateLimitMiddleware = async (req, res, next) => {
   const ip = getClientIp(req);
   try {
@@ -268,5 +275,6 @@ export default {
   registerRateLimiter,
   refreshRateLimiter,
   unlockRateLimiter,
+  loginRateLimiter,
   authRateLimitMiddleware,
 };

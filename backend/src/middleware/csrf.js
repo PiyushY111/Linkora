@@ -1,5 +1,5 @@
-import { env } from '../config/env.js';
 import { ForbiddenError } from '../lib/errors.js';
+import { isAllowedOrigin } from '../utils/corsOrigins.js';
 
 /**
  * Origin-check CSRF guard for cookie-authenticated, state-changing routes
@@ -17,15 +17,7 @@ export function verifyOriginForCsrf(req, res, next) {
   const origin = req.headers.origin || refererOrigin(req.headers.referer);
   if (!origin) return next();
 
-  let allowed = null;
-  try {
-    allowed = new URL(env.FRONTEND_URL).origin;
-  } catch {
-    allowed = null;
-  }
-
-  const isAllowedOrigin = origin.endsWith('.vercel.app') || (allowed && origin === allowed) || origin === 'http://localhost:3000' || origin === 'http://localhost:5173';
-  if (!isAllowedOrigin) {
+  if (!isAllowedOrigin(origin)) {
     throw new ForbiddenError('Cross-origin request rejected');
   }
 

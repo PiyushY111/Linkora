@@ -9,6 +9,12 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     env: { REDIS_URL: TEST_REDIS_URL },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      include: ['src/**/*.js'],
+      exclude: ['src/server.js'],
+    },
     projects: [
       {
         extends: true,

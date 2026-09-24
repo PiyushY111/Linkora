@@ -14,7 +14,7 @@ import {
 async function run() {
   console.log('--- Starting Webhook Integration Verification ---');
 
-  await mongoose.connect('mongodb://127.0.0.1:27017/linkly');
+  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/linkora');
   console.log('Connected to MongoDB');
 
   // 1. SSRF Protection Tests
