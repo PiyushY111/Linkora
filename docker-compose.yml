@@ -48,7 +48,9 @@ services:
       retries: 10
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment: *backend-env
     depends_on:
       mongo:
@@ -57,7 +59,9 @@ services:
         condition: service_healthy
 
   consumer:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     command: ["node", "src/consumers/clickConsumer.js"]
     environment: *backend-env
     # No HTTP server in the consumer, so the image's HTTP healthcheck

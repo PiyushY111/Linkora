@@ -1,9 +1,0 @@
-node_modules
-.env
-.env.*
-!.env.example
-coverage
-test
-dump.rdb
-*.log
-.DS_Store

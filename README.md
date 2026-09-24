@@ -155,9 +155,12 @@ Keys are created in the dashboard's Developer page.
 | `GET` | `/links/:code/analytics` | `analytics:read` |
 | `GET` | `/usage` | any valid key |
 
-`GET /api/public/v1/openapi.json` serves an OpenAPI description without a
-key. Requests are limited to bursts of 30 and 10 per second sustained, per
-key.
+The full contract, with request and response schemas, is
+[docs/openapi.json](docs/openapi.json) (OpenAPI 3.1), also served without a
+key at `GET /api/public/v1/openapi.json`. Tests check that it is valid, that
+it lists exactly the routes the API serves, and that real responses match
+its schemas. Requests are limited to bursts of 30 and 10 per second
+sustained, per key.
 
 Health checks: `GET /health/liveness` (no dependencies; use this for
 platform health checks) and `GET /health/readiness` (pings Redis and

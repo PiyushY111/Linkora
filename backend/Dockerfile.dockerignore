@@ -1,0 +1,8 @@
+# The backend image builds from the repository root (it needs
+# docs/openapi.json), so send only what it copies.
+*
+!backend/package.json
+!backend/package-lock.json
+!backend/src
+!backend/scripts
+!docs/openapi.json

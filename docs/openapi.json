@@ -1,0 +1,1650 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Linkora Public API",
+    "version": "1.0.0",
+    "description": "Create and manage short links and read their analytics.\n\nAuthenticate with an API key from the dashboard's Developer page in the `x-api-key` header. Each key is rate-limited by a token bucket: bursts of up to 30 requests, 10 per second sustained. Errors use the `Error` shape.",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "contact": {
+      "name": "Linkora",
+      "url": "https://github.com/PiyushY111/Linkora"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/public/v1",
+      "description": "Relative to the API origin"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Links"
+    },
+    {
+      "name": "Analytics"
+    },
+    {
+      "name": "Account"
+    }
+  ],
+  "paths": {
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "This OpenAPI document",
+        "operationId": "getOpenApiSpec",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The OpenAPI document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/links": {
+      "get": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "List links",
+        "operationId": "listLinks",
+        "x-required-scope": "links:read",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Case-insensitive match on short code, destination or title.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "createdAt_desc",
+                "createdAt_asc",
+                "clicks_desc",
+                "clicks_asc"
+              ],
+              "default": "createdAt_desc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "links",
+                    "pagination"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LinkSummary"
+                      }
+                    },
+                    "pagination": {
+                      "$ref": "#/components/schemas/Pagination"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Create a link",
+        "operationId": "createLink",
+        "x-required-scope": "links:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "link"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "link": {
+                      "$ref": "#/components/schemas/CreatedLink"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/links/bulk": {
+      "post": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Create up to 1,000 links",
+        "operationId": "bulkCreateLinks",
+        "x-required-scope": "links:write",
+        "description": "Each item is created independently; one failure does not stop the others. The response is 200 even when some items fail.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "links"
+                ],
+                "properties": {
+                  "links": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1000,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "description": "A destination URL"
+                        },
+                        {
+                          "$ref": "#/components/schemas/LinkCreate"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-item results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "total",
+                    "succeeded",
+                    "failed",
+                    "results"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "succeeded": {
+                      "type": "integer"
+                    },
+                    "failed": {
+                      "type": "integer"
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BulkResult"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/links/{code}": {
+      "parameters": [
+        {
+          "name": "code",
+          "in": "path",
+          "required": true,
+          "description": "The link's short code, or its ID.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Get a link",
+        "operationId": "getLink",
+        "x-required-scope": "links:read",
+        "responses": {
+          "200": {
+            "description": "The link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "link"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "link": {
+                      "$ref": "#/components/schemas/LinkDetail"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Update a link",
+        "operationId": "updateLink",
+        "x-required-scope": "links:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "link"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "link": {
+                      "$ref": "#/components/schemas/UpdatedLink"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Links"
+        ],
+        "summary": "Delete a link and its analytics",
+        "operationId": "deleteLink",
+        "x-required-scope": "links:delete",
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "message"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/links/{code}/analytics": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get a link's analytics",
+        "operationId": "getLinkAnalytics",
+        "x-required-scope": "analytics:read",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "description": "The link's short code, or its ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeRange",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "today",
+                "24h",
+                "7d",
+                "30d",
+                "90d",
+                "ytd",
+                "all",
+                "custom"
+              ],
+              "default": "7d"
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "With timeRange=custom.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "description": "With timeRange=custom.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "excludeBots",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated analytics and the 50 most recent clicks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "routingType",
+                    "analytics",
+                    "recentClicks"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "routingType": {
+                      "type": "string",
+                      "enum": [
+                        "direct",
+                        "ab_test"
+                      ]
+                    },
+                    "abTestAnalysis": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "description": "Present for A/B links."
+                    },
+                    "analytics": {
+                      "$ref": "#/components/schemas/LinkAnalytics"
+                    },
+                    "recentClicks": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "items": {
+                        "$ref": "#/components/schemas/RecentClick"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/usage": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Describe the calling key and its rate limit",
+        "operationId": "getUsage",
+        "responses": {
+          "200": {
+            "description": "Key details and limits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "key",
+                    "rateLimits"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "key": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "prefix": {
+                          "type": "string"
+                        },
+                        "environment": {
+                          "type": "string",
+                          "enum": [
+                            "live",
+                            "test"
+                          ]
+                        },
+                        "scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "totalRequests": {
+                          "type": "integer"
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      }
+                    },
+                    "rateLimits": {
+                      "type": "object",
+                      "required": [
+                        "algorithm",
+                        "burstCapacity",
+                        "refillPerSecond"
+                      ],
+                      "properties": {
+                        "algorithm": {
+                          "const": "token-bucket"
+                        },
+                        "burstCapacity": {
+                          "type": "integer"
+                        },
+                        "refillPerSecond": {
+                          "type": "number"
+                        },
+                        "standardWindow": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      }
+    },
+    "headers": {
+      "X-RateLimit-Limit": {
+        "description": "Bucket capacity",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "X-RateLimit-Remaining": {
+        "description": "Whole tokens left",
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "properties": {
+          "success": {
+            "const": false
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "totalPages"
+        ],
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          }
+        }
+      },
+      "LinkCreate": {
+        "type": "object",
+        "required": [
+          "originalUrl"
+        ],
+        "properties": {
+          "originalUrl": {
+            "type": "string",
+            "description": "http(s) URL. Rejected if it resolves to a private or reserved address, or is flagged by threat intelligence when enabled."
+          },
+          "customAlias": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$",
+            "description": "Must not collide with an existing short code or alias, or a reserved route name."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "business",
+              "personal",
+              "social",
+              "marketing",
+              "other"
+            ]
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "password": {
+            "type": "string",
+            "description": "Stored as a bcrypt hash; visitors must unlock the link before redirecting."
+          },
+          "maxClicks": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "iosRedirect": {
+            "type": "string",
+            "format": "uri"
+          },
+          "androidRedirect": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiredRedirectUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "utm": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "medium": {
+                "type": "string"
+              },
+              "campaign": {
+                "type": "string"
+              },
+              "term": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            }
+          },
+          "routingType": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "ab_test"
+            ]
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "weight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              }
+            }
+          },
+          "ogTitle": {
+            "type": "string"
+          },
+          "ogDescription": {
+            "type": "string"
+          },
+          "ogImage": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "LinkUpdate": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "originalUrl": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expiryDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "maxClicks": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "iosRedirect": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "androidRedirect": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "utm": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "medium": {
+                "type": "string"
+              },
+              "campaign": {
+                "type": "string"
+              },
+              "term": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "LinkSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "shortCode",
+          "shortUrl",
+          "originalUrl"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "MongoDB ObjectId"
+          },
+          "shortCode": {
+            "type": "string"
+          },
+          "shortUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "originalUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "expiryDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "maxClicks": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "clicks": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CreatedLink": {
+        "type": "object",
+        "required": [
+          "id",
+          "shortCode",
+          "shortUrl",
+          "originalUrl"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "MongoDB ObjectId"
+          },
+          "shortCode": {
+            "type": "string"
+          },
+          "shortUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "originalUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "expiryDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "maxClicks": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "qrCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "QR image URL or data URL"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LinkDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "shortCode",
+          "shortUrl",
+          "originalUrl"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "MongoDB ObjectId"
+          },
+          "shortCode": {
+            "type": "string"
+          },
+          "shortUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "originalUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "expiryDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "maxClicks": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "clicks": {
+            "type": "integer"
+          },
+          "qrCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "iosRedirect": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "androidRedirect": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "utm": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UpdatedLink": {
+        "type": "object",
+        "required": [
+          "id",
+          "shortCode",
+          "shortUrl",
+          "originalUrl"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "MongoDB ObjectId"
+          },
+          "shortCode": {
+            "type": "string"
+          },
+          "shortUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "originalUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "expiryDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "maxClicks": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "clicks": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BulkResult": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "originalUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "shortCode": {
+            "type": "string"
+          },
+          "shortUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "message": {
+            "type": "string",
+            "description": "Why this item failed"
+          }
+        }
+      },
+      "LinkAnalytics": {
+        "type": "object",
+        "required": [
+          "totalClicks",
+          "uniqueVisitors",
+          "clicksByDay",
+          "botBreakdown",
+          "timeRange",
+          "granularity"
+        ],
+        "properties": {
+          "totalClicks": {
+            "type": "integer"
+          },
+          "uniqueVisitors": {
+            "type": "integer",
+            "description": "Approximate: the sum of daily HyperLogLog estimates over the range."
+          },
+          "clickGrowth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Percent change from the previous period of the same length; null when that period had none."
+          },
+          "visitorGrowth": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Percent change from the previous period of the same length; null when that period had none."
+          },
+          "topCountries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "country",
+                "clicks"
+              ],
+              "properties": {
+                "country": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "topCities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                },
+                "country": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "topReferrers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "referrer",
+                "clicks"
+              ],
+              "properties": {
+                "referrer": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "topDevices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "device",
+                "clicks"
+              ],
+              "properties": {
+                "device": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "topOperatingSystems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "os",
+                "clicks"
+              ],
+              "properties": {
+                "os": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "topBrowsers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "browser",
+                "clicks"
+              ],
+              "properties": {
+                "browser": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "clicksByDay": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "day",
+                "clicks"
+              ],
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "utmCampaigns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "clicks"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "utmSources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "clicks"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "utmMediums": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "clicks"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "clicks": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "botBreakdown": {
+            "type": "object",
+            "properties": {
+              "humanClicks": {
+                "type": "integer"
+              },
+              "botClicks": {
+                "type": "integer"
+              },
+              "totalClicks": {
+                "type": "integer"
+              },
+              "botPercentage": {
+                "type": "number"
+              },
+              "isFiltered": {
+                "type": "boolean"
+              }
+            }
+          },
+          "timeRange": {
+            "type": "string"
+          },
+          "granularity": {
+            "type": "string",
+            "enum": [
+              "hour",
+              "day",
+              "month"
+            ]
+          }
+        }
+      },
+      "RecentClick": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "ip": {
+            "type": "string"
+          },
+          "country_code": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "device_type": {
+            "type": "string"
+          },
+          "browser_family": {
+            "type": "string"
+          },
+          "os_family": {
+            "type": "string"
+          },
+          "referrer_domain": {
+            "type": "string"
+          },
+          "utm_source": {
+            "type": "string"
+          },
+          "utm_campaign": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request was invalid",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing, invalid, revoked or expired API key",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The key lacks the required scope",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No such link for this key's owner",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "The custom alias is already taken",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Rate limit exceeded",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/X-RateLimit-Limit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/X-RateLimit-Remaining"
+          }
+        }
+      }
+    }
+  }
+}

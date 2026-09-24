@@ -3,11 +3,14 @@
 # Production image for the Linkora API and click consumer. The same image
 # runs both: the default command starts the API; override it with
 # `node src/consumers/clickConsumer.js` for a separate consumer.
+#
+# Build from the repository root, which it needs for docs/openapi.json:
+#   docker build -f backend/Dockerfile .
 
 # ---- dependencies: production packages only ----
 FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # ---- runtime ----
@@ -17,9 +20,11 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 COPY --from=deps --chown=node:node /app/node_modules ./node_modules
-COPY --chown=node:node package.json ./
-COPY --chown=node:node src ./src
-COPY --chown=node:node scripts ./scripts
+COPY --chown=node:node backend/package.json ./
+COPY --chown=node:node backend/src ./src
+COPY --chown=node:node backend/scripts ./scripts
+# Served at /api/public/v1/openapi.json; resolved relative to src/.
+COPY --chown=node:node docs/openapi.json /docs/openapi.json
 
 # The official image's unprivileged user.
 USER node
