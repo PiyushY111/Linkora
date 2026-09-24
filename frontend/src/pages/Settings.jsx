@@ -856,30 +856,33 @@ export default function Settings() {
                   </button>
                 </div>
 
-                {/* Email Notifications Toggle */}
-                <div className="flex items-start justify-between rounded-xl border border-ink-700 bg-ink-950 p-4">
+                {/* Email notifications: no email delivery exists yet, so the
+                    switch is shown but disabled. */}
+                <div className="flex items-start justify-between rounded-xl border border-ink-700 bg-ink-950 p-4 opacity-60">
                   <div>
-                    <h3 className="text-sm font-semibold text-paper-100 flex items-center gap-2">
-                      <Bell size={16} className="text-amber-400" />
+                    <h3 id="email-notifications-label" className="text-sm font-semibold text-paper-100 flex items-center gap-2">
+                      <Bell size={16} className="text-amber-400" aria-hidden="true" />
                       <span>Click Milestone Email Notifications</span>
+                      <span className="rounded-full border border-ink-600 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-paper-400">
+                        Coming soon
+                      </span>
                     </h3>
-                    <p className="mt-1 text-xs text-paper-400 max-w-xl leading-relaxed">
-                      Receive email alerts whenever any of your short links cross high-traffic milestones
-                      (1,000, 10,000, and 100,000 clicks).
+                    <p id="email-notifications-description" className="mt-1 text-xs text-paper-400 max-w-xl leading-relaxed">
+                      Not available yet: Linkora does not send email. When it does, this will alert you when a
+                      link crosses 1,000, 10,000 and 100,000 clicks.
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setEmailNotifications(!emailNotifications)}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                      emailNotifications ? 'bg-accent-400' : 'bg-ink-700'
-                    }`}
+                    role="switch"
+                    aria-checked={false}
+                    aria-disabled="true"
+                    disabled
+                    aria-labelledby="email-notifications-label"
+                    aria-describedby="email-notifications-description"
+                    className="relative inline-flex h-6 w-11 shrink-0 cursor-not-allowed rounded-full border-2 border-transparent bg-ink-700"
                   >
-                    <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-ink-950 transition duration-200 ease-in-out ${
-                        emailNotifications ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
+                    <span className="inline-block h-5 w-5 translate-x-0 transform rounded-full bg-ink-950" />
                   </button>
                 </div>
 
