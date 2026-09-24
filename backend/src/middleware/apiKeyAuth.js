@@ -11,7 +11,6 @@ import { verifyJwt } from '../utils/jwt.js';
  * Supports:
  *  1. Hashed API keys (SHA-256 lookup in ApiKey collection)
  *  2. Masked key references from authenticated in-browser playground/CLI
- *  3. Backward-compatible legacy keys stored on User.apiKey
  */
 export async function apiKeyAuth(req, res, next) {
   const headerKey = env.API_KEY_HEADER || 'x-api-key';
@@ -130,22 +129,6 @@ export async function apiKeyAuth(req, res, next) {
         $inc: { totalRequests: 1 },
       }).catch((err) => logger.error({ err }, 'Failed to update ApiKey lastUsedAt'));
 
-      return next();
-    }
-
-    // 3. Fallback to legacy User.apiKey for backward compatibility
-    const legacyUser = await User.findOne({ apiKey: rawKey });
-    if (legacyUser) {
-      req.user = legacyUser;
-      req.apiKeyDoc = null;
-      req.scopes = ['*'];
-      req.apiKeyUser = {
-        id: String(legacyUser._id),
-        apiKey: rawKey,
-        keyId: null,
-        prefix: 'legacy',
-        environment: 'live',
-      };
       return next();
     }
 

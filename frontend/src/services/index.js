@@ -21,11 +21,6 @@ export const authService = {
     return response.data;
   },
 
-  generateApiKey: async () => {
-    const response = await api.post('/auth/generate-api-key');
-    return response.data;
-  },
-
   changePassword: async (currentPassword, newPassword) => {
     const response = await api.put('/auth/password', { currentPassword, newPassword });
     return response.data;

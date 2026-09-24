@@ -5,7 +5,6 @@ import {
   refresh,
   getCurrentUser,
   updateProfile,
-  generateApiKey,
   changePassword,
   exportAccountData,
   deleteAccount,
@@ -37,6 +36,5 @@ router.put('/profile', protect, updateProfile);
 router.put('/password', protect, changePassword);
 router.get('/export-data', protect, exportAccountData);
 router.delete('/account', protect, deleteAccount);
-router.post('/generate-api-key', protect, generateApiKey);
 
 export default router;

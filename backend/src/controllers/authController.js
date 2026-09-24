@@ -337,25 +337,6 @@ export const deleteAccount = async (req, res) => {
   });
 };
 
-// Generate API key
-export const generateApiKey = async (req, res) => {
-  const user = await User.findById(req.user.id);
-  const apiKey = user.generateApiKey();
-  await user.save();
-
-  logAudit({
-    action: 'user.apikey.generate',
-    actorUserId: req.user.id,
-    targetResourceId: req.user.id,
-    ipAddress: getClientIp(req),
-  });
-
-  res.status(200).json({
-    success: true,
-    apiKey,
-  });
-};
-
 // Logout
 export const logout = async (req, res) => {
   const refreshToken = req.cookies?.refreshToken;

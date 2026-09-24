@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 
 const userSchema = new mongoose.Schema(
   {
@@ -57,9 +56,13 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    // Legacy plaintext API key. Nothing writes it any more; it is read only
+    // by scripts/migrate-legacy-api-keys.js, which hashes it into an ApiKey
+    // and unsets it. select:false keeps it out of every query result (and
+    // so every API response) until that migration has run.
     apiKey: {
       type: String,
-      default: null,
+      select: false,
     },
     isVerified: {
       type: Boolean,
@@ -131,13 +134,6 @@ userSchema.pre('save', async function (next) {
 // Method to compare password
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
-};
-
-// Generate API Key
-userSchema.methods.generateApiKey = function () {
-  const apiKey = `lnk_${crypto.randomBytes(24).toString('hex')}`;
-  this.apiKey = apiKey;
-  return apiKey;
 };
 
 export default mongoose.model('User', userSchema);

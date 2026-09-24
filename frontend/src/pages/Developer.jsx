@@ -38,7 +38,6 @@ const Developer = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [keys, setKeys] = useState([]);
   const [metrics, setMetrics] = useState(null);
-  const [legacyKey, setLegacyKey] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   // Modals state
@@ -59,7 +58,6 @@ const Developer = () => {
       setKeys(keysRes.keys || []);
       setMetrics(metricsRes.metrics || null);
       setCurrentUser(userRes.user);
-      setLegacyKey(userRes.user?.apiKey || '');
     } catch (err) {
       toast.error('Failed to load developer portal state');
     } finally {
@@ -130,7 +128,7 @@ const Developer = () => {
   };
 
   const defaultKeyForPlayground =
-    keys.find((k) => k.status === 'active')?.maskedKey || legacyKey;
+    keys.find((k) => k.status === 'active')?.maskedKey || '';
 
   return (
     <>
@@ -375,7 +373,7 @@ const Developer = () => {
         {activeTab === 'snippets' && (
           <ApiCodeSnippets
             apiKey={
-              keys.find((k) => k.status === 'active')?.maskedKey || legacyKey || 'YOUR_API_KEY'
+              keys.find((k) => k.status === 'active')?.maskedKey || 'YOUR_API_KEY'
             }
           />
         )}
