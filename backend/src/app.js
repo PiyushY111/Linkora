@@ -63,14 +63,21 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-// The bulk link-creation endpoint (up to 1,000 URLs per request) needs a
-// larger body allowance than every other route. This must be registered
-// before the general parser below: body-parser skips re-parsing once
-// `req._body` is set, so the first matching parser in the chain wins.
+// Body size limits. Most routes take small JSON, so the default is 100 KB.
+// Two routes need more, and their parsers must be registered first:
+// body-parser skips re-parsing once `req._body` is set, so the first
+// matching parser wins.
+// - Bulk link creation takes up to 1,000 URLs per request.
+// - Dashboard link create/update can carry a QR logo as a data URL in
+//   qrConfig (the UI allows a 2 MB image, about 2.7 MB as base64).
+const DEFAULT_BODY_LIMIT = '100kb';
 app.use('/api/public/v1/links/bulk', express.json({ limit: '2mb' }));
+const qrLogoBody = express.json({ limit: '3mb' });
+app.post('/api/links', qrLogoBody);
+app.put('/api/links/:id', qrLogoBody);
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(express.json({ limit: DEFAULT_BODY_LIMIT }));
+app.use(express.urlencoded({ limit: DEFAULT_BODY_LIMIT, extended: true }));
 
 // Health check (kept for backward compatibility)
 app.get('/health', (req, res) => {

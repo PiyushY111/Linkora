@@ -79,7 +79,7 @@ export function toClientError(err) {
   }
 
   if (err?.type === 'entity.too.large' || err?.status === 413) {
-    return { status: 413, message: 'Request payload too large (maximum 10MB)' };
+    return { status: 413, message: 'Request payload too large' };
   }
 
   if (err?.name === 'ValidationError' && err.errors) {
