@@ -36,12 +36,6 @@ const userSchema = new mongoose.Schema(
         ref: 'Link',
       },
     ],
-    customDomains: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'CustomDomain',
-      },
-    ],
     totalClicks: {
       type: Number,
       default: 0,
