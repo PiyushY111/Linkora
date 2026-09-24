@@ -7,15 +7,20 @@ export const validateUrl = (url) => {
   }
 };
 
+/**
+ * The client's IP address, for rate limiting, audit logs and analytics.
+ *
+ * Uses req.ip, which Express derives from X-Forwarded-For according to the
+ * `trust proxy` setting (TRUST_PROXY_HOPS): it skips exactly as many
+ * proxy-appended entries as there are trusted proxies. Headers like
+ * CF-Connecting-IP, X-Real-IP, or the first X-Forwarded-For entry are
+ * whatever the client chose to send unless a proxy overwrote them, so
+ * trusting them directly lets anyone pick their own rate-limit key.
+ * Behind a CDN plus a load balancer, set TRUST_PROXY_HOPS to the number of
+ * hops (e.g. 2).
+ */
 export const getClientIp = (req) => {
-  const raw =
-    req.headers['cf-connecting-ip'] ||
-    req.headers['x-real-ip'] ||
-    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-    req.socket?.remoteAddress ||
-    req.connection?.remoteAddress ||
-    req.ip ||
-    '127.0.0.1';
+  const raw = req.ip || req.socket?.remoteAddress || '';
   return String(raw).replace(/^::ffff:/, '');
 };
 
