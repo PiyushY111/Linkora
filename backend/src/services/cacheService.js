@@ -435,7 +435,7 @@ export async function simulateThunderingHerd(concurrency = 50) {
 
   // Seed an entry that is mathematically near expiration so XFetch activates
   await setLinkMeta(testKey, {
-    originalUrl: 'https://linkora.dev/benchmark',
+    originalUrl: 'https://example.com/benchmark',
     isActive: true,
     expiryDate: 0,
     passwordHash: '',

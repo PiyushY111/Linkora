@@ -106,7 +106,7 @@ export async function executeDelivery(
 
   const headers = {
     'Content-Type': 'application/json',
-    'User-Agent': 'Linkora-Webhooks/1.0 (+https://linkora.dev)',
+    'User-Agent': 'Linkora-Webhooks/1.0 (+https://github.com/PiyushY111/Linkora)',
     'Linkora-Delivery': deliveryId,
     'Linkora-Event': event,
     'Linkora-Signature': sigInfo.signature,
@@ -383,7 +383,7 @@ export async function testWebhookEndpoint(webhookId, userId, eventType = 'endpoi
     case 'endpoint.test':
     default:
       sampleData = {
-        message: 'This is a test webhook event from Linkora Enterprise.',
+        message: 'This is a test webhook event from Linkora.',
         testTimestamp: new Date().toISOString(),
         status: 'operational',
       };

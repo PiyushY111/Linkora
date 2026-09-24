@@ -393,7 +393,7 @@ export const getOpenApiSpec = (req, res) => {
       title: 'Linkora Public REST API',
       version: '1.0.0',
       description: 'Enterprise API for short link creation, management, analytics, and bulk provisioning.',
-      contact: { name: 'Linkora Developer Support', email: 'support@linkora.dev' },
+      contact: { name: 'Linkora', url: 'https://github.com/PiyushY111/Linkora' },
     },
     servers: [{ url: `${env.FRONTEND_URL}/api/public/v1`, description: 'Current Environment API Server' }],
     security: [{ ApiKeyAuth: [] }],

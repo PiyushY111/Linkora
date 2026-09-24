@@ -1453,7 +1453,7 @@ export default function CreateLinkModal({ open, onClose }) {
                     )}
                     <div className="p-3.5 space-y-1">
                       <div className="text-[10px] uppercase font-mono text-paper-500">
-                        {domain || 'linkora.dev'}
+                        {domain || 'example.com'}
                       </div>
                       <h5 className="font-bold text-xs text-paper-100 truncate">
                         {formData.ogTitle || formData.title || 'Linkora Short Link'}
