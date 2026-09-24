@@ -67,13 +67,11 @@ delete them either.
 
 ## Webhooks
 
-### 5. Webhook retries are neither durable nor idempotent for receivers (Medium)
+### 5. Webhook retries are not durable (Medium)
 
 Retries are `setTimeout` timers in the process that made the first attempt,
-so a restart loses every pending retry. Each attempt also generates a new
-event `id` (`evt_...`), so a receiver cannot recognise a retry of an event
-it already processed. The 2-hour delay in `RETRY_DELAYS_MS` is never used
-(five attempts use the first four delays).
+so a restart loses every pending retry. (Every attempt and manual replay of
+a delivery does carry the same event `id`, so receivers can deduplicate.)
 
 - Where: `backend/src/services/webhookService.js` (`executeDelivery`)
 

@@ -10,8 +10,11 @@ import { ssrfSafeFetch, BlockedDestinationError } from '../lib/ssrfSafeDispatche
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
-// Exponential backoff delays: 10s, 1m, 5m, 30m, 2h
-const RETRY_DELAYS_MS = [10000, 60000, 300000, 1800000, 7200000];
+// Five attempts in total. RETRY_DELAYS_MS[n] is the wait (plus jitter)
+// before attempt n + 2.
+const MAX_ATTEMPTS = 5;
+const RETRY_DELAYS_MS = [10000, 60000, 300000, 1800000];
+const RETRY_JITTER_MS = 2000;
 
 const DELIVERY_TIMEOUT_MS = 10000;
 const METADATA_HOSTNAMES = ['metadata.google.internal'];
@@ -80,7 +83,20 @@ function describeDeliveryError(err, url) {
 }
 
 /**
- * Executes a single HTTP webhook delivery attempt, records telemetry and response preview.
+ * Executes a single HTTP webhook delivery attempt, records telemetry and
+ * response preview, and schedules the next attempt on failure.
+ *
+ * Every attempt of one delivery, and a manual replay of it, sends the same
+ * event `id` and `createdAt`, so a receiver can recognise an event it has
+ * already processed. The signature timestamp is fresh for each attempt.
+ *
+ * @param {{
+ *   lookup?: typeof dns.promises.lookup,
+ *   allowPrivateNetworks?: boolean,
+ *   schedule?: (fn: () => Promise<unknown>, delayMs: number) => unknown,
+ *   eventId?: string,
+ *   createdAt?: string,
+ * }} [options] - `schedule` is injectable so tests can run retries directly.
  */
 export async function executeDelivery(
   webhook,
@@ -88,16 +104,21 @@ export async function executeDelivery(
   data,
   attempt = 1,
   existingDeliveryId = null,
-  { lookup = dns.promises.lookup, allowPrivateNetworks = env.WEBHOOK_ALLOW_PRIVATE_TARGETS } = {}
+  options = {}
 ) {
+  const {
+    lookup = dns.promises.lookup,
+    allowPrivateNetworks = env.WEBHOOK_ALLOW_PRIVATE_TARGETS,
+    schedule = setTimeout,
+  } = options;
   const deliveryId = existingDeliveryId || `del_${crypto.randomBytes(12).toString('hex')}`;
-  const eventId = `evt_${crypto.randomBytes(12).toString('hex')}`;
+  const eventId = options.eventId || `evt_${crypto.randomBytes(12).toString('hex')}`;
   const now = Date.now();
 
   const payload = {
     id: eventId,
     event,
-    createdAt: new Date(now).toISOString(),
+    createdAt: options.createdAt || new Date(now).toISOString(),
     data,
   };
 
@@ -156,7 +177,7 @@ export async function executeDelivery(
   }
 
   const latencyMs = Date.now() - startTime;
-  const isFinalAttempt = attempt >= RETRY_DELAYS_MS.length;
+  const isFinalAttempt = attempt >= MAX_ATTEMPTS;
   const deliveryStatus = isSuccess ? 'success' : isFinalAttempt ? 'failed' : 'retrying';
 
   // Persist delivery log to MongoDB
@@ -211,12 +232,16 @@ export async function executeDelivery(
 
       // Schedule retry with exponential backoff if not final attempt
       if (!isFinalAttempt) {
-        const nextDelay = RETRY_DELAYS_MS[attempt - 1] + Math.floor(Math.random() * 2000);
-        setTimeout(() => {
-          executeDelivery(webhook, event, data, attempt + 1, deliveryId).catch((retryErr) =>
-            logger.error({ err: retryErr, webhookId: webhook._id }, 'Failed during webhook retry execution')
-          );
-        }, nextDelay);
+        // In-process timer: lost if this process restarts (docs/KNOWN_BUGS.md).
+        const nextDelay = RETRY_DELAYS_MS[attempt - 1] + Math.floor(Math.random() * RETRY_JITTER_MS);
+        const retryOptions = { lookup, allowPrivateNetworks, schedule, eventId, createdAt: payload.createdAt };
+        schedule(
+          () =>
+            executeDelivery(webhook, event, data, attempt + 1, deliveryId, retryOptions).catch((retryErr) =>
+              logger.error({ err: retryErr, webhookId: webhook._id }, 'Failed during webhook retry execution')
+            ),
+          nextDelay
+        );
       } else {
         // Send to Dead Letter Queue (DLQ)
         logger.error({ webhookId: webhook._id, url: webhook.url }, 'Webhook delivery exhausted all retries; enqueued to DLQ');
@@ -410,12 +435,12 @@ export async function retryDelivery(deliveryId, userId) {
     throw new Error('Associated webhook endpoint no longer exists');
   }
 
-  return await executeDelivery(
-    webhook,
-    delivery.event,
-    delivery.requestPayload?.data || {},
-    (delivery.attempt || 1) + 1
-  );
+  // Same event id and createdAt as the original, so a receiver that did
+  // process it can tell this is a replay.
+  return await executeDelivery(webhook, delivery.event, delivery.requestPayload?.data || {}, (delivery.attempt || 1) + 1, null, {
+    eventId: delivery.requestPayload?.id,
+    createdAt: delivery.requestPayload?.createdAt,
+  });
 }
 
 /**

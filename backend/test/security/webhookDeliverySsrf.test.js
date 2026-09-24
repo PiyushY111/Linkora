@@ -9,7 +9,7 @@ import WebhookDelivery from '../../src/models/WebhookDelivery.js';
 import { closeRedis } from '../../src/services/cacheService.js';
 
 // Passed as the `attempt` argument so a failing delivery is treated as the
-// final attempt (matches RETRY_DELAYS_MS.length) and does NOT schedule a
+// final attempt (MAX_ATTEMPTS in webhookService.js) and does NOT schedule a
 // background retry via setTimeout — which would otherwise fire ~10s after
 // this test file's Mongo/Redis connections are already closed.
 const FINAL_ATTEMPT = 5;
