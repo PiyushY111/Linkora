@@ -18,6 +18,7 @@ import { getClientIp } from './utils/helpers.js';
 import authRoutes from './routes/auth.js';
 import linkRoutes from './routes/links.js';
 import analyticsRoutes from './routes/analytics.js';
+import redirectRoutes from './routes/redirect.js';
 import workspaceRoutes from './routes/workspaces.js';
 import webhookRoutes from './routes/webhooks.js';
 import publicApiRoutes from './routes/publicApi.js';
@@ -141,8 +142,8 @@ app.get('/metrics', metricsAuth, metricsHandler);
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/links', linkRoutes);
-app.use('/api/r', analyticsRoutes); // Redirect route & analytics
-app.use('/api/analytics', analyticsRoutes); // Analytics API
+app.use('/api/r', redirectRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/public', publicApiRoutes);
