@@ -8,7 +8,7 @@ import {
   toggleLinkStatus,
 } from '../controllers/linkController.js';
 import { protect } from '../middleware/auth.js';
-import { validateCreateLink, handleValidationErrors } from '../middleware/validation.js';
+import { validateCreateLink } from '../middleware/validation.js';
 import { linkCreationRateLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
@@ -22,7 +22,6 @@ router.post(
   protect,
   linkCreationRateLimiter,
   validateCreateLink,
-  handleValidationErrors,
   createLink
 );
 router.get('/', protect, getUserLinks);

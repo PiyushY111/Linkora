@@ -53,15 +53,6 @@ export function getCacheRedis() {
   return getRedis();
 }
 
-/** Test/entrypoint hook: replace the client (e.g. with a stub or a duplicate). */
-export function setActiveRedisClient(client) {
-  activeClient = client;
-}
-
-export function resetActiveRedisClient() {
-  activeClient = null;
-}
-
 /** Closes the shared client, if one was ever created. */
 export async function closeRedis() {
   if (!activeClient) return;
