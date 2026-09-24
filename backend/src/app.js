@@ -10,6 +10,7 @@ import { httpLogger } from './config/logger.js';
 import { errorHandler, notFound } from './middleware/error.js';
 import { metricsMiddleware, metricsAuth, metricsHandler } from './middleware/metrics.js';
 import { getRedis } from './services/cacheService.js';
+import { isAllowedOrigin } from './config/allowedOrigins.js';
 
 import { getClientIp } from './utils/helpers.js';
 
@@ -39,20 +40,11 @@ app.use(httpLogger);
 
 // Middleware
 app.use(helmet());
+// Credentialed CORS only for explicitly allowed origins (FRONTEND_URL,
+// ALLOWED_ORIGINS, and localhost outside production). Requests with no
+// Origin (same-origin, curl, server-to-server) aren't CORS requests at all.
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    let allowedHost = null;
-    try {
-      allowedHost = new URL(env.FRONTEND_URL).origin;
-    } catch {
-      allowedHost = null;
-    }
-    if (origin === allowedHost || origin.endsWith('.vercel.app') || origin === 'http://localhost:3000' || origin === 'http://localhost:5173') {
-      return callback(null, true);
-    }
-    callback(null, false);
-  },
+  origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin)),
   credentials: true,
 }));
 app.use(cookieParser());

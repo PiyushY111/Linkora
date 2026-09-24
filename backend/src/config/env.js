@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { parseAllowedOrigins } from '../lib/originPolicy.js';
 
 dotenv.config();
 
@@ -21,6 +22,21 @@ const envSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(5000),
     FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+    // Extra browser origins allowed to make credentialed requests, besides
+    // FRONTEND_URL: comma-separated bare origins, no wildcards
+    // (lib/originPolicy.js).
+    ALLOWED_ORIGINS: z
+      .string()
+      .optional()
+      .default('')
+      .transform((value, ctx) => {
+        try {
+          return parseAllowedOrigins(value);
+        } catch (err) {
+          ctx.addIssue({ code: 'custom', message: err.message });
+          return z.NEVER;
+        }
+      }),
     COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).optional(),
     COOKIE_SECURE: z
       .enum(['true', 'false'])
