@@ -108,25 +108,29 @@ export const refresh = async (req, res) => {
     throw new UnauthorizedError('Invalid or expired refresh token');
   }
 
+  // The consumed token is already spent; if its account has since been
+  // deleted, issue nothing (the family is not re-issued, so it ends here).
+  const user = await User.findById(consumed.userId).select('name email');
+  if (!user) {
+    clearRefreshTokenCookie(res);
+    throw new UnauthorizedError('Invalid or expired refresh token');
+  }
+
   const token = generateToken(consumed.userId);
   // Reuse the same family across rotations so a later replay of this (now
   // spent) token is recognized as reuse and revokes the whole session chain.
   const newRefreshToken = await issueRefreshToken(consumed.userId, consumed.familyId);
   setRefreshTokenCookie(res, newRefreshToken);
 
-  const user = await User.findById(consumed.userId).select('name email');
-
   res.status(200).json({
     success: true,
     token,
     expiresIn: env.JWT_ACCESS_TOKEN_TTL,
-    user: user
-      ? {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-        }
-      : undefined,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+    },
   });
 };
 
