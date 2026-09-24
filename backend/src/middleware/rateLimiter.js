@@ -202,6 +202,12 @@ async function evalTokenBucket(key, capacity, refillPerSecond, cost) {
 }
 
 /**
+ * The public API's token bucket: bursts of up to 30 requests, 10 per second
+ * sustained. GET /api/public/v1/usage reports these same values.
+ */
+export const PUBLIC_API_RATE_LIMIT = Object.freeze({ capacity: 30, refillPerSecond: 10 });
+
+/**
  * One bucket per API key (by its database ID, never the secret itself,
  * which would otherwise sit in plain text in the Redis keyspace), per user
  * for dashboard-session requests without a key, else per client IP.

@@ -9,6 +9,7 @@ import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepos
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { ValidationError, NotFoundError, toClientError } from '../lib/errors.js';
+import { PUBLIC_API_RATE_LIMIT } from '../middleware/rateLimiter.js';
 
 const MAX_BULK_SIZE = 1000;
 const VALIDATION_CONCURRENCY = 50;
@@ -360,8 +361,6 @@ export const bulkCreateLinks = async (req, res) => {
  * Telemetry endpoint returning rate limit and quota information.
  */
 export const getUsage = async (req, res) => {
-  const capacity = req.apiKeyDoc?.rateLimit?.capacity || 20;
-  const refillRate = req.apiKeyDoc?.rateLimit?.refillPerSecond || 5;
 
   res.status(200).json({
     success: true,
@@ -375,8 +374,8 @@ export const getUsage = async (req, res) => {
     },
     rateLimits: {
       algorithm: 'token-bucket',
-      burstCapacity: capacity,
-      refillPerSecond: refillRate,
+      burstCapacity: PUBLIC_API_RATE_LIMIT.capacity,
+      refillPerSecond: PUBLIC_API_RATE_LIMIT.refillPerSecond,
       standardWindow: '1 second',
     },
   });

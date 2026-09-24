@@ -73,3 +73,21 @@ describe('bucket TTL', () => {
     }
   });
 });
+
+describe('GET /api/public/v1/usage', () => {
+  it('reports the limits the token bucket actually enforces, with or without an API key', async () => {
+    // A user with no API key at all: the dashboard-session path.
+    const { user: keyless, token: keylessToken } = await createTestUser();
+    try {
+      const res = await request(app).get('/api/public/v1/usage').set(authHeader(keylessToken));
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(Number(res.headers['x-ratelimit-limit']), res.body.rateLimits.burstCapacity);
+      assert.deepStrictEqual(
+        { burstCapacity: res.body.rateLimits.burstCapacity, refillPerSecond: res.body.rateLimits.refillPerSecond },
+        { burstCapacity: 30, refillPerSecond: 10 }
+      );
+    } finally {
+      await mongoose.model('User').deleteOne({ _id: keyless._id });
+    }
+  });
+});
