@@ -148,3 +148,57 @@ describe('CreateLinkModal: success', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe('CreateLinkModal: every tab', () => {
+  it.each([
+    [/general details/i, /destination url/i],
+    [/utm studio/i, /utm source/i],
+    [/security & access/i, /enable password/i],
+    [/device targeting/i, /ios \/ iphone destination/i],
+    [/a\/b split/i, /enable a\/b test/i],
+    [/social preview/i, /social card title/i],
+  ])('%s shows its controls', async (tabName, control) => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(tab(tabName));
+    expect(screen.getAllByText(control).length).toBeGreaterThan(0);
+  });
+
+  it('a UTM preset is applied to the destination and sent as utm', async () => {
+    linkService.createLink.mockResolvedValue({ link: createdLink });
+    const user = userEvent.setup();
+    renderModal();
+    await user.type(screen.getByLabelText(/destination/i), 'https://example.com/landing');
+    await user.click(tab(/utm studio/i));
+    await user.click(screen.getByRole('button', { name: 'Google Ads' }));
+    expect(screen.getByText('https://example.com/landing?utm_source=google&utm_medium=cpc')).toBeInTheDocument();
+    await user.click(createButton());
+
+    await waitFor(() => expect(linkService.createLink).toHaveBeenCalled());
+    expect(linkService.createLink.mock.calls[0][0]).toMatchObject({
+      originalUrl: 'https://example.com/landing?utm_source=google&utm_medium=cpc',
+      utm: { source: 'google', medium: 'cpc', campaign: '', term: '', content: '' },
+    });
+  });
+
+  it('an A/B test with an empty variant URL is rejected before sending', async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.type(screen.getByLabelText(/destination/i), 'https://example.com/landing');
+    await user.click(tab(/a\/b split/i));
+    await user.click(screen.getByRole('button', { name: /enable a\/b test/i }));
+    expect(screen.getByText('Total Traffic Allocation: 100%')).toBeInTheDocument();
+    await user.click(createButton());
+    expect(await screen.findByText('Please provide a destination URL for Variant A (Control)')).toBeInTheDocument();
+    expect(linkService.createLink).not.toHaveBeenCalled();
+  });
+
+  it('the footer names the active tab', async () => {
+    const user = userEvent.setup();
+    renderModal();
+    const footer = createButton().closest('div').parentElement;
+    expect(footer).toHaveTextContent('General');
+    await user.click(tab(/utm studio/i));
+    expect(footer).toHaveTextContent('Attribution');
+  });
+});
