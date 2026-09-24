@@ -1,413 +1,423 @@
-# Linkora — Deep Distributed Systems Architecture & Engineering Reference
+# Linkora Architecture
 
-This document provides a comprehensive, exhaustive breakdown of Linkora's internal distributed systems design, data persistence topologies, cryptographic security invariants, and algorithmic implementations.
+How Linkora serves redirects, ingests clicks, builds analytics and secures sessions and outbound requests. Every mechanism described here maps to code in `backend/src`; file names are given where it helps.
 
 ---
 
 ## Table of Contents
 
-- [1. End-to-End System Architecture](#1-end-to-end-system-architecture)
-- [2. Write Amplification Mitigation & Dual-Path Ingestion](#2-write-amplification-mitigation--dual-path-ingestion)
-- [3. Redis Stream Processing & Exactly-Once Idempotency Ledger](#3-redis-stream-processing--exactly-once-idempotency-ledger)
-- [4. Pre-Aggregated Rollups & Cardinality Bounding](#4-pre-aggregated-rollups--cardinality-bounding)
-- [5. Probabilistic Early Expiration (XFetch) Cache Defense](#5-probabilistic-early-expiration-xfetch-cache-defense)
-- [6. Collision-Resilient Monotonic Sequence Permutation](#6-collision-resilient-monotonic-sequence-permutation)
-- [7. Complete Database & Persistence Schema](#7-complete-database--persistence-schema)
+- [1. System Overview](#1-system-overview)
+- [2. Redirect Path and Click Ingestion](#2-redirect-path-and-click-ingestion)
+- [3. Stream Processing and Idempotent Writes](#3-stream-processing-and-idempotent-writes)
+- [4. Pre-Aggregated Rollups and Bounded Dimensions](#4-pre-aggregated-rollups-and-bounded-dimensions)
+- [5. XFetch Probabilistic Early Expiration](#5-xfetch-probabilistic-early-expiration)
+- [6. Short-Code Generation](#6-short-code-generation)
+- [7. Data Model](#7-data-model)
   - [7.1 MongoDB Collections](#71-mongodb-collections)
-  - [7.2 Redis In-Memory Key Space Architecture](#72-redis-in-memory-key-space-architecture)
-- [8. Zero-Trust Security, Token Rotation & Threat Modeling](#8-zero-trust-security-token-rotation--threat-modeling)
-  - [8.1 Refresh Token Rotation & Token Family Revocation](#81-refresh-token-rotation--token-family-revocation)
-  - [8.2 Partitioned Cross-Origin Cookies (CHIPS)](#82-partitioned-cross-origin-cookies-chips)
-  - [8.3 Multi-Layer SSRF Defense & DNS Pinning](#83-multi-layer-ssrf-defense--dns-pinning)
-  - [8.4 Cryptographic Webhook Signing & Circuit Breakers](#84-cryptographic-webhook-signing--circuit-breakers)
-  - [8.5 Reverse-Proxy Keyed Token-Bucket Rate Limiter](#85-reverse-proxy-keyed-token-bucket-rate-limiter)
-- [9. Production Topologies & Microservices Orchestration](#9-production-topologies--microservices-orchestration)
+  - [7.2 Redis Keys](#72-redis-keys)
+- [8. Security Design](#8-security-design)
+  - [8.1 Refresh-Token Rotation and Family Revocation](#81-refresh-token-rotation-and-family-revocation)
+  - [8.2 Cross-Site Refresh Cookie (CHIPS)](#82-cross-site-refresh-cookie-chips)
+  - [8.3 SSRF Defense and DNS Pinning](#83-ssrf-defense-and-dns-pinning)
+  - [8.4 Webhook Signing, Retries and Circuit Breakers](#84-webhook-signing-retries-and-circuit-breakers)
+  - [8.5 Rate Limiting](#85-rate-limiting)
+- [9. Deployment Topologies](#9-deployment-topologies)
 
 ---
 
-## 1. End-to-End System Architecture
+## 1. System Overview
 
 ```
-[ Inbound HTTP Traffic ]
-           |
-           v
+[ Inbound HTTP ]
+       |
+       v
 +------------------------------------------------------------------------+
-| 1. EDGE & REVERSE PROXY LAYER (Cloudflare / Nginx / ALB)              |
-|    - SSL/TLS Termination                                               |
-|    - Client IP Normalization (CF-Connecting-IP, X-Real-IP)             |
-|    - Edge Caching of Static Assets & CORS Preflight Handling           |
+| OPTIONAL REVERSE PROXY (deployment-specific; not part of this repo)    |
+|   TLS termination. Express trusts TRUST_PROXY_HOPS proxy hops.         |
 +------------------------------------------------------------------------+
-                                   |
-                                   v
+       |
+       v
 +------------------------------------------------------------------------+
-| 2. API GATEWAY & SECURITY INGRESS (Express ESM / Node 22 LTS)          |
-|    - Helmet HTTP Security Headers (Strict CSP, HSTS, Sniff Prevention) |
-|    - IP-Keyed Token-Bucket Rate Limiter (Sliding Window in Redis)      |
-|    - CSRF Protection & Explicit Origin Validation                      |
-|    - JWT Access Token Verification & Scoped API Key Authenticator      |
+| EXPRESS API (ESM, Node 22)                         src/app.js          |
+|   - Helmet security headers (CSP, HSTS, nosniff, frame-ancestors)      |
+|   - CORS allowlist                                                     |
+|   - In-process rate limiter (express-rate-limit) on every route        |
+|   - Redis sliding-window limiter on auth, unlock and link creation     |
+|   - Origin/Referer check on cookie-authenticated refresh and logout    |
+|   - JWT auth (dashboard) and scoped API keys (public API)              |
 +------------------------------------------------------------------------+
-         |                                           |
-  (Redirect Route)                            (API / Admin Routes)
-         |                                           |
-         v                                           v
-+-----------------------+                 +------------------------------+
-| 3. REDIRECT ENGINE    |                 | 4. CORE CONTROLLERS          |
-| - Fast Path Resolution|                 | - Link Provisioning & CRUD   |
-| - Device OS Routing   |                 | - Auth / Token Lifecycle     |
-| - A/B Split Engine    |                 | - Webhook Registration       |
-+-----------------------+                 | - Analytics Query Gateway    |
-         |                                +------------------------------+
-         |                                           |
-         +-------------------+   +-------------------+
-                             |   |
-                             v   v
+       |                                          |
+  GET /api/r/:shortCode                    /api/* (links, auth, analytics,
+       |                                    webhooks, workspaces, public API)
+       v                                          v
++-----------------------------+      +-------------------------------------+
+| REDIRECT (analyticsController.redirectLink)                             |
+|   cache read, status/expiry, |      | CONTROLLERS                         |
+|   password unlock, click cap,|      |   link CRUD, auth, analytics reads, |
+|   A/B + per-OS routing       |      |   webhooks, API keys                |
++-----------------------------+      +-------------------------------------+
+       |                                          |
+       v                                          v
 +------------------------------------------------------------------------+
-| 5. IN-MEMORY CACHING & BUFFERING TIER (Redis 7.0)                      |
-|    - link:meta:<shortCode>    -> Serialized Link Metadata (TTL 1h)     |
-|    - link:usage:<linkId>      -> Atomic In-Memory Hit Counter          |
-|    - ratelimit:<ip>           -> Sliding Window Token Bucket Keys      |
-|    - refresh:family:<id>      -> Cryptographic Refresh Token Chains    |
-|    - stream:clicks            -> Capped Append-Only Stream (MAXLEN 10k)|
+| REDIS (one database; see docs/redis-keys.md)                           |
+|   link:meta:{code}     cached link (hash, TTL 1h; negative 120s)        |
+|   link:usage:{linkId}  click-cap counter (7-day sliding TTL)            |
+|   ratelimit:*          limiter state                                    |
+|   refresh:family:*     refresh-token families (TTL 30d)                 |
+|   stream:clicks        click stream (MAXLEN ~ 10000)                    |
 +------------------------------------------------------------------------+
-         |                                           |
-   (Cache Miss)                                (XADD stream:clicks)
-         |                                           |
-         v                                           v
-+-----------------------+                 +------------------------------+
-| 6. PRIMARY DATA STORE |                 | 7. ASYNC CONSUMER WORKER     |
-|    (MongoDB 7.0)      |                 | - XREADGROUP Consumer Fleet  |
-| - Strict Tenant Scope |                 | - Deduplication Ledger Check |
-| - Atomic Counters     |                 | - IP Geo & Device Parsing    |
-| - Links & Users       |                 | - Batch Pipeline Flush       |
-+-----------------------+                 +------------------------------+
-                                                     |
-                         +---------------------------+---------------------------+
-                         |                                                       |
-                         v                                                       v
-+-------------------------------------------------+     +----------------------------------+
-| 8. ANALYTICS STORAGE SUBSYSTEM                  |     | 9. WEBHOOK DISPATCH SUBSYSTEM    |
-| - click_events: MongoDB Time-Series Collection  |     | - SSRF Filter (RFC 1918 Block)   |
-| - link_stats_hourly: Pre-aggregated Hour Buckets|     | - Opossum Circuit Breakers       |
-| - link_stats_daily: Daily Buckets (HyperLogLog) |     | - HMAC-SHA256 Payload Signature  |
-| - processed_events: Distributed Idempotency Log |     | - Exponential Backoff with DLQ   |
-+-------------------------------------------------+     +----------------------------------+
+       |  cache miss: one findOne              |  XADD stream:clicks
+       v                                       v
++-----------------------------+      +-------------------------------------+
+| MONGODB                     |      | CLICK CONSUMER (src/consumers/      |
+|   links, users, counters,   |<-----|   clickConsumer.js)                 |
+|   api keys, webhooks, ...   |      |   XREADGROUP (group click-consumers)|
+|   click_events (time-series)|      |   GeoIP + UA parse + bot flag       |
+|   link_stats_hourly / daily |      |   idempotent batch write, then XACK |
+|   processed_events          |      |   XAUTOCLAIM for stale entries      |
++-----------------------------+      +-------------------------------------+
+                                                  |
+                                                  v
+                                     +-------------------------------------+
+                                     | WEBHOOK DELIVERY (webhookService.js)|
+                                     |   SSRF re-check + DNS-pinned connect|
+                                     |   HMAC-SHA256 signature             |
+                                     |   retries, then DLQ stream          |
+                                     +-------------------------------------+
 ```
 
 ---
 
-## 2. Write Amplification Mitigation & Dual-Path Ingestion
+## 2. Redirect Path and Click Ingestion
 
-Standard URL shorteners commit a relational or document write on every inbound redirect to update click counts and log visitor telemetry. Under flash crowds (e.g. 50,000 requests per second), this architecture rapidly collapses due to disk IOPS saturation, connection pool exhaustion, and lock contention on the hot link record.
+A shortener that writes to its database on every redirect puts a write, and contention on the hot link's document, on the latency path of every click. Linkora splits the redirect from analytics persistence.
 
-Linkora decouples redirection latency from analytical telemetry via a **Dual-Path Ingestion Architecture**:
+1. **Redirect** (`GET /api/r/:shortCode`, `redirectLink` in `src/controllers/analyticsController.js`):
+   - Reads the cached link with `HGETALL link:meta:{shortCode}`. On a miss it reads MongoDB once (`findOne` by `shortCode` or `customAlias`, read preference `nearest`), fills the cache, and times that read as XFetch's delta (section 5). An unknown code gets a 120-second negative cache entry.
+   - Checks active status and expiry against the cached entry. Password-protected links require a single-use unlock token (redeemed with `GETDEL`). Links with `maxClicks` go through an atomic Lua counter (`link:usage:{linkId}`).
+   - Picks the destination: a sticky weighted A/B variant (FNV-1a hash of IP and user agent into 100 buckets) or the iOS/Android URL chosen by user agent.
+   - Responds with `307` and `Cache-Control: no-store`, then appends the click with `XADD stream:clicks MAXLEN ~ 10000 * ...` without awaiting it.
+   - A cache hit for a plain link sends exactly `HGETALL` and `XADD` to Redis and makes no MongoDB calls (`test/integration/redisCommandBudget.test.js`). Some paths add an unawaited MongoDB write after the response: A/B-test links `$inc` the chosen variant's counter, a link that serves its last allowed click is deactivated, and an XFetch refresh re-reads the link.
 
-1. **Synchronous Fast Path (Redirection Path)**:
-   - Request enters `GET /api/r/:shortCode`.
-   - Redis L1 cache is probed via `GET cache:link:{shortCode}`.
-   - If hit, password requirements, usage caps, and expiration timestamps are validated entirely in memory.
-   - Active device targeting (iOS deep links vs Android intents) or weighted A/B variant selections are evaluated in sub-millisecond compute.
-   - An event payload containing raw metadata (timestamp, IP, user-agent, referer, link ID) is dispatched asynchronously to the Redis stream via `XADD stream:clicks MAXLEN ~ 100000 * ...`.
-   - HTTP `307 Temporary Redirect` is immediately returned to the client. The client connection terminates with zero database disk I/O.
-
-2. **Asynchronous Ingestion Path (Worker Fleet)**:
-   - Dedicated worker processes (or in-process embedded consumers) poll `stream:clicks` using Redis consumer groups (`XREADGROUP GROUP click-consumers ...`).
-   - Batches of up to 500 click events are processed in micro-batches, enriching the raw events with GeoIP lookups, device signatures, and bot classification heuristics.
-   - Batches are written to MongoDB using atomic bulk operations (`bulkWrite`), consolidating hundreds of distinct write operations into a single network round-trip.
+2. **Ingestion** (`src/consumers/clickConsumer.js`):
+   - The consumer reads `stream:clicks` through the consumer group `click-consumers` (`XREADGROUP ... COUNT 500 BLOCK n`). It runs as its own process (`WORKER_MODE=separate`, `npm run consumer`) or inside the API process (`WORKER_MODE=embedded`, started by `src/server.js`). Several consumers can share the group.
+   - Each event is enriched: GeoIP (MaxMind GeoLite2 when `GEOIP_DB_PATH` points at a `.mmdb` file, otherwise the bundled `geoip-lite` dataset), user-agent parsing (`ua-parser-js`), a SHA-256 hash of the IP, and the bot flag set at redirect time.
+   - The batch is written to MongoDB with unordered `bulkWrite`/`insertMany` calls (section 3), and only then acknowledged with `XACK`. An event that fails enrichment stays unacknowledged and is retried.
+   - While idle, the blocking read doubles its `BLOCK` from 1 s up to 30 s, and stale pending entries are reclaimed with `XAUTOCLAIM` every 5 minutes, to keep the idle Redis command count low (`docs/redis-keys.md`, "Command budget").
 
 ---
 
-## 3. Redis Stream Processing & Exactly-Once Idempotency Ledger
+## 3. Stream Processing and Idempotent Writes
 
-When operating distributed stream consumers, node failures or network partitions can trigger worker restarts while batches are in flight. To prevent over-counting clicks and duplicating telemetry, Linkora employs a **Two-Tier Idempotency Mechanism**:
+A consumer can crash mid-batch, or a batch write can fail, and the entries are then redelivered via `XAUTOCLAIM`. MongoDB time-series collections can't be written inside a multi-document transaction, so instead of a transaction every write is made idempotent on its own (`src/repositories/analytics/mongoAnalyticsWriter.js`). Delivery is at least once; the writes make each event apply once.
 
 ```
-[ Stream Entry (eventId: 1727161200000-0) ]
+[ Batch of stream entries (event ID = stream entry ID, e.g. 1727161200000-0) ]
                       |
                       v
-       [ ProcessedEvent Ledger Check ]
-       Does _id == eventId exist in state 'done'?
-             /                 \
-          (Yes)                (No)
-           /                     \
-   [ Skip Event ]          [ Write Ahead: state 'pending' ]
-   Already applied                 |
-                                   v
-                       [ Atomic Rollup Updates ]
-                       - $inc link_stats_hourly
-                       - $inc link_stats_daily
-                       - $push appliedClickIds (bounded)
-                                   |
-                                   v
-                       [ Commit Time-Series Event ]
-                       - insert click_events
-                                   |
-                                   v
-                       [ Mark Ledger state 'done' ]
-                                   |
-                                   v
-                       [ XACK stream:clicks ]
+       [ Claim in processed_events: insert { _id: eventId, state: 'pending' } ]
+         duplicate key + state 'done'  --> skip event
+         duplicate key + state 'pending' --> resume (earlier attempt was interrupted)
+                      |
+                      v
+       [ Insert raw row into click_events ]
+         (for resumed events, only if no row with that eventId exists)
+                      |
+                      v
+       [ link_stats_hourly and link_stats_daily: conditional $inc upserts ]
+       [ Link.clicks: conditional $inc ]
+         filter includes appliedIds / appliedClickIds: { $ne: eventId }
+         update pushes eventId into a window of the last 1,000 IDs
+                      |
+                      v
+       [ Unique visitors: PFADD into hll:visitors:{linkId}:{day}, then $max into the daily rollup ]
+                      |
+                      v
+       [ Mark processed_events 'done' ]  -->  [ XACK ]
 ```
 
-1. **Write-Ahead Ledger (`processed_events`)**:
-   - Every stream message has a deterministic Redis Stream Entry ID (e.g., `1727161200000-0`).
-   - Before executing bulk state transformations, the consumer registers the event IDs in the `processed_events` collection with a state of `pending`.
-   - If an entry already exists with `state: 'done'`, the event is acknowledged immediately via `XACK` and bypassed without re-applying metric increments.
+1. **Ledger (`processed_events`)**: the stream entry ID is the event ID and the ledger's `_id`, so claiming is an `insertMany` that fails with a duplicate key for anything seen before. Entries expire after 3 days, which covers the redelivery window (stale entries are reclaimed within minutes).
 
-2. **Sliding-Window Document Deduplication (`appliedClickIds`)**:
-   - The primary `Link` document retains a circular array of the most recent event IDs (`appliedClickIds`).
-   - Link counter increments execute conditionally:
-     ```javascript
-     await Link.updateOne(
-       { _id: linkId, appliedClickIds: { $ne: eventId } },
-       {
+2. **Per-document dedup windows**: each rollup document (`appliedIds`) and each `Link` (`appliedClickIds`) keeps the last 1,000 applied event IDs. The increment is conditional on the ID not being in the window, in the same single-document update:
+   ```javascript
+   { updateOne: {
+       filter: { _id: linkId, appliedClickIds: { $ne: eventId } },
+       update: {
          $inc: { clicks: 1 },
-         $push: { appliedClickIds: { $each: [eventId], $slice: -100 } }
-       }
-     );
-     ```
-   - If an event is redelivered via `XAUTOCLAIM` following an ungraceful consumer crash, the database update acts as a no-op, guaranteeing exact count precision.
+         $max: { lastAccessedAt: timestamp },
+         $push: { appliedClickIds: { $each: [eventId], $slice: -1000 } },
+       },
+   } }
+   ```
+   A redelivered event matches nothing and changes nothing. `CLICK_STREAM_BATCH_SIZE` is validated at startup to be at most 1,000 (`src/config/env.js`), so a batch can't push its own IDs out of the window.
+
+3. **Unique visitors**: `PFADD` is a set operation and the count is written with `$max`, so both are idempotent.
+
+**Limits.** Dedup covers redeliveries within the ledger's 3-day TTL and the 1,000-ID windows. Events trimmed from the capped stream before any consumer reads them are lost; the consumer acknowledges their IDs and logs the count.
 
 ---
 
-## 4. Pre-Aggregated Rollups & Cardinality Bounding
+## 4. Pre-Aggregated Rollups and Bounded Dimensions
 
-Querying millions of raw time-series documents using runtime aggregation pipelines (`$group`, `$match`, `$unwind`) causes unacceptable latency spikes and memory consumption on production analytical dashboards.
+Dashboards read rollups, not raw events. The consumer maintains two collections, one document per link per bucket:
 
-Linkora eliminates runtime aggregation latency by pre-computing rollups during stream consumption into two bounded collections:
-- `link_stats_hourly`: Hourly rollup buckets for high-resolution short-term telemetry (7-day retention).
-- `link_stats_daily`: Daily rollup buckets for long-term historical reporting (unbounded retention).
+- `link_stats_hourly`: hourly buckets, expired after `CLICK_EVENT_RETENTION_DAYS` (default 90).
+- `link_stats_daily`: daily buckets with no TTL, plus an approximate unique-visitor count from a Redis HyperLogLog.
 
-### Dimensionality Capping (Protection against Unbounded Document Growth)
-To prevent BSON document size overflow (16MB MongoDB limit) caused by high-cardinality referrers or user agents, Linkora enforces **Dimension Capping**:
-- Each dimensional category (browsers, devices, operating systems, countries, referrers) maintains a maximum of 20 unique keys per bucket document.
-- When inbound events exceed the 20-key threshold, the consumer automatically routes overflow metrics into a designated `other` key.
-- Each dimension tracks both total interactions (`a`) and human-verified traffic (`h`), allowing instant bot-filtering without separate collection scans.
+Raw events in `click_events` have the same retention as hourly rollups and serve only the CSV export and the recent-clicks feed.
 
----
+### Dimension caps
+Each rollup document stores breakdowns under `dims.<dimension>.<value>` as `{ a, h }` (all clicks and human clicks), so bot filtering needs no second query. To keep documents bounded, each dimension holds a fixed number of distinct values per document (`src/repositories/analytics/rollupDimensions.js`):
 
-## 5. Probabilistic Early Expiration (XFetch) Cache Defense
+| Dimension | Cap |
+|---|---|
+| country | 60 |
+| city (`CC\|City`) | 50 |
+| referrer | 50 |
+| browser, os | 30 each |
+| utmSource, utmMedium, utmCampaign | 30 each |
+| variant | 20 |
+| device | 10 |
 
-In high-concurrency systems, standard TTL-based cache expiration triggers the **Cache Stampede (Thundering Herd)** problem: the exact second a hot cache key expires, thousands of concurrent requests miss cache simultaneously and execute redundant database reads, saturating the database.
-
-Linkora implements the **XFetch Probabilistic Early Recomputation Algorithm**:
-
-$$\Delta t - \beta \cdot \ln(rand()) > \text{TTL}$$
-
-Where:
-- $\Delta t$: Computation time required to build the cache entry.
-- $\beta$: Eagerness parameter ($\beta > 0$, default `1.0`).
-- $rand()$: Uniformly distributed pseudo-random float $\in (0, 1]$.
-- $\text{TTL}$: Remaining time-to-live of the cached key.
-
-As the remaining TTL decreases, the probability of background cache recomputation increases. A single worker thread transparently refreshes the cache asynchronously before expiration occurs, ensuring that incoming reader requests experience a 100% cache hit rate with zero database thundering herds.
+Once a dimension is full, new values are counted under `__other__`. A breakdown is therefore "the first N values seen in this bucket, plus other", not a true top N; buckets are an hour or a day, so the set starts fresh often. Two consumers updating the same document at once can each add up to their batch's worth of keys, so the hard bound is the cap plus concurrent batches.
 
 ---
 
-## 6. Collision-Resilient Monotonic Sequence Permutation
+## 5. XFetch Probabilistic Early Expiration
 
-Many URL shorteners rely on random string generation (e.g. `crypto.randomBytes(4)`), which suffers from the **Birthday Paradox**: collision probabilities escalate rapidly as dataset sizes scale past several million records, requiring expensive retry loops and unique index checks.
+When a hot key expires, every concurrent request misses and goes to the database at once (cache stampede). XFetch (Vattani, Chierichetti and Lowenstein) refreshes the entry shortly before it expires instead. On each cache hit, `getLinkMeta` in `src/services/cacheService.js` evaluates:
 
-Linkora guarantees collision-free short codes using a **Monotonic Distributed Sequence Generator** combined with a **Feistel pseudo-random permutation cipher**:
-- Sequences are driven by an atomic MongoDB counter (`Counter` collection) utilizing `findOneAndUpdate` with `$inc`.
-- Numeric counter values are mapped bijectively using a Feistel block cipher into an unpredictably distributed 32-bit integer space. This prevents competitors or scrapers from guessing adjacent URLs.
-- Permuted integers are encoded into **Base62 strings** using the alphabet `[0-9a-zA-Z]`.
-- A 7-character Base62 string provides $62^7 \approx 3.52 \times 10^{12}$ (3.52 trillion) unique addressable URLs.
+```
+delta * beta * (-ln(rand())) >= remainingTtl
+```
+
+- `delta`: how long the MongoDB read took when this entry was last filled, stored with the entry (defaults to 25 ms).
+- `beta`: eagerness, fixed at 1.0.
+- `rand()`: uniform in (0, 1).
+- `remainingTtl`: time left on the entry.
+
+The probability of triggering rises as the entry approaches expiry. When it triggers, the request tries `SET lock:xfetch:{shortCode} 1 PX 5000 NX`. Only the request that gets the lock refreshes the entry, in the background, and every request, the winner included, is served the cached value. Measured effect: [`docs/BENCHMARKS.md`](BENCHMARKS.md#2-xfetch-probabilistic-early-expiration-benchmark).
+
+**Limits.** XFetch is probabilistic: an entry can reach expiry without any request triggering a refresh (more likely for lightly read keys). The miss path has no lock, so a herd that arrives after a real expiry still reads MongoDB once per request.
 
 ---
 
-## 7. Complete Database & Persistence Schema
+## 6. Short-Code Generation
+
+Random short codes run into the birthday problem: collision odds climb quickly as the number of codes grows, which means retry loops. Sequential codes reveal how many links exist and let anyone enumerate neighbours. Linkora uses a counter and a permutation (`src/utils/sequenceGenerator.js`):
+
+- **Counter**: an atomic MongoDB counter (`Counter` collection, `findOneAndUpdate` with `$inc` and upsert). Each API instance reserves blocks of 1,000 values and hands them out from memory; concurrent refills within a process share one request. The counter lives in MongoDB rather than Redis because it must never repeat or go backwards, and Redis is treated as losable.
+- **Permutation**: the value is masked to 32 bits and passed through a 4-round Feistel network whose round keys come from `LINK_SEQUENCE_CIPHER_KEY` (falling back to `JWT_SECRET`). A Feistel network is a bijection, so distinct inputs give distinct outputs.
+- **Encoding**: Base62 (`0-9a-zA-Z`), padded to 6 characters. `62^6 ≈ 5.7 × 10^10` is larger than the 2^32 (about 4.29 billion) domain, so every code fits in 6 characters.
+
+**Limits.** Codes are unique for the first 2^32 sequence values; past that, masked values repeat and the unique index on `shortCode` rejects the insert. Block reservation leaves gaps after a restart. The permutation hides creation order from casual inspection but is not a cryptographic guarantee against someone who studies many codes.
+
+---
+
+## 7. Data Model
 
 ### 7.1 MongoDB Collections
 
-#### 1. Collection: `links`
-Stores core shortened link configurations, security controls, and routing directives.
-
-| Field | Type | Modifiers / Constraints | Description |
-|---|---|---|---|
-| `_id` | `ObjectId` | Primary Key, Auto-generated | Unique internal identifier |
-| `user` | `ObjectId` | Required, Ref: `User`, Indexed | Owner identifier for multi-tenant isolation |
-| `originalUrl` | `String` | Required, Trimmed | Destination target URL |
-| `shortCode` | `String` | Required, Unique, Case-sensitive | Base62 unique slug or custom alias |
-| `shortUrl` | `String` | Required, Unique | Fully qualified public redirect URL |
-| `customAlias` | `String` | Sparse Index, Unique | User-defined custom vanity slug |
-| `title` | `String` | Max length: 200 | User-defined title for administrative search |
-| `category` | `String` | Enum: `business`, `personal`, `social`, `marketing`, `other` | Categorical classification |
-| `password` | `String` | Bcrypt Hash (`$2a$10$...`) | Optional passcode required for redirection |
-| `maxClicks` | `Number` | Nullable, Default: `null` | Threshold cap to automatically deactivate link |
-| `clicks` | `Number` | Default: `0`, Indexed | Authoritative total interaction counter |
-| `isActive` | `Boolean` | Default: `true`, Indexed | Administrative kill-switch status |
-| `abuseFlag` | `Boolean` | Default: `false` | System flag indicating security review |
-| `expiryDate` | `Date` | Nullable, Indexed | Explicit timestamp after which link rejects traffic |
-| `routingType` | `String` | Enum: `direct`, `ab_test` | Routing strategy algorithm |
-| `variants` | `Array<Object>` | Embedded Subdocuments | Weighted destination URLs for A/B traffic split |
-| `iosRedirect` | `String` | Nullable | Deep-link target for Apple iOS visitors |
-| `androidRedirect` | `String` | Nullable | Deep-link target for Android OS visitors |
-| `appliedClickIds`| `Array<String>` | Private (`select: false`), Bounded (100) | Circular sliding window of processed event IDs |
-| `createdAt` | `Date` | Timestamp | Creation timestamp |
-| `updatedAt` | `Date` | Timestamp | Modification timestamp |
-
-**Indexes**:
-- `{ shortCode: 1 }` (Unique, Primary fast-path redirect lookup)
-- `{ customAlias: 1 }` (Unique, Sparse)
-- `{ user: 1, createdAt: -1 }` (Compound, Tenant-scoped dashboard pagination)
-- `{ user: 1, isActive: 1 }` (Compound, Tenant active link querying)
-
----
-
-#### 2. Collection: `click_events` (MongoDB Time-Series)
-Stores raw granular telemetry for deep audits, CSV streaming, and real-time feeds.
+#### `links`
+Link configuration, access controls and routing (`src/models/Link.js`).
 
 | Field | Type | Constraints | Description |
 |---|---|---|---|
-| `timestamp` | `Date` | TimeField, Granularity: `seconds` | Exact UTC timestamp of click |
-| `meta.linkId` | `ObjectId` | MetaField, Required | Targeted link identifier |
-| `meta.userId` | `ObjectId` | MetaField, Nullable | Tenant identifier for global account audits |
-| `eventId` | `String` | Required, Indexed | Source Redis Stream entry ID |
-| `shortCode` | `String` | Indexed | Link short slug |
-| `ip` | `String` | Anonymized / Masked | Cleaned IP address (respects privacy toggle) |
-| `ipHash` | `String` | SHA-256 HMAC | One-way hash for distinct visitor calculation |
-| `country` | `String` | ISO 3166-1 alpha-2 | Geolocation country code |
-| `city` | `String` | Plain text | Geolocation city name |
-| `device` | `String` | Categorical | `desktop`, `mobile`, `tablet` |
-| `browser` | `String` | Plain text | Browser engine (e.g. `Chrome`, `Safari`) |
-| `os` | `String` | Plain text | Operating system (e.g. `iOS`, `macOS`, `Windows`)|
-| `referrerDomain`| `String` | Normalized hostname | Inbound referrer domain |
-| `isBot` | `Boolean` | Default: `false` | Algorithmic bot detection flag |
-| `botName` | `String` | Nullable | Identified bot spider signature |
+| `_id` | `ObjectId` | Primary key | Internal identifier |
+| `user` | `ObjectId` | Required, ref `User` | Owner; queries filter by it |
+| `originalUrl` | `String` | Required, trimmed | Destination URL |
+| `shortCode` | `String` | Required, unique, case-sensitive | Generated Base62 code |
+| `shortUrl` | `String` | Required, unique | Full public short URL |
+| `customAlias` | `String` | Unique, sparse | User-chosen alias; also resolves on redirect |
+| `title` / `description` | `String` | Max 200 / 500 chars | Dashboard metadata |
+| `tags` | `Array<String>` | | Dashboard metadata |
+| `category` | `String` | Enum: `business`, `personal`, `social`, `marketing`, `other` | Classification |
+| `password` | `String` | bcrypt hash | Optional password gate |
+| `maxClicks` | `Number` | Default `null` (unlimited) | Click cap; the link is deactivated when reached |
+| `clicks` | `Number` | Default `0` | Click count maintained by the consumer |
+| `isActive` | `Boolean` | Default `true` | Enabled/disabled |
+| `abuseFlag` | `Boolean` | Default `false` | Set by the threat-detection rescan |
+| `expiryDate` | `Date` | Optional | Redirects stop after this time |
+| `expiredRedirectUrl` | `String` | Optional | Where expired, disabled or capped links send visitors |
+| `routingType` | `String` | Enum: `direct`, `ab_test` | Routing strategy |
+| `variants` | `Array<Object>` | `{ id, name, url, weight, clicks }` | Weighted A/B destinations |
+| `iosRedirect` / `androidRedirect` | `String` | Optional | Per-OS destinations |
+| `ogTitle` / `ogDescription` / `ogImage` | `String` | Optional | Preview card served to social crawlers |
+| `utm` | `Object` | `{ source, medium, campaign, term, content }` | UTM parameters |
+| `qrCode` / `qrConfig` | `String` / `Mixed` | Optional | QR image and styling |
+| `lastAccessedAt` | `Date` | Updated with `$max` by the consumer | Last click time |
+| `appliedClickIds` | `Array<String>` | `select: false`, last 1,000 | Dedup window for `clicks` |
+| `createdAt` / `updatedAt` | `Date` | Timestamps | |
+
+**Indexes**: `{ shortCode: 1 }` unique; `{ customAlias: 1 }` unique, sparse; `{ user: 1, createdAt: -1 }`; `{ user: 1, isActive: 1 }`.
+
+#### `click_events` (time-series)
+Raw click events (`src/models/ClickEvent.js`). `timeField: timestamp`, `metaField: meta`, granularity `seconds`, expired after `CLICK_EVENT_RETENTION_DAYS` (default 90).
+
+| Field | Type | Description |
+|---|---|---|
+| `timestamp` | `Date` | Click time (UTC) |
+| `meta.linkId` | `ObjectId` | Link |
+| `meta.userId` | `ObjectId` | Link owner (nullable) |
+| `eventId` | `String` | Stream entry ID; indexed for the redelivery check |
+| `shortCode` | `String` | Code the visitor used |
+| `ip` | `String` | Client IP as received (not anonymized) |
+| `ipHash` | `String` | Unsalted SHA-256 of the IP, used for unique-visitor counts |
+| `country` / `city` | `String` | GeoIP result (ISO 3166-1 alpha-2 country) |
+| `device` / `browser` / `os` | `String` | Parsed from the user agent |
+| `referrerDomain` | `String` | Referrer hostname |
+| `utmSource` / `utmMedium` / `utmCampaign` | `String` | From the redirect's query string |
+| `variantId` / `variantName` | `String` | A/B variant served |
+| `isBot` / `botName` | `Boolean` / `String` | User-agent bot match |
+
+**Indexes**: `{ meta.linkId: 1, timestamp: -1 }`, `{ meta.userId: 1, timestamp: -1 }`, `{ eventId: 1 }`. Time-series collections can't have unique indexes, so `eventId` uniqueness comes from the `processed_events` ledger.
+
+#### `link_stats_hourly` / `link_stats_daily`
+One document per link per bucket (`src/models/LinkStats.js`): `linkId`, `userId`, `bucket`, `total`, `human`, `bot`, `unique` (daily only), `dims`, and the `appliedIds` dedup window. Unique index `{ linkId: 1, bucket: 1 }` (the upsert target), plus `{ userId: 1, bucket: 1 }`. Hourly documents expire after `CLICK_EVENT_RETENTION_DAYS`; daily documents don't expire.
+
+#### `processed_events`
+Ledger of claimed stream entries (`src/models/ProcessedEvent.js`): `_id` (stream entry ID), `state` (`pending` or `done`), `createdAt`, expiring after 3 days.
+
+### 7.2 Redis Keys
+
+Every key prefix, its data type, TTL and purpose is listed in [`docs/redis-keys.md`](redis-keys.md). In short: one Redis database holds the link cache, click-cap counters, rate-limiter state, refresh-token families, single-use tokens, XFetch locks, unique-visitor HyperLogLogs and two capped streams. Every key has a TTL except the streams, which are capped with `MAXLEN ~`; `test/hygiene/redisKeyTtl.test.js` checks this after every test run.
 
 ---
 
-### 7.2 Redis In-Memory Key Space Architecture
+## 8. Security Design
 
-| Key Pattern | Data Structure | TTL Policy | Memory Policy | Purpose |
-|---|---|---|---|---|
-| `cache:link:{shortCode}` | `String` (JSON) | 3600s + Jitter | Ephemeral Cache | Hot-path cached link redirect metadata |
-| `link:usage:{linkId}` | `Integer` | None / Managed | Evictable Counter | Atomic in-memory hit tracking for fast cap checks |
-| `stream:clicks` | `Stream` | Capped via `MAXLEN` | Ring-buffer buffer | High-throughput async ingestion queue |
-| `ratelimit:{prefix}:{ip}`| `Sorted Set` | Sliding Window | Auto-expiring | Sliding-window atomic Lua rate limiter |
-| `ratelimit:public-api:{key}`| `Hash` | Token Bucket | Auto-expiring | Scoped API Key token-bucket limiter |
-| `refresh:family:{id}:curr` | `String` | 30 Days | Volatile TTL | Active refresh token in cryptographic rotation chain |
-| `refresh:family:{id}:user` | `String` | 30 Days | Volatile TTL | User ownership verification for token family |
-| `worker:lock:{name}` | `String` | 30s Heartbeat | Distributed Lock | Leader election for cron jobs & rollup flushes |
+### 8.1 Refresh-Token Rotation and Family Revocation
 
----
-
-## 8. Zero-Trust Security, Token Rotation & Threat Modeling
-
-### 8.1 Refresh Token Rotation & Token Family Revocation
-
-Linkora strictly adheres to RFC 6749 OAuth 2.0 security specifications to guard against token theft and session hijacking:
+The access token is a 15-minute JWT that the React client keeps only in memory (a Zustand store), never in `localStorage`. The refresh token is `{familyId}.{secret}` in an HttpOnly cookie, rotated on every use. This follows the rotation-with-reuse-detection pattern from the OAuth 2.0 Security Best Current Practice (`src/utils/jwt.js`):
 
 ```
-[ Client Request ]
+POST /api/auth/refresh   (cookie: refreshToken = F1.S1)
        |
-       | POST /api/auth/refresh (Cookie: refreshToken=R1, familyId=F1)
        v
 +-------------------------------------------------------------+
-| REDIS TOKEN FAMILY VALIDATOR                                |
-| 1. Query refresh:family:F1:curr                             |
-| 2. Compare R1 with stored active token                       |
+| One Lua script (atomic):                                    |
+|   current = GET refresh:family:F1:current                   |
+|   missing          -> fail (expired or already revoked)     |
+|   current != S1    -> DEL both family keys; fail (reuse)    |
+|   current == S1    -> DEL current; ok                       |
 +-------------------------------------------------------------+
-              /                                     \
-    (Match: Valid Rotation)                  (Mismatch: Token Reuse Attack!)
-            /                                         \
+        /                                     \
+   (ok: valid rotation)                   (fail)
+      /                                         \
 +------------------------------------+   +------------------------------------+
-| 1. Generate new token R2           |   | 1. INSTANT REVOCATION:             |
-| 2. Set refresh:family:F1:curr = R2 |   |    Delete refresh:family:F1:*      |
-| 3. Issue new Access Token (JWT)    |   | 2. Clear Client HTTP Cookies       |
-| 4. Set HttpOnly Cookie (R2)        |   | 3. Return 401 Unauthorized         |
+| Issue S2 in the same family:       |   | Clear the refresh cookie           |
+|   SET refresh:family:F1:current S2 |   | 401 Unauthorized                   |
+| New 15-minute access token         |   | (on reuse, a warning is logged)    |
+| Set cookie F1.S2                   |   |                                    |
 +------------------------------------+   +------------------------------------+
 ```
 
-- **In-Memory JWT Access Token**: The React client stores the JWT access token purely in memory (Zustand store), preventing any XSS script from reading credentials out of `localStorage`.
-- **Reuse Detection**: If a compromised refresh token is presented after having already been rotated, Linkora flags a replay attack, instantly destroys the entire token family, and forces all active sessions for that family to re-authenticate.
+Presenting a secret that has already been rotated out is treated as theft: the whole family is deleted, which logs out the legitimate holder too. Families live only in Redis with a 30-day TTL, so losing Redis data ends every session. Logout deletes the family. Both `/refresh` and `/logout` also check `Origin`/`Referer` against the CORS allowlist (`src/middleware/csrf.js`).
 
-### 8.2 Partitioned Cross-Origin Cookies (CHIPS)
+### 8.2 Cross-Site Refresh Cookie (CHIPS)
 
-To support decoupled architectures (e.g. Next.js/Vite frontend hosted on Vercel communicating with an API cluster on Render/Railway), Linkora implements **Cookies Having Independent Partitioned State (CHIPS)**:
+In production the frontend and API can be on different sites (for example Vercel and Render), so the refresh cookie has to be sent cross-site. `src/utils/authCookies.js` sets:
 
-```javascript
-res.cookie('refreshToken', token, {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-  partitioned: true,
-  maxAge: 30 * 24 * 60 * 60 * 1000,
-});
-```
+- `HttpOnly`, `Path=/api/auth`, `Max-Age` 30 days.
+- Production: `Secure`, `SameSite=None` and `Partitioned` (CHIPS), so the browser keys the cookie to the top-level site instead of treating it as a third-party tracking cookie.
+- Development: `SameSite=Strict`, not `Secure`.
+- `COOKIE_SAMESITE` and `COOKIE_SECURE` override the defaults; `Partitioned` is set only when production uses `SameSite=None`.
 
-### 8.3 Multi-Layer SSRF Defense & DNS Pinning
+Because production uses `SameSite=None`, the Origin/Referer check in 8.1 is the CSRF defense for the two cookie-authenticated endpoints. Requests with neither header are allowed through (non-browser clients).
 
-When users register destination links or webhook endpoints, malicious actors may attempt to probe internal infrastructure or cloud metadata services. Linkora enforces deep validation prior to dispatching outbound HTTP traffic:
+### 8.3 SSRF Defense and DNS Pinning
+
+Two separate checks exist, one for link destinations and one for webhook targets.
+
+**Link destinations** (`validateUrlSafety` in `src/middleware/ssrfValidator.js`, called through `src/services/linkUrlValidation.js`) run on create and update, from both the dashboard and the public API, for every redirect-capable field (`originalUrl`, `iosRedirect`, `androidRedirect`, `expiredRedirectUrl`, `variants[].url`):
 
 ```
-[ Inbound Target URL: http://169.254.169.254/latest/meta-data ]
-                            |
-                            v
-+-------------------------------------------------------------+
-| 1. PROTOCOL VALIDATION                                      |
-|    - Strictly require http: or https:                       |
-+-------------------------------------------------------------+
-                            |
-                            v
-+-------------------------------------------------------------+
-| 2. ASYNC DNS RESOLUTION                                     |
-|    - Resolve target hostname to physical IP addresses       |
-+-------------------------------------------------------------+
-                            |
-                            v
-+-------------------------------------------------------------+
-| 3. CIDR & PRIVATE SUBNET SCREENING                          |
-|    - Block 127.0.0.0/8 & ::1            (Loopback)          |
-|    - Block 10.0.0.0/8                   (RFC 1918 Class A)  |
-|    - Block 172.16.0.0/12                (RFC 1918 Class B)  |
-|    - Block 192.168.0.0/16               (RFC 1918 Class C)  |
-|    - Block 169.254.0.0/16               (Link-Local Cloud)  |
-+-------------------------------------------------------------+
-              /                                     \
-    (Blacklisted IP)                              (Clean IP)
-            /                                         \
-    [ REJECT REQUEST ]                           [ DISPATCH HTTP ]
-    400 Invalid Destination                     (Disable Redirects)
+[ Destination URL ]
+        |
+        v
+  1. Scheme must be http: or https:
+        |
+        v
+  2. Resolve all addresses (dns.lookup, all: true)
+        |
+        v
+  3. Reject if any address is in:
+       127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
+       169.254.0.0/16 (includes 169.254.169.254), 0.0.0.0/8,
+       ::1, fc00::/7, fe80::/10, or an IPv4-mapped form of the above
+        |
+        v
+  4. Optional threat intel (Google Safe Browsing, VirusTotal), fails open
 ```
 
-- **DNS Pinning**: The outbound dispatcher (via `undici.Agent`) binds the connection socket directly to the IP address verified during the pre-flight check, eliminating DNS rebinding (TOCTOU) attacks.
-- **Non-Redirect Guarantee**: Outbound HTTP dispatchers configure `redirect: 'manual'`. Webhook targets cannot return a 302 redirecting to an internal loopback address to bypass initial checks.
+The redirect itself is a client-side `307`, so the server never fetches the destination; this check hardens what can be stored.
 
-### 8.4 Cryptographic Webhook Signing & Circuit Breakers
+**Webhook targets** (`src/services/webhookService.js`) are checked at registration and again immediately before every delivery attempt:
 
-Every outbound webhook delivery is verified through a cryptographically secure signature sent via the `x-linkora-signature` header:
+- Cloud metadata hosts (`169.254.169.254`, `metadata.google.internal`) are always blocked. Loopback, RFC 1918 and link-local addresses are blocked only when `NODE_ENV=production`, so a local webhook can target this app during development.
+- **DNS pinning**: the delivery re-resolves the hostname, picks an address that passes the policy, and sends the request through an undici `Agent` whose `lookup` always returns that address. A DNS answer that changes between the check and the connect (DNS rebinding) can't redirect the connection.
+- **No redirects**: requests use `redirect: 'manual'`, and a 3xx response is recorded as a failure, so an endpoint can't bounce the request to an internal address.
 
-$$\text{Signature} = \text{HMAC-SHA256}(\text{secret}, \text{timestamp} \cdot \text{payload})$$
+### 8.4 Webhook Signing, Retries and Circuit Breakers
 
-```http
-x-linkora-signature: t=1727161200,v1=5d41402abc4b2a76b9719d911017c592
+Each delivery is signed with the webhook's secret:
+
+```
+signature = HMAC-SHA256(secret, `${t}.${payload}`)       (hex)
+Linkora-Signature: t=1727161200,v1=<signature>
 ```
 
-- **Replay Protection**: Receivers verify that $|t_{\text{current}} - t_{\text{header}}| \le 300\text{ seconds}$.
-- **Circuit Breaker Integration**: Outbound dispatches are wrapped in an **Opossum Circuit Breaker**. If an external webhook receiver fails 5 consecutive times (timeouts or 5xx status), the breaker opens, halting further dispatches to protect backend connection sockets.
-- **Dead Letter Queue (DLQ)**: Failed dispatches retry across exponential intervals (`10s`, `1m`, `5m`, `30m`, `2h`). If all retries are exhausted, the delivery record transitions to `failed` and logs to `stream:webhooks:dlq`.
+Receivers should recompute the HMAC and reject a timestamp more than 300 seconds from their clock; the verification guide in the dashboard does this. `X-Linkora-Signature` carries an older, untimestamped form (`HMAC-SHA256(secret, payload)`). For backward compatibility the same values are also sent as `Linkly-Delivery`, `Linkly-Event`, `Linkly-Signature` and `X-Linkly-Signature`.
+
+**Retries**: a failed delivery is retried up to 4 times, after 10 s, 1 min, 5 min and 30 min (each plus up to 2 s of jitter), for 5 attempts in total. Retries are scheduled with in-process timers, so a process restart drops any pending retry. After the last attempt the delivery is marked `failed` and appended to the `stream:webhooks:dlq` stream (`MAXLEN ~ 1000`). Every attempt is recorded in the `WebhookDelivery` model with status, latency and a response preview of up to 2 KB, and an endpoint is disabled after 10 consecutive failures.
+
+**Circuit breakers**: Opossum breakers (3 s timeout, trip at 50% errors, 30 s reset) wrap the third-party calls on the link-creation path: Google Safe Browsing and VirusTotal (which fail open when the breaker is open) and the Cloudinary QR upload (which falls back to an inline Base64 image). Webhook delivery doesn't use a breaker; it relies on the retry schedule and the auto-disable above.
+
+### 8.5 Rate Limiting
+
+`src/middleware/rateLimiter.js` has two Redis-backed limiters, both single Lua scripts so they are atomic across API instances:
+
+| Limiter | Algorithm | Applied to | Limit |
+|---|---|---|---|
+| `createSlidingWindowLimiter` | Sliding-window log (sorted set) | Login | 20 / 15 min per IP |
+| | | Registration | 10 / hour per IP |
+| | | Refresh | 30 / 15 min per IP |
+| | | Link unlock | 5 / 15 min per IP and short code |
+| | | Link creation | 30 / hour (free), 1,000 / hour (pro), per user (IP if anonymous) |
+| `createTokenBucketLimiter` | Token bucket (hash) | Public API v1 | Burst 30, refill 10/s, per API key |
+
+Failed logins are also counted separately (`ratelimit:auth-failures:{ip}`, 5 per 15-minute fixed window). The Redis limiters fail open if Redis is unreachable.
+
+Every route also passes through `express-rate-limit` with its default in-process store (`RATE_LIMIT_MAX_REQUESTS` per `RATE_LIMIT_WINDOW` minutes per IP, 1,500 per 15 min by default). This is the only limiter on the redirect route: a Redis limiter there would add a Redis command to every redirect. Because the store is in memory, that limit applies per API instance.
+
+Client IPs come from `getClientIp` (`src/utils/helpers.js`), which reads `CF-Connecting-IP`, then `X-Real-IP`, then the first `X-Forwarded-For` entry, then the socket address.
 
 ---
 
-## 9. Production Topologies & Microservices Orchestration
+## 9. Deployment Topologies
 
-Linkora supports two distinct production runtime models:
-
-```
-[ TOPOLOGY A: DECOUPLED NODE SERVICES (Render / Railway / VM) ]
-  - React SPA (Port 3000) -> Communicates with API Gateway
-  - Linkora API Gateway (Port 5000)
-  - Linkora Click Consumer Worker (Node CLI Worker)
-  - Managed MongoDB 7.0 (Atlas / Self-hosted)
-  - Managed Redis 7.0 (Upstash / Redis Cloud / Self-hosted)
-```
+The backend runs in one of two modes, chosen by `WORKER_MODE`:
 
 ```
-[ TOPOLOGY B: HIGH-AVAILABILITY CLUSTER (Kubernetes / ECS) ]
-  - Cloudflare Edge (SSL, WAF, Static Caching)
-  - Ingress Controller -> API Pod Fleet (Horizontal Pod Autoscaler)
-  - Redis 7 Sentinel / Cluster (Stream Queue & Shared Caching)
-  - Consumer Fleet Pods (Scaled on XPENDING stream depth)
-  - MongoDB Atlas Replica Set (Primary + Secondaries)
+[ WORKER_MODE=embedded (default in src/config/env.js) ]
+  - React SPA (static hosting)
+  - One Node process: Express API + click consumer
+    (the consumer uses its own Redis connection for the blocking read)
+  - MongoDB (e.g. Atlas)
+  - Redis (e.g. Upstash), maxmemory-policy noeviction
 ```
+
+```
+[ WORKER_MODE=separate (.env.example) ]
+  - React SPA (static hosting)
+  - N API processes (npm start)
+  - M consumer processes (npm run consumer), sharing the consumer group
+  - MongoDB
+  - Redis, maxmemory-policy noeviction
+```
+
+What is safe with more than one process:
+
+- **Consumers**: yes. The consumer group shares entries between them, and a crashed consumer's pending entries are reclaimed with `XAUTOCLAIM` once they have been idle 30 s, on the next 5-minute claim pass.
+- **API instances**: yes for correctness. The Redis limiters, refresh families, click caps and link cache are shared, and each instance reserves its own short-code blocks. Two things stay per instance: the in-memory `express-rate-limit` counters and pending webhook retry timers.
+- **Cron jobs** (abuse rescan, expiry webhooks, GeoIP database updates) run in every process that schedules them; there's no leader election.
