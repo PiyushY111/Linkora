@@ -128,6 +128,10 @@ const envSchema = z
 
     // Webhooks
     WEBHOOK_SIGNING_SECRET: z.string().optional().default(''),
+    // Local development only: lets webhooks target loopback/private
+    // addresses (e.g. this API's own /api/webhooks/debug/echo). Refused in
+    // production below. Cloud metadata stays blocked either way.
+    WEBHOOK_ALLOW_PRIVATE_TARGETS: booleanFromEnv,
 
     // Public API
     API_KEY_HEADER: z.string().default('x-api-key'),
@@ -161,6 +165,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['WORKOS_API_KEY'],
         message: 'WORKOS_API_KEY and WORKOS_CLIENT_ID are required when SSO_ENABLED=true',
+      });
+    }
+    if (env.NODE_ENV === 'production' && env.WEBHOOK_ALLOW_PRIVATE_TARGETS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['WEBHOOK_ALLOW_PRIVATE_TARGETS'],
+        message: 'WEBHOOK_ALLOW_PRIVATE_TARGETS must not be enabled in production',
       });
     }
     if (env.NODE_ENV === 'production' && env.JWT_SECRET.includes('your_')) {
