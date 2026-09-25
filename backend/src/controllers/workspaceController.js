@@ -1,22 +1,29 @@
-import validator from 'validator';
 import Organization from '../models/Organization.js';
-import Workspace, { WORKSPACE_ROLES } from '../models/Workspace.js';
+import Workspace from '../models/Workspace.js';
 import User from '../models/User.js';
+import Link from '../models/Link.js';
+import Webhook from '../models/Webhook.js';
+import ApiKey from '../models/ApiKey.js';
 import { logAudit } from '../utils/auditLogger.js';
+import { normalizeAccountEmail } from '../utils/email.js';
 import { getClientIp } from '../utils/helpers.js';
-import { ROLE_RANK } from '../middleware/rbac.js';
-import { generateInvite, hashInviteToken, inviteUrl, deliverInviteEmail } from '../services/inviteService.js';
-import { ValidationError, NotFoundError, ForbiddenError, ConflictError, GoneError } from '../lib/errors.js';
-
-/**
- * Same normalization register applies (validator.normalizeEmail), so an
- * invite and the account created for it compare equal.
- * @returns {string | null} null if not a valid email
- */
-function normalizeInviteEmail(email) {
-  if (typeof email !== 'string' || !validator.isEmail(email.trim())) return null;
-  return validator.normalizeEmail(email.trim()) || null;
-}
+import { membershipCan, holdsAll, permissionDeniedMessage } from '../utils/permissions.js';
+import { resolveRole, withPermissions, roleNamesFor } from '../services/roleService.js';
+import { toActiveWorkspacePayload } from '../services/workspaceService.js';
+import { ssoSettingsPayload } from './ssoController.js';
+import { ipAllowlistPayload } from './ipAllowlistController.js';
+import { auditSettingsPayload } from './auditController.js';
+import { hashInviteToken, inviteUrl, deliverInviteEmail, upsertPendingInvite } from '../services/inviteService.js';
+import {
+  ValidationError,
+  NotFoundError,
+  ForbiddenError,
+  ConflictError,
+  GoneError,
+  DirectoryManagedError,
+} from '../lib/errors.js';
+import DirectoryUser from '../models/DirectoryUser.js';
+import { directorySyncPayload } from './directorySyncController.js';
 
 function invitePayload(invite) {
   return {
@@ -29,6 +36,53 @@ function invitePayload(invite) {
   };
 }
 
+/**
+ * Validates `role` for the workspace's organization (a built-in role or one
+ * of its custom roles) and applies the grant rule: the acting member must
+ * hold every permission the role grants, and only an owner grants owner.
+ * @param {{ permissions: string[] }} actor - the caller's resolved membership
+ */
+async function assertAssignableRole(role, workspace, actor) {
+  const resolved = await resolveRole(role, workspace.organization);
+  if (!resolved) {
+    throw new ValidationError("role must be viewer, creator, admin, owner, or one of this organization's custom roles");
+  }
+  if (role === 'owner' && !membershipCan(actor, 'ownership:transfer')) {
+    throw new ForbiddenError(permissionDeniedMessage('ownership:transfer'));
+  }
+  if (!holdsAll(actor.permissions, resolved.permissions)) {
+    throw new ForbiddenError("You can't grant a role with permissions you don't have");
+  }
+  return resolved;
+}
+
+/**
+ * The other half of the grant rule: changing or removing a member needs
+ * every permission they currently hold, so a narrower role can't strip a
+ * broader one. Owners additionally need 'ownership:transfer'.
+ */
+async function assertCanChangeMember(target, workspace, actor) {
+  if (target.role === 'owner' && !membershipCan(actor, 'ownership:transfer')) {
+    throw new ForbiddenError(permissionDeniedMessage('ownership:transfer'));
+  }
+  const current = await resolveRole(target.role, workspace.organization);
+  if (current && !holdsAll(actor.permissions, current.permissions)) {
+    throw new ForbiddenError("You can't change a member who has permissions you don't have");
+  }
+}
+
+/**
+ * Refuses to hand-add or invite someone the organization's directory
+ * already tracks: their membership comes from the identity provider (see
+ * services/directorySyncService.js). Role changes stay manual, since the
+ * directory doesn't send roles.
+ */
+async function assertNotDirectoryManaged(workspace, email) {
+  if (await DirectoryUser.exists({ organization: workspace.organization, email })) {
+    throw new DirectoryManagedError();
+  }
+}
+
 function slugify(name) {
   return name
     .toLowerCase()
@@ -39,29 +93,33 @@ function slugify(name) {
 
 // Create an organization + a default workspace, with the caller as owner.
 export const createOrganization = async (req, res) => {
-  const { name } = req.body;
+  const { name, workspaceName } = req.body;
   if (!name) return res.status(400).json({ success: false, message: 'name is required' });
 
   const org = await Organization.create({ name, slug: `${slugify(name)}-${Date.now().toString(36)}`, owner: req.user.id });
+  const finalWorkspaceName = workspaceName || (name.trim().toLowerCase() === 'personal' ? 'Personal' : 'Main');
   const workspace = await Workspace.create({
     organization: org._id,
-    name: 'Default',
+    name: finalWorkspaceName,
     members: [{ user: req.user.id, role: 'owner' }],
   });
 
-  logAudit({ action: 'organization.create', actorUserId: req.user.id, targetResourceId: String(org._id), ipAddress: getClientIp(req) });
+  logAudit({ action: 'organization.create', workspace: workspace._id, actorUserId: req.user.id, targetResourceId: String(org._id), ipAddress: getClientIp(req) });
 
   res.status(201).json({ success: true, organization: org, workspace });
 };
 
-// List workspaces the caller belongs to. Pending invites are excluded: this
-// is visible to every member, and .lean() skips the toJSON transform.
+// List workspaces the caller belongs to. Pending invites are excluded (this
+// is visible to every member, and .lean() skips the toJSON transform), and so
+// is the QR style default, which can carry a sizeable logo image.
 export const listMyWorkspaces = async (req, res) => {
   const workspaces = await Workspace.find({ 'members.user': req.user.id })
-    .select('-pendingInvites')
+    .select('-pendingInvites -defaultQrStyle')
     .populate('organization')
     .lean();
-  res.status(200).json({ success: true, workspaces });
+  // Custom role ids -> names, so role badges can show a name.
+  const roleNames = await roleNamesFor(workspaces.flatMap((w) => w.members.map((m) => m.role)));
+  res.status(200).json({ success: true, workspaces, roleNames });
 };
 
 export const getWorkspace = async (req, res) => {
@@ -74,24 +132,91 @@ export const getWorkspace = async (req, res) => {
   const workspace = populated.toJSON();
 
   // Only admins manage invites; others don't see who's been invited.
-  const canManageInvites = ROLE_RANK[req.membership.role] >= ROLE_RANK.admin;
+  const canManageInvites = membershipCan(req.membership, 'members:manage');
   const now = Date.now();
   workspace.pendingInvites = canManageInvites
     ? workspace.pendingInvites.filter((i) => new Date(i.expiresAt).getTime() > now).map(invitePayload)
     : [];
 
-  res.status(200).json({ success: true, workspace, role: req.membership.role });
+  // Owners also get the organization's SSO settings, and how their own
+  // session signed in (enforcing SSO requires an SSO session through it).
+  // Likewise the IP allowlist, with the IP they're connecting from.
+  let organizationSso;
+  let organizationIpAllowlist;
+  let organizationAudit;
+  let organizationDirectorySync;
+  const ownerBlocks = ['sso:manage', 'ipAllowlist:manage', 'auditSettings:manage', 'directorySync:manage'];
+  if (ownerBlocks.some((action) => membershipCan(req.membership, action))) {
+    const org = await Organization.findById(req.workspace.organization).lean();
+    if (org && membershipCan(req.membership, 'directorySync:manage')) {
+      organizationDirectorySync = await directorySyncPayload(org);
+    }
+    if (org && membershipCan(req.membership, 'auditSettings:manage')) {
+      organizationAudit = { organizationId: org._id, organizationName: org.name, ...auditSettingsPayload(org) };
+    }
+    if (org && membershipCan(req.membership, 'sso:manage')) {
+      organizationSso = { ...ssoSettingsPayload(org), yourSession: req.sessionAuth };
+    }
+    if (org && membershipCan(req.membership, 'ipAllowlist:manage')) {
+      organizationIpAllowlist = { organizationId: org._id, organizationName: org.name, ...ipAllowlistPayload(org, req) };
+    }
+  }
+
+  // permissions: what the caller's role allows here (this may not be their
+  // active workspace, so the activeWorkspace payload's list doesn't apply).
+  const roleNames = await roleNamesFor([
+    ...workspace.members.map((m) => m.role),
+    ...workspace.pendingInvites.map((i) => i.role),
+  ]);
+
+  const [linksCount, webhooksCount, apiKeysCount, clicksAgg] = await Promise.all([
+    Link.countDocuments({ workspace: req.workspace._id }),
+    Webhook.countDocuments({ workspace: req.workspace._id }),
+    ApiKey.countDocuments({ workspace: req.workspace._id }),
+    Link.aggregate([
+      { $match: { workspace: req.workspace._id } },
+      { $group: { _id: null, totalClicks: { $sum: '$clicks' } } },
+    ]),
+  ]);
+  const stats = {
+    linksCount,
+    webhooksCount,
+    apiKeysCount,
+    clicksCount: clicksAgg[0]?.totalClicks || 0,
+    membersCount: workspace.members.length,
+  };
+
+  res.status(200).json({
+    success: true,
+    workspace,
+    stats,
+    role: req.membership.role,
+    roleName: req.membership.roleName,
+    permissions: req.membership.permissions,
+    roleNames,
+    ...(organizationSso && { organizationSso }),
+    ...(organizationIpAllowlist && { organizationIpAllowlist }),
+    ...(organizationAudit && { organizationAudit }),
+    ...(organizationDirectorySync && { organizationDirectorySync }),
+  });
 };
 
-// Add or update a member's role. Requires admin+ (checked by route middleware).
+// Add or update a member's role (built-in or custom). Requires
+// 'members:manage' (route) plus the grant rule: see assertAssignableRole and
+// assertCanChangeMember.
 export const upsertMember = async (req, res) => {
   const { email, role } = req.body;
   const { workspace } = req;
+
+  await assertAssignableRole(role, workspace, req.membership);
 
   const user = await User.findOne({ email });
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
   const existing = workspace.members.find((m) => m.user.toString() === String(user._id));
+  if (existing) await assertCanChangeMember(existing, workspace, req.membership);
+  else await assertNotDirectoryManaged(workspace, user.email);
+
   if (existing) {
     existing.role = role;
   } else {
@@ -101,6 +226,7 @@ export const upsertMember = async (req, res) => {
 
   logAudit({
     action: 'workspace.member.upsert',
+    workspace: workspace._id,
     actorUserId: req.user.id,
     targetResourceId: String(workspace._id),
     ipAddress: getClientIp(req),
@@ -110,23 +236,24 @@ export const upsertMember = async (req, res) => {
   res.status(200).json({ success: true, workspace });
 };
 
-// Remove a member. Requires admin+; only an owner can remove another owner.
+// Remove a member. Requires 'members:manage' and every permission the member
+// holds; only an owner can remove another owner.
 export const removeMember = async (req, res) => {
   const { userId } = req.params;
   const { workspace } = req;
 
   const target = workspace.members.find((m) => m.user.toString() === userId);
   if (!target) return res.status(404).json({ success: false, message: 'Member not found' });
+  if (target.managedBy === 'scim') throw new DirectoryManagedError();
 
-  if (target.role === 'owner' && req.membership.role !== 'owner') {
-    return res.status(403).json({ success: false, message: 'Only an owner can remove another owner' });
-  }
+  await assertCanChangeMember(target, workspace, req.membership);
 
   workspace.members = workspace.members.filter((m) => m.user.toString() !== userId);
   await workspace.save();
 
   logAudit({
     action: 'workspace.member.remove',
+    workspace: workspace._id,
     actorUserId: req.user.id,
     targetResourceId: String(workspace._id),
     ipAddress: getClientIp(req),
@@ -145,47 +272,19 @@ export const removeMember = async (req, res) => {
  */
 export const createInvite = async (req, res) => {
   const { workspace, membership } = req;
-  const email = normalizeInviteEmail(req.body.email);
+  const email = normalizeAccountEmail(req.body.email);
   const { role } = req.body;
 
   if (!email) throw new ValidationError('A valid email is required');
-  if (!WORKSPACE_ROLES.includes(role)) throw new ValidationError(`role must be one of: ${WORKSPACE_ROLES.join(', ')}`);
-  if (role === 'owner' && membership.role !== 'owner') {
-    throw new ForbiddenError('Only an owner can invite another owner');
-  }
+  await assertAssignableRole(role, workspace, membership);
+  await assertNotDirectoryManaged(workspace, email);
 
   const memberIds = workspace.members.map((m) => m.user);
   if (await User.exists({ _id: { $in: memberIds }, email })) {
     throw new ConflictError('That person is already a member of this workspace');
   }
 
-  const { token, tokenHash, expiresAt } = generateInvite();
-  const fields = { role, tokenHash, invitedBy: req.user._id, createdAt: new Date(), expiresAt };
-  const now = new Date();
-
-  // Drop expired invites while we're here, then either refresh this email's
-  // existing invite in place (resend) or add a new one. Two conditional
-  // updates rather than read-modify-write, so concurrent invites to the
-  // same email can't produce two entries.
-  await Workspace.updateOne({ _id: workspace._id }, { $pull: { pendingInvites: { expiresAt: { $lte: now } } } });
-  const refreshed = await Workspace.updateOne(
-    { _id: workspace._id, 'pendingInvites.email': email },
-    { $set: Object.fromEntries(Object.entries(fields).map(([k, v]) => [`pendingInvites.$.${k}`, v])) }
-  );
-  const resent = refreshed.matchedCount > 0;
-  if (!resent) {
-    const added = await Workspace.updateOne(
-      { _id: workspace._id, 'pendingInvites.email': { $ne: email } },
-      { $push: { pendingInvites: { email, ...fields } } }
-    );
-    if (added.matchedCount === 0) throw new ConflictError('An invite for this email was just created; try again');
-  }
-
-  const stored = await Workspace.findOne(
-    { _id: workspace._id },
-    { pendingInvites: { $elemMatch: { tokenHash } } }
-  ).lean();
-  const invite = stored.pendingInvites[0];
+  const { invite, token, resent } = await upsertPendingInvite(workspace._id, { email, role, invitedBy: req.user._id });
   const url = inviteUrl(token);
 
   const { delivered } = await deliverInviteEmail({
@@ -199,6 +298,7 @@ export const createInvite = async (req, res) => {
 
   logAudit({
     action: 'workspace.invite.create',
+    workspace: workspace._id,
     actorUserId: req.user.id,
     targetResourceId: String(workspace._id),
     ipAddress: getClientIp(req),
@@ -216,7 +316,14 @@ async function findInviteByToken(token) {
   const tokenHash = hashInviteToken(token);
   const workspace = await Workspace.findOne(
     { 'pendingInvites.tokenHash': tokenHash },
-    { name: 1, organization: 1, pendingInvites: { $elemMatch: { tokenHash } } }
+    {
+      name: 1,
+      organization: 1,
+      defaultDomain: 1,
+      defaultQrStyle: 1,
+      defaultUtmParams: 1,
+      pendingInvites: { $elemMatch: { tokenHash } },
+    }
   )
     .populate('organization', 'name')
     .lean();
@@ -231,12 +338,14 @@ async function findInviteByToken(token) {
 // "you've been invited to X as Y" before the invitee signs in.
 export const getInvite = async (req, res) => {
   const { workspace, invite } = await findInviteByToken(req.params.token);
+  const role = await resolveRole(invite.role, workspace.organization?._id ?? workspace.organization);
   res.status(200).json({
     success: true,
     invite: {
       workspace: { name: workspace.name },
       organization: { name: workspace.organization?.name ?? '' },
       role: invite.role,
+      roleName: role?.roleName ?? invite.role,
       email: invite.email,
       expiresAt: invite.expiresAt,
     },
@@ -252,7 +361,7 @@ export const getInvite = async (req, res) => {
 export const acceptInvite = async (req, res) => {
   const { workspace, invite, tokenHash } = await findInviteByToken(req.params.token);
 
-  if (normalizeInviteEmail(req.user.email) !== invite.email) {
+  if (normalizeAccountEmail(req.user.email) !== invite.email) {
     throw new ForbiddenError('This invite was sent to a different email address');
   }
 
@@ -278,6 +387,7 @@ export const acceptInvite = async (req, res) => {
 
   logAudit({
     action: 'workspace.invite.accept',
+    workspace: workspace._id,
     actorUserId: req.user.id,
     targetResourceId: String(workspace._id),
     ipAddress: getClientIp(req),
@@ -286,7 +396,10 @@ export const acceptInvite = async (req, res) => {
 
   res.status(200).json({
     success: true,
-    activeWorkspace: { id: workspace._id, name: workspace.name, role: invite.role },
+    activeWorkspace: toActiveWorkspacePayload(
+      workspace,
+      await withPermissions({ user: req.user._id, role: invite.role }, workspace.organization?._id ?? workspace.organization)
+    ),
   });
 };
 
@@ -302,6 +415,7 @@ export const revokeInvite = async (req, res) => {
 
   logAudit({
     action: 'workspace.invite.revoke',
+    workspace: workspace._id,
     actorUserId: req.user.id,
     targetResourceId: String(workspace._id),
     ipAddress: getClientIp(req),

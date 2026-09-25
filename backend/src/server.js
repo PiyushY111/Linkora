@@ -6,6 +6,7 @@ import { logger } from './config/logger.js';
 import connectDB from './config/db.js';
 import { scheduleAbuseRescan } from './services/threatDetectionService.js';
 import { scheduleExpiryWebhookCheck } from './services/webhookService.js';
+import { scheduleAuditRetention } from './services/auditRetentionService.js';
 import { closeRedis } from './services/cacheService.js';
 import { getAnalyticsRepository } from './repositories/analytics/analyticsRepository.js';
 import { createClickConsumer, prepareClickConsumer } from './consumers/clickConsumer.js';
@@ -27,7 +28,7 @@ export async function startServer({ port = env.PORT, workerMode = env.WORKER_MOD
   await connectDB(mongoUri, { exitOnFailure: false });
   await getAnalyticsRepository().ensureReady();
 
-  const cronTasks = [scheduleAbuseRescan(), scheduleExpiryWebhookCheck()].filter(Boolean);
+  const cronTasks = [scheduleAbuseRescan(), scheduleExpiryWebhookCheck(), scheduleAuditRetention()].filter(Boolean);
 
   let consumer = null;
   if (workerMode === 'embedded') {

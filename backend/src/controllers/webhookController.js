@@ -6,7 +6,7 @@ import {
   testWebhookEndpoint,
   retryDelivery as executeRetryDelivery,
 } from '../services/webhookService.js';
-import { logAudit } from '../utils/auditLogger.js';
+import { logAudit, auditSafeUrl } from '../utils/auditLogger.js';
 import { getClientIp } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../lib/errors.js';
 
@@ -41,10 +41,11 @@ export const createWebhook = async (req, res) => {
 
   logAudit({
     action: 'webhook.create',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: String(webhook._id),
     ipAddress: getClientIp(req),
-    diff: { url, events, description },
+    diff: { url: auditSafeUrl(url), events, description },
   });
 
   res.status(201).json({ success: true, webhook });
@@ -156,10 +157,11 @@ export const updateWebhook = async (req, res) => {
 
   logAudit({
     action: 'webhook.update',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: req.params.id,
     ipAddress: getClientIp(req),
-    diff: updateFields,
+    diff: updateFields.url ? { ...updateFields, url: auditSafeUrl(updateFields.url) } : updateFields,
   });
 
   res.status(200).json({ success: true, webhook: updated });
@@ -177,6 +179,7 @@ export const deleteWebhook = async (req, res) => {
 
   logAudit({
     action: 'webhook.delete',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: req.params.id,
     ipAddress: getClientIp(req),
@@ -205,6 +208,7 @@ export const rotateSecret = async (req, res) => {
 
   logAudit({
     action: 'webhook.rotateSecret',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: req.params.id,
     ipAddress: getClientIp(req),

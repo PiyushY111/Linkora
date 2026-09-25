@@ -14,6 +14,7 @@ import {
   Split,
   Sparkles,
   AlertCircle,
+  Lock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppShell from '../components/layout/AppShell';
@@ -26,7 +27,10 @@ import GeoLocationPanel from '../components/analytics/GeoLocationPanel';
 import DevicesAndClientsPanel from '../components/analytics/DevicesAndClientsPanel';
 import UtmAttributionPanel from '../components/analytics/UtmAttributionPanel';
 import RealtimeClickStream from '../components/analytics/RealtimeClickStream';
+import EmptyState from '../components/ui/EmptyState';
 import { analyticsService, linkService } from '../services';
+import { useCan } from '../context/authStore';
+import { downloadBlob } from '../utils/download';
 
 const Analytics = () => {
   const { linkId = 'all' } = useParams();
@@ -45,6 +49,9 @@ const Analytics = () => {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [excludeBots, setExcludeBots] = useState(false);
   const [fetchError, setFetchError] = useState(null);
+  // The server omits per-click rows (IP, geo, UA) for roles below creator.
+  const [detailRestricted, setDetailRestricted] = useState(false);
+  const canExport = useCan('analytics:export');
 
   // Fetch analytics dataset
   const fetchAnalytics = useCallback(
@@ -65,6 +72,7 @@ const Analytics = () => {
           const data = await analyticsService.getAnalyticsSummary(queryParams);
           setAnalytics(data.summary);
           setRecentClicks(data.summary?.recentClicks || []);
+          setDetailRestricted(Boolean(data.summary?.detailRestricted));
         } else {
           const data = await analyticsService.getLinkAnalytics(linkId, queryParams);
           setAnalytics({
@@ -73,6 +81,7 @@ const Analytics = () => {
             routingType: data.routingType,
           });
           setRecentClicks(data.recentClicks || []);
+          setDetailRestricted(Boolean(data.detailRestricted));
         }
       } catch (err) {
         const errorMsg =
@@ -138,15 +147,7 @@ const Analytics = () => {
       };
 
       const blobData = await analyticsService.exportAnalytics(exportParams);
-      const url = window.URL.createObjectURL(new Blob([blobData]));
-      const link = document.createElement('a');
-      link.href = url;
-      const filename = `linkora-analytics-${linkId}-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      downloadBlob(blobData, `linkora-analytics-${linkId}-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`);
       toast.success('Analytics CSV export downloaded');
     } catch {
       toast.error('Export failed. Please try again.');
@@ -226,16 +227,18 @@ const Analytics = () => {
               )}
             </button>
 
-            {/* Export CSV Button */}
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              disabled={isExporting}
-              className="btn-primary inline-flex h-9 items-center gap-2 px-3.5 text-xs font-semibold shadow-lg shadow-accent-400/10 hover:shadow-accent-400/20 transition-all cursor-pointer"
-            >
-              <Download size={13} className={isExporting ? 'animate-bounce' : ''} />
-              <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
-            </button>
+            {/* Export CSV Button (raw click rows: creator+) */}
+            {canExport && (
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                disabled={isExporting}
+                className="btn-primary inline-flex h-9 items-center gap-2 px-3.5 text-xs font-semibold shadow-lg shadow-accent-400/10 hover:shadow-accent-400/20 transition-all cursor-pointer"
+              >
+                <Download size={13} className={isExporting ? 'animate-bounce' : ''} />
+                <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -574,7 +577,15 @@ const Analytics = () => {
             />
 
             {/* Row 4: Real-time Columnar Click Stream */}
-            <RealtimeClickStream clicks={recentClicks} isLive={autoRefresh} />
+            {detailRestricted ? (
+              <EmptyState
+                icon={Lock}
+                title="Click-level detail is restricted"
+                description="Individual clicks (IP, location, device) are visible to creators and above in this workspace. The totals above include every click."
+              />
+            ) : (
+              <RealtimeClickStream clicks={recentClicks} isLive={autoRefresh} />
+            )}
           </div>
         )}
       </AppShell>

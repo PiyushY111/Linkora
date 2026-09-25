@@ -65,6 +65,7 @@ export const createApiKey = async (req, res) => {
 
   logAudit({
     action: 'apikey.create',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(newKey._id),
@@ -109,6 +110,7 @@ export const updateApiKey = async (req, res) => {
 
   logAudit({
     action: 'apikey.update',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(key._id),
@@ -144,6 +146,7 @@ export const rollApiKey = async (req, res) => {
 
   logAudit({
     action: 'apikey.roll',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(key._id),
@@ -179,6 +182,7 @@ export const revokeApiKey = async (req, res) => {
 
   logAudit({
     action: 'apikey.revoke',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(key._id),

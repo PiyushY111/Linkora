@@ -25,10 +25,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Single in-flight refresh shared across any requests that 401 at the same
-// time, so a burst of concurrent requests doesn't fire N refresh calls and
-// race each other over the (single-use, rotating) refresh token.
+// Single in-flight refresh shared by everything that needs one (page-load
+// bootstrap and any requests that 401 at the same time). The refresh token
+// is single-use and rotates on every call, so two concurrent refreshes with
+// the same cookie make one of them fail (or look like token reuse), and the
+// failing one would log the user out.
 let refreshPromise = null;
+
+function refreshOnce() {
+  if (!refreshPromise) {
+    refreshPromise = refreshAccessToken().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
 
 async function refreshAccessToken() {
   const response = await axios.post(
@@ -62,34 +73,43 @@ function loadWorkspacesInBackground() {
 /**
  * Validates any existing session on app load or performs a silent refresh
  * from the httpOnly cookie so hard reloads maintain seamless authentication.
+ *
+ * Runs once per page load no matter how often it's called: React StrictMode
+ * mounts App's effect twice in development, and two bootstraps racing over
+ * the single-use refresh token used to log the user out on every reload.
  */
-export async function bootstrapSession() {
+let bootstrapPromise = null;
+
+export function bootstrapSession() {
+  bootstrapPromise ??= runBootstrap();
+  return bootstrapPromise;
+}
+
+async function runBootstrap() {
   const currentToken = useAuthStore.getState().token;
 
-  if (currentToken) {
-    try {
-      const res = await api.get('/auth/me');
-      if (res.data?.user) {
-        useAuthStore.getState().setUser(res.data.user);
-      }
-      if (res.data?.activeWorkspace) {
-        useAuthStore.getState().setActiveWorkspace(res.data.activeWorkspace);
-      }
-      loadWorkspacesInBackground();
-      return;
-    } catch (err) {
-      // If error is transient (network / cold start), preserve session
-      if (err.response?.status !== 401) {
-        return;
-      }
-      // If 401, token expired: fall through to silent refresh
-    } finally {
-      useAuthStore.getState().setBootstrapped();
-    }
-  }
-
   try {
-    await refreshAccessToken();
+    if (currentToken) {
+      try {
+        const res = await api.get('/auth/me');
+        if (res.data?.user) {
+          useAuthStore.getState().setUser(res.data.user);
+        }
+        if (res.data?.activeWorkspace) {
+          useAuthStore.getState().setActiveWorkspace(res.data.activeWorkspace);
+        }
+        loadWorkspacesInBackground();
+        return;
+      } catch (err) {
+        // If error is transient (network / cold start), preserve session
+        if (err.response?.status !== 401) {
+          return;
+        }
+        // If 401, token expired: fall through to silent refresh
+      }
+    }
+
+    await refreshOnce();
     loadWorkspacesInBackground();
   } catch {
     useAuthStore.getState().logout();
@@ -123,17 +143,15 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        if (!refreshPromise) {
-          refreshPromise = refreshAccessToken().finally(() => {
-            refreshPromise = null;
-          });
-        }
-        const newToken = await refreshPromise;
+        const newToken = await refreshOnce();
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return api(originalRequest);
       } catch (refreshError) {
         useAuthStore.getState().logout();
-        window.location.href = '/login';
+        // An org that now requires SSO ends password sessions at refresh;
+        // tell the user why they're back at the login page.
+        const ssoRequired = refreshError.response?.data?.code === 'SSO_REQUIRED';
+        window.location.href = ssoRequired ? '/login?error=sso_required' : '/login';
         return Promise.reject(refreshError);
       }
     }

@@ -30,7 +30,7 @@ import Skeleton from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
-import useAuthStore from '../context/authStore';
+import useAuthStore, { useCan } from '../context/authStore';
 
 const CATEGORY_OPTIONS = [
   { value: 'all', label: 'All Categories' },
@@ -51,6 +51,8 @@ const SORT_OPTIONS = [
 
 export default function Dashboard() {
   const { user } = useAuthStore();
+  // Viewers can browse links but not create/change them (backend enforces).
+  const canWriteLinks = useCan('links:write');
   const { links, setLinks } = useLinkStore();
   const [isLoading, setIsLoading] = useState(true);
 
@@ -83,6 +85,7 @@ export default function Dashboard() {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        if (!canWriteLinks) return;
         e.preventDefault();
         setShowCreateModal(true);
       } else if (
@@ -96,7 +99,7 @@ export default function Dashboard() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [canWriteLinks]);
 
   // Fetch links from backend
   const fetchLinks = async () => {
@@ -213,17 +216,19 @@ export default function Dashboard() {
               <Download size={14} />
               <span>Export CSV</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setShowCreateModal(true)}
-              className="btn-primary inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-xs font-semibold"
-            >
-              <Plus size={14} />
-              <span>New Link</span>
-              <kbd className="ml-1 hidden rounded bg-ink-950/20 px-1.5 py-0.5 text-[10px] font-semibold text-ink-950/80 sm:inline-block">
-                ⌘K
-              </kbd>
-            </button>
+            {canWriteLinks && (
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(true)}
+                className="btn-primary inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-xs font-semibold"
+              >
+                <Plus size={14} />
+                <span>New Link</span>
+                <kbd className="ml-1 hidden rounded bg-ink-950/20 px-1.5 py-0.5 text-[10px] font-semibold text-ink-950/80 sm:inline-block">
+                  ⌘K
+                </kbd>
+              </button>
+            )}
           </div>
         </div>
 
@@ -276,7 +281,7 @@ export default function Dashboard() {
         </div>
 
         {/* Frictionless Quick Shortener Bar */}
-        <QuickShortenBar onOpenAdvanced={() => setShowCreateModal(true)} />
+        {canWriteLinks && <QuickShortenBar onOpenAdvanced={() => setShowCreateModal(true)} />}
 
         {/* Enterprise Control Bar: Search, Status Filter, Category, Sort & Layout Toggle */}
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -441,7 +446,7 @@ export default function Dashboard() {
                 >
                   Clear Filters
                 </button>
-              ) : (
+              ) : canWriteLinks ? (
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(true)}
@@ -449,7 +454,7 @@ export default function Dashboard() {
                 >
                   <Plus size={16} /> Create Link
                 </button>
-              )
+              ) : null
             }
           />
         )}

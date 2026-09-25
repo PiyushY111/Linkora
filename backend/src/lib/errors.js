@@ -52,6 +52,28 @@ export class GoneError extends AppError {
   }
 }
 
+/**
+ * The request's IP isn't on the organization's allowlist. Carries a
+ * machine-readable `code` so clients can tell it apart from a role 403.
+ */
+export class IpNotAllowedError extends ForbiddenError {
+  constructor(ip) {
+    super(`Your IP address (${ip}) isn't on this organization's allowlist. Ask an owner to add it.`);
+    this.code = 'IP_NOT_ALLOWED';
+  }
+}
+
+/**
+ * The member is managed by the organization's identity provider (directory
+ * sync / SCIM), so they're added and removed there, not by hand.
+ */
+export class DirectoryManagedError extends ConflictError {
+  constructor(message = "This person is managed by your organization's identity provider. Add or remove them there.") {
+    super(message);
+    this.code = 'DIRECTORY_MANAGED';
+  }
+}
+
 export class RateLimitError extends AppError {
   constructor(message = 'Too many requests') {
     super(message, 429);
@@ -73,11 +95,12 @@ function duplicateKeyField(err) {
  * status and message to send, or null for anything unexpected, whose
  * message must never leave the server.
  * @param {unknown} err
- * @returns {{ status: number, message: string } | null}
+ * @returns {{ status: number, message: string, code?: string } | null}
  */
 export function toClientError(err) {
   if (err instanceof AppError) {
-    return { status: err.status, message: err.message };
+    // `code` only ever comes from our own typed errors (never a driver's).
+    return { status: err.status, message: err.message, ...(typeof err.code === 'string' && { code: err.code }) };
   }
 
   if (err?.code === 11000) {
@@ -105,6 +128,8 @@ export default {
   ForbiddenError,
   ConflictError,
   GoneError,
+  IpNotAllowedError,
+  DirectoryManagedError,
   RateLimitError,
   toClientError,
 };

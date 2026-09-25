@@ -224,7 +224,8 @@ Link configuration, access controls and routing (`src/models/Link.js`).
 | Field | Type | Constraints | Description |
 |---|---|---|---|
 | `_id` | `ObjectId` | Primary key | Internal identifier |
-| `user` | `ObjectId` | Required, ref `User` | Owner; queries filter by it |
+| `user` | `ObjectId` | Required, ref `User` | Member who created the link |
+| `workspace` | `ObjectId` | Ref `Workspace`, indexed | Owning workspace; every query filters by it, and the caller's role in it gates each action (`src/utils/permissions.js`) |
 | `originalUrl` | `String` | Required, trimmed | Destination URL |
 | `shortCode` | `String` | Required, unique, case-sensitive | Generated Base62 code |
 | `shortUrl` | `String` | Required, unique | Full public short URL |

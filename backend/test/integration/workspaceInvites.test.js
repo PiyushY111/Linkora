@@ -10,6 +10,7 @@ import Workspace from '../../src/models/Workspace.js';
 import AuditLog from '../../src/models/AuditLog.js';
 import { hashInviteToken } from '../../src/services/inviteService.js';
 import { redactUrlSecrets } from '../../src/config/logger.js';
+import { permissionsForRole } from '../../src/utils/permissions.js';
 import { closeRedis } from '../../src/services/cacheService.js';
 
 let owner;
@@ -157,7 +158,14 @@ describe('looking up and accepting invites', () => {
 
     const res = await accept(invitee, token);
     assert.strictEqual(res.status, 200);
-    assert.deepStrictEqual(res.body.activeWorkspace, { id: String(workspace._id), name: workspace.name, role: 'creator' });
+    assert.deepStrictEqual(res.body.activeWorkspace, {
+      id: String(workspace._id),
+      name: workspace.name,
+      role: 'creator',
+      roleName: 'creator',
+      permissions: permissionsForRole('creator'),
+      settings: { defaultDomain: null, defaultQrStyle: null, defaultUtmParams: null },
+    });
 
     assert.strictEqual(await memberRole(invitee.user._id), 'creator');
     const reloaded = await User.findById(invitee.user._id);

@@ -1,13 +1,29 @@
 import api from './api';
 
 export const authService = {
-  register: async (name, email, password) => {
-    const response = await api.post('/auth/register', { name, email, password });
+  /**
+   * @param {{ name: string, email: string, password: string, accountType?: 'personal' | 'organization', organizationName?: string }} account
+   *   accountType 'organization' creates a workspace for the team named organizationName.
+   */
+  register: async ({ name, email, password, accountType = 'personal', organizationName }) => {
+    const response = await api.post('/auth/register', {
+      name,
+      email,
+      password,
+      accountType,
+      ...(accountType === 'organization' ? { organizationName } : {}),
+    });
     return response.data;
   },
 
   login: async (email, password) => {
     const response = await api.post('/auth/login', { email, password });
+    return response.data;
+  },
+
+  // "Sign in with SSO": the authorize URL for an organization (by slug).
+  startSso: async (organizationSlug) => {
+    const response = await api.get('/auth/sso/start', { params: { org: organizationSlug } });
     return response.data;
   },
 
@@ -89,6 +105,12 @@ export const linkService = {
     const response = await api.patch(`/links/${id}/toggle`);
     return response.data;
   },
+
+  // Moves a link to another workspace the caller can create links in.
+  transferLink: async (id, workspaceId) => {
+    const response = await api.patch(`/links/${id}/transfer`, { workspaceId });
+    return response.data;
+  },
 };
 
 export const analyticsService = {
@@ -112,8 +134,13 @@ export const analyticsService = {
 };
 
 export const workspaceService = {
-  createOrganization: async (name) => {
-    const response = await api.post('/workspaces/organizations', { name });
+  createOrganization: async (name, workspaceName) => {
+    const response = await api.post('/workspaces/organizations', { name, workspaceName });
+    return response.data;
+  },
+
+  createPersonalWorkspace: async () => {
+    const response = await api.post('/workspaces/organizations', { name: 'Personal', workspaceName: 'Personal' });
     return response.data;
   },
 
@@ -157,6 +184,77 @@ export const workspaceService = {
 
   acceptInvite: async (token) => {
     const response = await api.post(`/workspaces/invites/${token}/accept`);
+    return response.data;
+  },
+
+  // Custom roles of the workspace's organization. Listing works for any
+  // member (and returns the permission keys + descriptions for the editor);
+  // changes need roles:manage.
+  listRoles: async (workspaceId) => {
+    const response = await api.get(`/workspaces/${workspaceId}/roles`);
+    return response.data;
+  },
+
+  createRole: async (workspaceId, role) => {
+    const response = await api.post(`/workspaces/${workspaceId}/roles`, role);
+    return response.data;
+  },
+
+  updateRole: async (workspaceId, roleId, changes) => {
+    const response = await api.patch(`/workspaces/${workspaceId}/roles/${roleId}`, changes);
+    return response.data;
+  },
+
+  deleteRole: async (workspaceId, roleId) => {
+    const response = await api.delete(`/workspaces/${workspaceId}/roles/${roleId}`);
+    return response.data;
+  },
+
+  // Only the keys passed change; null clears a default.
+  updateSettings: async (workspaceId, settings) => {
+    const response = await api.patch(`/workspaces/${workspaceId}/settings`, settings);
+    return response.data;
+  },
+
+  listActivity: async (workspaceId, params = {}) => {
+    const response = await api.get(`/workspaces/${workspaceId}/activity`, { params });
+    return response.data;
+  },
+
+  // The whole retained audit log as CSV (admin+).
+  exportActivity: async (workspaceId) => {
+    const response = await api.get(`/workspaces/${workspaceId}/activity/export`, { responseType: 'blob' });
+    return response.data;
+  },
+
+  // Owner only. auditRetentionDays: whole days >= 30, or null to keep forever.
+  updateAuditSettings: async (organizationId, auditRetentionDays) => {
+    const response = await api.patch(`/workspaces/organizations/${organizationId}/audit-settings`, { auditRetentionDays });
+    return response.data;
+  },
+
+  // Owner only. { ssoConnectionId?, ssoEnforced? }; enforcing needs an SSO
+  // session through that connection.
+  updateSsoSettings: async (organizationId, settings) => {
+    const response = await api.patch(`/workspaces/organizations/${organizationId}/sso-settings`, settings);
+    return response.data;
+  },
+
+  // Owner only, from an allowed IP. Replaces the whole list; [] = no
+  // restriction. A non-empty list must include the IP you save from.
+  updateIpAllowlist: async (organizationId, ipAllowlist) => {
+    const response = await api.patch(`/workspaces/organizations/${organizationId}/ip-allowlist`, { ipAllowlist });
+    return response.data;
+  },
+
+  // Owner only. { enabled?, directoryId?, defaultRole?, workspaceId? }
+  updateDirectorySync: async (organizationId, settings) => {
+    const response = await api.patch(`/workspaces/organizations/${organizationId}/directory-sync`, settings);
+    return response.data;
+  },
+
+  transferOwnership: async (workspaceId, newOwnerUserId) => {
+    const response = await api.post(`/workspaces/${workspaceId}/transfer-ownership`, { newOwnerUserId });
     return response.data;
   },
 };

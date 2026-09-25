@@ -2,6 +2,7 @@ import { create } from 'zustand';
 // Only used inside actions, never at module load, so the authStore <-> api
 // import cycle (api.js reads the token from this store) is safe.
 import { authService, workspaceService } from '../services';
+import { can } from '../utils/permissions';
 
 // Clean up any legacy tokens stored in localStorage by earlier versions
 try {
@@ -27,6 +28,9 @@ const useAuthStore = create((set) => ({
   token: null,
   activeWorkspace: null,
   workspaces: [],
+  // Custom role id -> name for the roles in `workspaces` (built-in roles
+  // aren't listed); see utils/roles.js roleLabel.
+  workspaceRoleNames: {},
   isLoading: false,
   isBootstrapping: true,
   error: null,
@@ -43,7 +47,7 @@ const useAuthStore = create((set) => ({
   // caller; the existing list is kept.
   refreshWorkspaces: async () => {
     const data = await workspaceService.listWorkspaces();
-    set({ workspaces: data.workspaces || [] });
+    set({ workspaces: data.workspaces || [], workspaceRoleNames: data.roleNames || {} });
     return data.workspaces;
   },
 
@@ -61,10 +65,17 @@ const useAuthStore = create((set) => ({
       localStorage.removeItem('linkora_token');
       localStorage.removeItem('linkora_user');
     } catch {}
-    set({ user: null, token: null, activeWorkspace: null, workspaces: [] });
+    set({ user: null, token: null, activeWorkspace: null, workspaces: [], workspaceRoleNames: {} });
   },
 
   clearError: () => set({ error: null }),
 }));
+
+/**
+ * Whether the current role in the active workspace allows `action`
+ * (see utils/permissions.js). UX only; the backend is the real gate.
+ * @param {string} action
+ */
+export const useCan = (action) => useAuthStore((state) => can(state.activeWorkspace, action));
 
 export default useAuthStore;

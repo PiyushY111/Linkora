@@ -9,6 +9,18 @@ import mongoose from 'mongoose';
  */
 export const WORKSPACE_ROLES = ['owner', 'admin', 'creator', 'viewer'];
 
+// A member's (or invite's) role: one of WORKSPACE_ROLES, or the id of one of
+// the organization's custom roles (models/CustomRole.js). That the id
+// belongs to this workspace's org is checked where roles are assigned.
+const roleField = {
+  type: String,
+  required: true,
+  validate: {
+    validator: (role) => WORKSPACE_ROLES.includes(role) || /^[0-9a-f]{24}$/.test(role),
+    message: 'role must be a built-in role or a custom role id',
+  },
+};
+
 /**
  * An invitation to join, accepted via a link carrying a random token. Only
  * the token's SHA-256 hash is stored (like ApiKey.keyHash), so a leaked
@@ -18,7 +30,7 @@ export const WORKSPACE_ROLES = ['owner', 'admin', 'creator', 'viewer'];
 const pendingInviteSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, lowercase: true, trim: true },
-    role: { type: String, enum: WORKSPACE_ROLES, required: true },
+    role: roleField,
     tokenHash: { type: String, required: true },
     invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     createdAt: { type: Date, default: Date.now },
@@ -33,11 +45,30 @@ const workspaceSchema = new mongoose.Schema(
     members: [
       {
         user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-        role: { type: String, enum: WORKSPACE_ROLES, required: true, default: 'viewer' },
+        role: { ...roleField, default: 'viewer' },
+        // 'scim' when the organization's directory added this membership:
+        // it's managed by the identity provider, so it can't be removed (or
+        // re-invited) by hand. See services/directorySyncService.js.
+        managedBy: { type: String, enum: ['scim'] },
         _id: false,
       },
     ],
     pendingInvites: { type: [pendingInviteSchema], default: [] },
+
+    // Defaults the link-creation UI pre-fills; each can be overridden per
+    // link and none is enforced server-side. Validated in
+    // workspaceController.updateSettings.
+    defaultDomain: { type: mongoose.Schema.Types.ObjectId, ref: 'CustomDomain', default: null },
+    // Same shape as the QR studio's config (DEFAULT_QR_CONFIG in
+    // frontend/src/utils/qrPresets.js), like Link.qrConfig.
+    defaultQrStyle: { type: mongoose.Schema.Types.Mixed, default: null },
+    defaultUtmParams: {
+      type: new mongoose.Schema(
+        { source: String, medium: String, campaign: String, term: String, content: String },
+        { _id: false }
+      ),
+      default: null,
+    },
   },
   {
     timestamps: true,

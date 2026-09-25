@@ -8,6 +8,25 @@ import { verifyAccessToken } from '../utils/jwt.js';
 import { getClientIp } from '../utils/helpers.js';
 import { logger } from '../config/logger.js';
 import { resolveActiveWorkspace } from '../services/workspaceService.js';
+import { withPermissions } from '../services/roleService.js';
+import { assertOrganizationIpAllowed } from '../services/organizationAccess.js';
+import { IpNotAllowedError } from '../lib/errors.js';
+
+/**
+ * Enforces the org's IP allowlist for an API request acting in `workspace`.
+ * Responds 403 itself and returns true when blocked: the key paths below
+ * run inside a try/catch that would turn a thrown error into a 500.
+ */
+async function ipBlocked(req, res, workspace) {
+  try {
+    await assertOrganizationIpAllowed(req, workspace.organization);
+    return false;
+  } catch (err) {
+    if (!(err instanceof IpNotAllowedError)) throw err;
+    res.status(403).json({ success: false, code: err.code, message: err.message });
+    return true;
+  }
+}
 
 /**
  * Authenticates public API requests via the X-API-Key header.
@@ -18,7 +37,7 @@ import { resolveActiveWorkspace } from '../services/workspaceService.js';
  *
  * Also attaches req.activeWorkspace / req.activeMembership. A hashed key
  * acts in the workspace it belongs to, and only while its creator is still
- * a member there (their current role is what requireActiveRole checks).
+ * a member there (their current role is what requirePermission checks).
  * Session and legacy-key requests act in the user's active workspace.
  */
 export async function apiKeyAuth(req, res, next) {
@@ -82,6 +101,7 @@ export async function apiKeyAuth(req, res, next) {
           }).catch((err) => logger.error({ err }, 'Failed to update ApiKey lastUsedAt'));
         }
 
+        if (await ipBlocked(req, res, req.activeWorkspace)) return undefined;
         return next();
       }
     } catch (err) {
@@ -134,8 +154,8 @@ export async function apiKeyAuth(req, res, next) {
       }
 
       const workspace = await Workspace.findById(keyDoc.workspace);
-      const membership = workspace?.members.find((m) => String(m.user) === String(user._id));
-      if (!membership) {
+      const rawMembership = workspace?.members.find((m) => String(m.user) === String(user._id));
+      if (!rawMembership) {
         return res.status(401).json({
           success: false,
           message: "API key's creator is no longer a member of its workspace",
@@ -144,7 +164,7 @@ export async function apiKeyAuth(req, res, next) {
 
       req.user = user;
       req.activeWorkspace = workspace;
-      req.activeMembership = membership;
+      req.activeMembership = await withPermissions(rawMembership, workspace.organization);
       req.apiKeyDoc = keyDoc;
       req.scopes = keyDoc.scopes || ['*'];
       req.apiKeyUser = {
@@ -163,6 +183,7 @@ export async function apiKeyAuth(req, res, next) {
         $inc: { totalRequests: 1 },
       }).catch((err) => logger.error({ err }, 'Failed to update ApiKey lastUsedAt'));
 
+      if (await ipBlocked(req, res, req.activeWorkspace)) return undefined;
       return next();
     }
 
@@ -182,6 +203,7 @@ export async function apiKeyAuth(req, res, next) {
         prefix: 'legacy',
         environment: 'live',
       };
+      if (await ipBlocked(req, res, req.activeWorkspace)) return undefined;
       return next();
     }
 

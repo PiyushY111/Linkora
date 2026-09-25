@@ -10,15 +10,16 @@ import {
   getCacheDiagnosticsHandler,
 } from '../controllers/developerController.js';
 import { protect } from '../middleware/auth.js';
-import { requireActiveRole } from '../middleware/rbac.js';
+import { requirePermission } from '../middleware/rbac.js';
 
 const router = express.Router();
 
 // All developer portal routes require dashboard user authentication
 router.use(protect);
 
-// API keys and their usage belong to the workspace; managing them is admin+.
-const adminOnly = requireActiveRole('admin');
+// API keys and their usage belong to the workspace; see 'apiKeys:manage'
+// in utils/permissions.js (reads included: request logs carry caller IPs).
+const adminOnly = requirePermission('apiKeys:manage');
 
 router.get('/keys', adminOnly, listApiKeys);
 router.post('/keys', adminOnly, createApiKey);

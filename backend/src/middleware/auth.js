@@ -1,12 +1,12 @@
 import User from '../models/User.js';
-import { verifyAccessToken } from '../utils/jwt.js';
+import { verifyAccessToken, sessionAuthFromToken } from '../utils/jwt.js';
 import { resolveActiveWorkspace } from '../services/workspaceService.js';
 
 /**
  * Authenticates the bearer token and attaches the caller plus the workspace
  * they're acting in: req.user, req.activeWorkspace, req.activeMembership
- * ({ user, role }). Workspace-owned resources are scoped by
- * req.activeWorkspace._id; see requireActiveRole in rbac.js for role checks.
+ * ({ user, role }), and req.sessionAuth (how the session signed in). Workspace-owned resources are scoped by
+ * req.activeWorkspace._id; see requirePermission in rbac.js for role checks.
  */
 export const protect = async (req, res, next) => {
   let token;
@@ -25,6 +25,9 @@ export const protect = async (req, res, next) => {
   } catch {
     return res.status(401).json({ success: false, message: 'Not authorized to access this route' });
   }
+
+  // How this session signed in (password or SSO, and which connection).
+  req.sessionAuth = sessionAuthFromToken(decoded);
 
   // Outside the try above: a database failure here is a 500 for the error
   // handler, not an authentication failure.

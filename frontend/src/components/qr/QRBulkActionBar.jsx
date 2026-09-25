@@ -6,9 +6,11 @@ import Papa from 'papaparse';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useCan } from '../../context/authStore';
 
 export default function QRBulkActionBar({ selectedIds, links, onClearSelection }) {
   const confirm = useConfirm();
+  const canWriteLinks = useCan('links:write');
   const { removeLink, updateLink } = useLinkStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -157,16 +159,18 @@ export default function QRBulkActionBar({ selectedIds, links, onClearSelection }
             <span className="hidden md:inline">Download QRs</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleBulkToggle}
-            disabled={isProcessing}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-paper-300 hover:bg-ink-800 hover:text-paper-100"
-            title="Toggle pause / active state"
-          >
-            <Power size={13} />
-            <span className="hidden md:inline">Toggle Status</span>
-          </button>
+          {canWriteLinks && (
+            <button
+              type="button"
+              onClick={handleBulkToggle}
+              disabled={isProcessing}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-paper-300 hover:bg-ink-800 hover:text-paper-100"
+              title="Toggle pause / active state"
+            >
+              <Power size={13} />
+              <span className="hidden md:inline">Toggle Status</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -178,16 +182,18 @@ export default function QRBulkActionBar({ selectedIds, links, onClearSelection }
             <span className="hidden md:inline">CSV</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleBulkDelete}
-            disabled={isProcessing}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger/10"
-            title="Delete selected links permanently"
-          >
-            <Trash2 size={13} />
-            <span className="hidden md:inline">Delete</span>
-          </button>
+          {canWriteLinks && (
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={isProcessing}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger/10"
+              title="Delete selected links permanently"
+            >
+              <Trash2 size={13} />
+              <span className="hidden md:inline">Delete</span>
+            </button>
+          )}
 
           {/* Dismiss Selection */}
           <button

@@ -2,10 +2,12 @@ import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import QRCodeStyling from 'qr-code-styling';
 import { Sparkles, QrCode as QrIcon } from 'lucide-react';
 import { DEFAULT_QR_CONFIG } from '../../utils/qrPresets';
+import { getHostedOrigin } from '../../utils/domain';
 
 const QRCodeViewer = forwardRef(function QRCodeViewer(
   {
-    data = 'https://linkora.io',
+    data,
+    value,
     config = DEFAULT_QR_CONFIG,
     size = 260,
     showFrame = true,
@@ -16,6 +18,7 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
 ) {
   const containerRef = useRef(null);
   const qrCodeRef = useRef(null);
+  const activeData = data || value || getHostedOrigin();
 
   // Compute qr-code-styling options from config
   const getOptions = (targetSize = size) => {
@@ -44,7 +47,7 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
       width: renderSize,
       height: renderSize,
       type: 'canvas',
-      data: data || 'https://linkora.io',
+      data: activeData,
       margin: renderMargin,
       qrOptions: {
         typeNumber: 0,
@@ -86,7 +89,7 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
     } else {
       qrCodeRef.current.update(options);
     }
-  }, [data, config, size]);
+  }, [activeData, config, size]);
 
   // Expose export helpers through ref
   useImperativeHandle(ref, () => ({

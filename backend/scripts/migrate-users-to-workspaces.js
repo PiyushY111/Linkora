@@ -18,7 +18,7 @@ import ApiKey from '../src/models/ApiKey.js';
 import ApiLog from '../src/models/ApiLog.js';
 import Webhook from '../src/models/Webhook.js';
 import CustomDomain from '../src/models/CustomDomain.js';
-import { findOrCreatePersonalWorkspace } from '../src/services/workspaceService.js';
+import { createWorkspaceForNewUser } from '../src/services/workspaceService.js';
 
 // ApiLog is included so the developer portal's workspace-scoped metrics
 // still show a migrated user's request history.
@@ -39,7 +39,7 @@ export async function migrateUsersToWorkspaces() {
 
   for await (const user of cursor) {
     users.scanned += 1;
-    const { workspace, created } = await findOrCreatePersonalWorkspace(user);
+    const { workspace, created } = await createWorkspaceForNewUser(user);
 
     // Backfill before setting activeWorkspace: a user only drops out of the
     // cursor's filter once everything they own has been scoped, so a crash

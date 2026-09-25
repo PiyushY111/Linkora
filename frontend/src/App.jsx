@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { Toaster } from 'react-hot-toast';
@@ -22,16 +22,20 @@ import NotFound from './pages/NotFound';
 import Redirect from './pages/Redirect';
 import Workspaces from './pages/Workspaces';
 import AcceptInvite from './pages/AcceptInvite';
+import OnboardingInviteTeam from './pages/OnboardingInviteTeam';
 
 import { ConfirmProvider } from './context/ConfirmContext';
 import './styles/globals.css';
 
-// Login/register for signed-out users only. Once signed in, go wherever the
-// page that sent them here asked (router state `from`), else the dashboard.
+// Login/register for signed-out users only. Someone already signed in when
+// they arrive goes wherever the sending page asked (router state `from`),
+// else the dashboard. When they sign in *on* the page, the page navigates
+// itself (register may send a new team to onboarding), so this doesn't race
+// it with a redirect of its own.
 function GuestRoute({ children }) {
-  const { token } = useAuthStore();
   const location = useLocation();
-  return token ? <Navigate to={safeRedirectPath(location.state?.from)} replace /> : children;
+  const [signedInOnArrival] = useState(() => Boolean(useAuthStore.getState().token));
+  return signedInOnArrival ? <Navigate to={safeRedirectPath(location.state?.from)} replace /> : children;
 }
 
 function App() {
@@ -68,8 +72,9 @@ function App() {
             <Route path="/analytics" element={<Navigate to="/analytics/all" replace />} />
             <Route path="/analytics/:linkId" element={<ProtectedRoute component={Analytics} />} />
             <Route path="/workspaces" element={<ProtectedRoute component={Workspaces} />} />
-            <Route path="/webhooks" element={<ProtectedRoute component={Webhooks} />} />
-            <Route path="/developer" element={<ProtectedRoute component={Developer} />} />
+            <Route path="/onboarding/invite-team" element={<ProtectedRoute component={OnboardingInviteTeam} />} />
+            <Route path="/webhooks" element={<ProtectedRoute component={Webhooks} permission="webhooks:manage" />} />
+            <Route path="/developer" element={<ProtectedRoute component={Developer} permission="apiKeys:manage" />} />
             <Route path="/settings" element={<ProtectedRoute component={Settings} />} />
 
             {/* Catch short links and redirect through backend */}

@@ -89,6 +89,9 @@ app.use(limiter);
 // `req._body` is set, so the first matching parser in the chain wins.
 app.use('/api/public/v1/links/bulk', express.json({ limit: '2mb' }));
 
+// The WorkOS directory-sync webhook is verified against the exact bytes
+// received, so it gets the raw body (express.json then skips it).
+app.use('/api/auth/sso/scim/events', express.raw({ type: '*/*', limit: '1mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 

@@ -30,15 +30,18 @@ export default function LinkDrawerHeader({ link, isUpdating, onToggle, onClose }
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onToggle}
-            disabled={isUpdating}
-            className="rounded-lg p-1.5 text-paper-400 hover:bg-ink-800 hover:text-paper-100 transition-colors"
-            title={link.isActive ? 'Pause link' : 'Activate link'}
-          >
-            <Power size={16} className={link.isActive ? 'text-success' : 'text-paper-500'} />
-          </button>
+          {/* onToggle is omitted for roles that can't change links. */}
+          {onToggle && (
+            <button
+              type="button"
+              onClick={onToggle}
+              disabled={isUpdating}
+              className="rounded-lg p-1.5 text-paper-400 hover:bg-ink-800 hover:text-paper-100 transition-colors"
+              title={link.isActive ? 'Pause link' : 'Activate link'}
+            >
+              <Power size={16} className={link.isActive ? 'text-success' : 'text-paper-500'} />
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}

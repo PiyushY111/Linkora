@@ -6,12 +6,14 @@ import Papa from 'papaparse';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useCan } from '../../context/authStore';
 
 export default function BulkActionBar({ selectedIds, links, onClearSelection }) {
   const confirm = useConfirm();
   const { removeLink, updateLink } = useLinkStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const canWriteLinks = useCan('links:write');
 
   if (!selectedIds || selectedIds.length === 0) return null;
 
@@ -124,16 +126,18 @@ export default function BulkActionBar({ selectedIds, links, onClearSelection }) 
             <span>Copy URLs</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleBulkToggle}
-            disabled={isProcessing}
-            className="btn-ghost btn-sm text-paper-200 hover:text-paper-100"
-            title="Toggle active status"
-          >
-            <Power size={14} />
-            <span>Toggle Status</span>
-          </button>
+          {canWriteLinks && (
+            <button
+              type="button"
+              onClick={handleBulkToggle}
+              disabled={isProcessing}
+              className="btn-ghost btn-sm text-paper-200 hover:text-paper-100"
+              title="Toggle active status"
+            >
+              <Power size={14} />
+              <span>Toggle Status</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -145,16 +149,18 @@ export default function BulkActionBar({ selectedIds, links, onClearSelection }) 
             <span>Export CSV</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleBulkDelete}
-            disabled={isProcessing}
-            className="btn-danger btn-sm"
-            title="Delete selected links"
-          >
-            <Trash2 size={14} />
-            <span>Delete</span>
-          </button>
+          {canWriteLinks && (
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={isProcessing}
+              className="btn-danger btn-sm"
+              title="Delete selected links"
+            >
+              <Trash2 size={14} />
+              <span>Delete</span>
+            </button>
+          )}
         </div>
 
         <div className="border-l border-ink-700 pl-2">

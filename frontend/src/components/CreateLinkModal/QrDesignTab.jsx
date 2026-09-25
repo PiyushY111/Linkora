@@ -2,9 +2,9 @@ import { Sparkles, Sun, Moon } from 'lucide-react';
 import QRCodeCustomizer from '../qr/QRCodeCustomizer';
 import QRCodeViewer from '../qr/QRCodeViewer';
 import { DEFAULT_QR_CONFIG, QR_DESIGNER_PRESETS } from '../../utils/qrPresets';
+import { getHostedOrigin } from '../../utils/domain';
 
 const QUICK_STYLE_COUNT = 4;
-const PLACEHOLDER_TARGET = 'https://linkora.io';
 
 export default function QrDesignTab({
   formData,
@@ -15,7 +15,7 @@ export default function QrDesignTab({
   actions,
 }) {
   const qrConfig = formData.qrConfig || DEFAULT_QR_CONFIG;
-  const target = computedDestinationUrl || PLACEHOLDER_TARGET;
+  const target = computedDestinationUrl || getHostedOrigin();
 
   return (
     <div className="space-y-4">

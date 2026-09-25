@@ -35,6 +35,8 @@ export default function QRCard({
   onDelete,
   onUpdateDestination,
 }) {
+  // onToggleStatus / onDelete / onUpdateDestination are only passed for roles
+  // that may change links; their controls are hidden otherwise.
   const [copied, setCopied] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -139,16 +141,18 @@ export default function QRCard({
               anchorEl={menuBtnRef.current}
               width={180}
             >
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  setIsEditing(true);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
-              >
-                <Edit3 size={13} /> Change Destination
-              </button>
+              {onUpdateDestination && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenu(false);
+                    setIsEditing(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                >
+                  <Edit3 size={13} /> Change Destination
+                </button>
+              )}
 
               <button
                 type="button"
@@ -169,29 +173,34 @@ export default function QRCard({
                 <BarChart3 size={13} /> View Analytics
               </RouterLink>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  onToggleStatus && onToggleStatus(link);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
-              >
-                <Power size={13} /> {link.isActive ? 'Pause QR' : 'Activate QR'}
-              </button>
+              {onToggleStatus && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenu(false);
+                    onToggleStatus && onToggleStatus(link);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                >
+                  <Power size={13} /> {link.isActive ? 'Pause QR' : 'Activate QR'}
+                </button>
+              )}
 
-              <div className="my-1 border-t border-ink-700/80" />
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  onDelete && onDelete(link._id);
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10 transition-colors"
-              >
-                <Trash2 size={13} /> Delete QR
-              </button>
+              {onDelete && (
+                <>
+                  <div className="my-1 border-t border-ink-700/80" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenu(false);
+                      onDelete(link._id);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10 transition-colors"
+                  >
+                    <Trash2 size={13} /> Delete QR
+                  </button>
+                </>
+              )}
             </ActionDropdown>
           </div>
         </div>
@@ -267,7 +276,7 @@ export default function QRCard({
             <span className="font-semibold uppercase tracking-wider text-paper-400">
               Redirects Scanners To
             </span>
-            {!isEditing && (
+            {!isEditing && onUpdateDestination && (
               <button
                 type="button"
                 onClick={(e) => {

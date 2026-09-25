@@ -8,7 +8,11 @@ export const errorHandler = (err, req, res, next) => {
 
   const clientError = toClientError(err);
   if (clientError) {
-    return res.status(clientError.status).json({ success: false, message: clientError.message });
+    return res.status(clientError.status).json({
+      success: false,
+      message: clientError.message,
+      ...(clientError.code && { code: clientError.code }),
+    });
   }
 
   // Anything else is an unexpected server-side failure: never leak err.message

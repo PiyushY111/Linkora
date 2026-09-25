@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { DEFAULT_QR_CONFIG } from '../../utils/qrPresets';
+import { workspaceQrDefault, workspaceUtmDefaults } from '../../utils/workspaceDefaults';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import useAuthStore from '../../context/authStore';
@@ -22,7 +22,8 @@ import {
  */
 export default function useCreateLinkForm({ open, onClose }) {
   const { addLink } = useLinkStore();
-  const { user } = useAuthStore();
+  const { user, activeWorkspace } = useAuthStore();
+  const qrDefault = useMemo(() => workspaceQrDefault(activeWorkspace), [activeWorkspace]);
   const [activeTab, setActiveTab] = useState('general'); // 'general' | 'utm' | 'enterprise'
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [showPassword, setShowPassword] = useState(false);
@@ -32,20 +33,21 @@ export default function useCreateLinkForm({ open, onClose }) {
   const qrViewerRef = useRef(null);
   const successQrViewerRef = useRef(null);
 
-  // Pre-fill user's default category and UTM parameters when opening modal
+  // Pre-fill defaults when opening: the user's category, UTM params from the
+  // workspace (falling back to the user's own), and the workspace QR style.
+  // All of them stay editable for this link.
   useEffect(() => {
     if (open) {
       setFormData({
         ...EMPTY_FORM,
         category: user?.defaultLinkCategory || 'marketing',
-        utmSource: user?.defaultUtm?.source || '',
-        utmMedium: user?.defaultUtm?.medium || '',
-        utmCampaign: user?.defaultUtm?.campaign || '',
+        ...workspaceUtmDefaults(activeWorkspace, user),
+        qrConfig: qrDefault,
       });
       setCreatedResult(null);
       setActiveTab('general');
     }
-  }, [open, user]);
+  }, [open, user, activeWorkspace, qrDefault]);
 
   const domain = useMemo(() => extractDomain(formData.originalUrl), [formData.originalUrl]);
 
@@ -110,14 +112,14 @@ export default function useCreateLinkForm({ open, onClose }) {
     applyQrPreset: (preset) =>
       setFormData((prev) => ({
         ...prev,
-        qrConfig: { ...(prev.qrConfig || DEFAULT_QR_CONFIG), ...preset.config },
+        qrConfig: { ...(prev.qrConfig || qrDefault), ...preset.config },
       })),
     changeQrConfig: (updater) =>
       setFormData((prev) => ({
         ...prev,
-        qrConfig: typeof updater === 'function' ? updater(prev.qrConfig || DEFAULT_QR_CONFIG) : updater,
+        qrConfig: typeof updater === 'function' ? updater(prev.qrConfig || qrDefault) : updater,
       })),
-    resetQrConfig: () => setField('qrConfig', DEFAULT_QR_CONFIG),
+    resetQrConfig: () => setField('qrConfig', qrDefault),
   };
 
   const startOver = () => {

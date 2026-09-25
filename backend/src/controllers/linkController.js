@@ -13,7 +13,9 @@ import { logAudit } from '../utils/auditLogger.js';
 import { dispatchEvent } from '../services/webhookService.js';
 import { validateLinkRedirectFields } from '../services/linkUrlValidation.js';
 import { isReservedAlias } from '../lib/reservedAliases.js';
-import { ValidationError, NotFoundError, ConflictError } from '../lib/errors.js';
+import { ValidationError, NotFoundError, ConflictError, ForbiddenError } from '../lib/errors.js';
+import { findWorkspaceMembership } from '../middleware/rbac.js';
+import { membershipCan, permissionDeniedMessage } from '../utils/permissions.js';
 
 const ALIAS_PATTERN = /^[a-z0-9-]+$/;
 
@@ -169,6 +171,7 @@ export const createLink = async (req, res) => {
 
   logAudit({
     action: 'link.create',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: String(link._id),
     ipAddress: getClientIp(req),
@@ -378,10 +381,12 @@ export const updateLink = async (req, res) => {
 
   logAudit({
     action: 'link.update',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: req.params.id,
     ipAddress: getClientIp(req),
-    diff: { title, description, tags, category, expiryDate },
+    // Which fields changed, not their values: they include the password hash.
+    diff: { shortCode: updated.shortCode, changedFields: Object.keys(updateFields) },
   });
 
   dispatchEvent(req.activeWorkspace._id, 'link.updated', {
@@ -421,6 +426,7 @@ export const deleteLink = async (req, res) => {
 
   logAudit({
     action: 'link.delete',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: req.params.id,
     ipAddress: getClientIp(req),
@@ -455,6 +461,7 @@ export const toggleLinkStatus = async (req, res) => {
 
   logAudit({
     action: 'link.toggle_status',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: req.params.id,
     ipAddress: getClientIp(req),
@@ -465,4 +472,54 @@ export const toggleLinkStatus = async (req, res) => {
     success: true,
     link,
   });
+};
+
+/**
+ * PATCH /api/links/:id/transfer — move a link to another workspace. Needs
+ * 'links:write' in the link's current workspace (route) and in the
+ * destination. Clicks and analytics follow the link: they're keyed by
+ * linkId. Both workspaces get an audit entry.
+ */
+export const transferLink = async (req, res) => {
+  const { workspaceId } = req.body ?? {};
+  if (typeof workspaceId !== 'string' || !workspaceId) throw new ValidationError('workspaceId is required');
+
+  const source = req.activeWorkspace._id;
+  const link = await Link.findOne({ _id: req.params.id, workspace: source });
+  if (!link) throw new NotFoundError('Link not found');
+  if (String(workspaceId) === String(source)) throw new ValidationError('The link is already in that workspace');
+
+  const destination = await findWorkspaceMembership(workspaceId, req.user.id);
+  if (!destination.workspace) throw new NotFoundError('Workspace not found');
+  if (!destination.membership) throw new ForbiddenError('Not a member of the destination workspace');
+  if (!membershipCan(destination.membership, 'links:write')) {
+    throw new ForbiddenError(`${permissionDeniedMessage('links:write')} in the destination workspace`);
+  }
+  // A custom domain belongs to the source workspace; moving the link would
+  // leave it pointing at another workspace's domain.
+  if (link.customDomain) throw new ConflictError('Remove the custom domain from this link before moving it');
+
+  // Conditional on the link still being in the source workspace, so two
+  // concurrent transfers can't both "succeed".
+  const moved = await Link.findOneAndUpdate(
+    { _id: link._id, workspace: source },
+    { $set: { workspace: destination.workspace._id } },
+    { new: true }
+  );
+  if (!moved) throw new NotFoundError('Link not found');
+
+  // The cached redirect meta carries workspaceId (webhook routing).
+  await invalidateLinkMeta(moved.shortCode);
+  if (moved.customAlias) await invalidateLinkMeta(moved.customAlias);
+
+  const audit = {
+    actorUserId: req.user.id,
+    targetResourceId: String(moved._id),
+    ipAddress: getClientIp(req),
+    diff: { shortCode: moved.shortCode, from: String(source), to: String(destination.workspace._id) },
+  };
+  logAudit({ ...audit, action: 'link.transfer.out', workspace: source });
+  logAudit({ ...audit, action: 'link.transfer.in', workspace: destination.workspace._id });
+
+  res.status(200).json({ success: true, link: moved });
 };

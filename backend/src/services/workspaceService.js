@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import Organization from '../models/Organization.js';
 import Workspace from '../models/Workspace.js';
 import { logger } from '../config/logger.js';
+import { withPermissions } from './roleService.js';
 
 export const PERSONAL_WORKSPACE_NAME = 'Personal';
 
@@ -21,7 +22,7 @@ function personalOrgName(user) {
 
 // Date.now() alone isn't unique across users provisioned in the same
 // millisecond, so the user id's tail is appended to keep slugs distinct.
-function personalOrgSlug(orgName, userId) {
+function orgSlug(orgName, userId) {
   const base = slugify(orgName) || 'org';
   return `${base}-${Date.now().toString(36)}-${String(userId).slice(-6)}`;
 }
@@ -31,19 +32,27 @@ function findMembership(workspace, userId) {
 }
 
 /**
- * Returns the user's personal workspace, creating it (and its org) if needed.
- * Reuses leftovers of an interrupted earlier attempt first: a "Personal"
- * workspace the user owns inside an org they own, or an org of the expected
+ * Returns the first workspace for a new (or not yet migrated) user, creating
+ * it and its organization if needed. With no options this is the personal
+ * setup: org "{name}'s Organization" (or "Personal" for a blank name) and a
+ * workspace named "Personal". Signup passes both names for a team account.
+ *
+ * Reuses leftovers of an interrupted earlier attempt first: a workspace of
+ * that name the user owns inside an org they own, or an org of the expected
  * name that never got its workspace.
+ * @param {{ _id: unknown, name?: string }} user
+ * @param {{ orgName?: string, workspaceName?: string }} [names]
  * @returns {Promise<{ workspace: import('mongoose').Document, created: boolean }>}
  */
-export async function findOrCreatePersonalWorkspace(user) {
-  const orgName = personalOrgName(user);
+export async function createWorkspaceForNewUser(
+  user,
+  { orgName = personalOrgName(user), workspaceName = PERSONAL_WORKSPACE_NAME } = {}
+) {
   const ownedOrgIds = await Organization.find({ owner: user._id }).distinct('_id');
 
   const existing = await Workspace.findOne({
     organization: { $in: ownedOrgIds },
-    name: PERSONAL_WORKSPACE_NAME,
+    name: workspaceName,
     members: { $elemMatch: { user: user._id, role: 'owner' } },
   });
   if (existing) return { workspace: existing, created: false };
@@ -56,14 +65,25 @@ export async function findOrCreatePersonalWorkspace(user) {
 
   const org =
     orphanOrg ??
-    (await Organization.create({ name: orgName, slug: personalOrgSlug(orgName, user._id), owner: user._id }));
+    (await Organization.create({ name: orgName, slug: orgSlug(orgName, user._id), owner: user._id }));
 
   const workspace = await Workspace.create({
     organization: org._id,
-    name: PERSONAL_WORKSPACE_NAME,
+    name: workspaceName,
     members: [{ user: user._id, role: 'owner' }],
   });
   return { workspace, created: true };
+}
+
+/**
+ * Signup: create the user's first workspace (see createWorkspaceForNewUser
+ * for `names`) and make it their active one.
+ * @returns {Promise<{ workspace: import('mongoose').Document, membership: { user: unknown, role: string } }>}
+ */
+export async function setUpNewUserWorkspace(user, names) {
+  const { workspace } = await createWorkspaceForNewUser(user, names);
+  await User.updateOne({ _id: user._id }, { $set: { activeWorkspace: workspace._id } });
+  return { workspace, membership: await withPermissions(findMembership(workspace, user._id), workspace.organization) };
 }
 
 /**
@@ -74,7 +94,7 @@ export async function findOrCreatePersonalWorkspace(user) {
 async function pickFallbackWorkspace(user) {
   const member = await Workspace.findOne({ 'members.user': user._id }).sort({ createdAt: 1 });
   if (member) return { workspace: member, created: false };
-  return findOrCreatePersonalWorkspace(user);
+  return createWorkspaceForNewUser(user);
 }
 
 /**
@@ -85,13 +105,15 @@ async function pickFallbackWorkspace(user) {
  * concurrent first requests can't leave the user pointing at different
  * workspaces: the loser re-resolves from what the winner stored.
  * @param {{ _id: unknown, name?: string, activeWorkspace?: unknown }} user
- * @returns {Promise<{ workspace: import('mongoose').Document, membership: { user: unknown, role: string } }>}
+ * The membership comes back resolved (roleService.withPermissions):
+ * { user, role, roleName, permissions }, for fixed and custom roles alike.
+ * @returns {Promise<{ workspace: import('mongoose').Document, membership: { user: unknown, role: string, roleName: string, permissions: string[] } }>}
  */
 export async function resolveActiveWorkspace(user, { retries = 1 } = {}) {
   if (user.activeWorkspace) {
     const workspace = await Workspace.findById(user.activeWorkspace);
     const membership = findMembership(workspace, user._id);
-    if (membership) return { workspace, membership };
+    if (membership) return { workspace, membership: await withPermissions(membership, workspace.organization) };
   }
 
   const { workspace, created } = await pickFallbackWorkspace(user);
@@ -114,15 +136,44 @@ export async function resolveActiveWorkspace(user, { retries = 1 } = {}) {
     { userId: user._id, previous: user.activeWorkspace ?? null, workspaceId: workspace._id, created },
     'Set active workspace for user'
   );
-  return { workspace, membership: findMembership(workspace, user._id) };
+  return { workspace, membership: await withPermissions(findMembership(workspace, user._id), workspace.organization) };
+}
+
+/** A workspace's link-creation defaults, as returned to clients. */
+export function workspaceSettingsPayload(workspace) {
+  return {
+    defaultDomain: workspace.defaultDomain ?? null,
+    defaultQrStyle: workspace.defaultQrStyle ?? null,
+    defaultUtmParams: workspace.defaultUtmParams ?? null,
+  };
 }
 
 /**
  * The active-workspace block auth responses carry alongside the user.
- * @returns {{ id: unknown, name: string, role: string }}
+ * `permissions` lists the actions the role allows, so the frontend can hide
+ * controls without its own copy of the matrix; `role` is a built-in role
+ * name or a custom role id, `roleName` is for display; `settings` holds the
+ * defaults the link-creation UI pre-fills.
+ * @param {object} workspace
+ * @param {{ role: string, roleName: string, permissions: string[] }} membership - resolved (roleService.withPermissions)
+ * @returns {{ id: unknown, name: string, role: string, roleName: string, permissions: string[], settings: object }}
  */
 export function toActiveWorkspacePayload(workspace, membership) {
-  return { id: workspace._id, name: workspace.name, role: membership.role };
+  return {
+    id: workspace._id,
+    name: workspace.name,
+    role: membership.role,
+    roleName: membership.roleName,
+    permissions: membership.permissions,
+    settings: workspaceSettingsPayload(workspace),
+  };
 }
 
-export default { findOrCreatePersonalWorkspace, resolveActiveWorkspace, toActiveWorkspacePayload, PERSONAL_WORKSPACE_NAME };
+export default {
+  createWorkspaceForNewUser,
+  setUpNewUserWorkspace,
+  resolveActiveWorkspace,
+  toActiveWorkspacePayload,
+  workspaceSettingsPayload,
+  PERSONAL_WORKSPACE_NAME,
+};

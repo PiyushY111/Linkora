@@ -129,6 +129,7 @@ export const createLink = async (req, res) => {
 
   logAudit({
     action: 'api.link.create',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(link._id),
@@ -240,6 +241,7 @@ export const updateLink = async (req, res) => {
 
   logAudit({
     action: 'api.link.update',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(link._id),
@@ -282,6 +284,7 @@ export const deleteLink = async (req, res) => {
 
   logAudit({
     action: 'api.link.delete',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(link._id),
@@ -343,6 +346,7 @@ export const bulkCreateLinks = async (req, res) => {
 
   logAudit({
     action: 'api.link.bulk_create',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     diff: { requested: links.length, succeeded },

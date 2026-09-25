@@ -8,6 +8,7 @@ import Organization from '../../src/models/Organization.js';
 import Workspace from '../../src/models/Workspace.js';
 import Link from '../../src/models/Link.js';
 import { closeRedis } from '../../src/services/cacheService.js';
+import { permissionsForRole } from '../../src/utils/permissions.js';
 
 // member belongs to their own personal workspace and, as a creator, to the
 // owner's team workspace. stranger belongs to neither of the owner's.
@@ -56,6 +57,9 @@ describe('auth responses carry the active workspace', () => {
       id: String(member.workspace._id),
       name: 'Personal',
       role: 'owner',
+      roleName: 'owner',
+      permissions: permissionsForRole('owner'),
+      settings: { defaultDomain: null, defaultQrStyle: null, defaultUtmParams: null },
     });
   });
 
@@ -67,6 +71,9 @@ describe('auth responses carry the active workspace', () => {
       id: String(teamWorkspace._id),
       name: 'Personal',
       role: 'owner',
+      roleName: 'owner',
+      permissions: permissionsForRole('owner'),
+      settings: { defaultDomain: null, defaultQrStyle: null, defaultUtmParams: null },
     });
   });
 });
@@ -94,6 +101,9 @@ describe('PUT /api/auth/me/active-workspace', () => {
       id: String(teamWorkspace._id),
       name: teamWorkspace.name,
       role: 'creator',
+      roleName: 'creator',
+      permissions: permissionsForRole('creator'),
+      settings: { defaultDomain: null, defaultQrStyle: null, defaultUtmParams: null },
     });
 
     const stored = await User.findById(member.user._id);

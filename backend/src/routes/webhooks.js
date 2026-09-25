@@ -11,12 +11,14 @@ import {
   retryDelivery,
 } from '../controllers/webhookController.js';
 import { protect } from '../middleware/auth.js';
-import { requireActiveRole } from '../middleware/rbac.js';
+import { requirePermission } from '../middleware/rbac.js';
 
 const router = express.Router();
 
-// Webhooks belong to the workspace; managing them is admin+.
-const adminOnly = [protect, requireActiveRole('admin')];
+// Webhooks belong to the workspace; see 'webhooks:manage' in
+// utils/permissions.js (reads included: URLs can be secrets, and delivery
+// payloads carry visitor IPs).
+const adminOnly = [protect, requirePermission('webhooks:manage')];
 
 router.post('/', adminOnly, createWebhook);
 router.get('/', adminOnly, listWebhooks);

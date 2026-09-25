@@ -43,6 +43,19 @@ const userSchema = new mongoose.Schema(
         ref: 'CustomDomain',
       },
     ],
+    // 'scim' when the account was created by an organization's directory
+    // (WorkOS Directory Sync), rather than by signing up or SSO.
+    provisionedBy: {
+      type: String,
+      enum: ['scim', null],
+      default: null,
+    },
+    // The SSO connection that created this account on first sign-in (JIT
+    // provisioning), which may sign it in again. Null for password signups.
+    ssoConnectionId: {
+      type: String,
+      default: null,
+    },
     activeWorkspace: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Workspace',

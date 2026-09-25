@@ -1,6 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import {
-  Sparkles,
   Link2,
   Globe,
   Wifi,
@@ -10,26 +9,23 @@ import {
   Check,
   Download,
   Dice5,
-  ExternalLink,
   Sun,
   Moon,
   Zap,
   ShieldCheck,
   Palette,
-  Layers,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import QRCodeViewer from './QRCodeViewer';
 import QRCodeCustomizer from './QRCodeCustomizer';
-import {
-  DEFAULT_QR_CONFIG,
-  formatQrData,
-  QR_DESIGNER_PRESETS,
-} from '../../utils/qrPresets';
+import { formatQrData, QR_DESIGNER_PRESETS } from '../../utils/qrPresets';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
+import useAuthStore from '../../context/authStore';
+import { workspaceQrDefault } from '../../utils/workspaceDefaults';
+import { getHostedDomain, getHostedOrigin } from '../../utils/domain';
 
 const CONTENT_TYPES = [
   { id: 'dynamic', label: 'Dynamic Link', icon: Zap, badge: 'Recommended', desc: 'Editable target URL anytime without reprinting' },
@@ -60,6 +56,8 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
   const [title, setTitle] = useState('');
   const [customAlias, setCustomAlias] = useState('');
   const [category, setCategory] = useState('marketing');
+  const customAliasInputRef = useRef(null);
+  const hostedDomain = useMemo(() => getHostedDomain(), []);
 
   // Alternate payload types
   const [wifiData, setWifiData] = useState({ ssid: '', password: '', encryption: 'WPA', hidden: false });
@@ -75,10 +73,12 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
   });
   const [textInput, setTextInput] = useState('');
 
-  // QR Styling Config
-  const [config, setConfig] = useState(DEFAULT_QR_CONFIG);
+  // QR Styling Config, starting from the workspace's default style
+  const activeWorkspace = useAuthStore((state) => state.activeWorkspace);
+  const qrDefault = useMemo(() => workspaceQrDefault(activeWorkspace), [activeWorkspace]);
+  const [config, setConfig] = useState(qrDefault);
   const [lightBackdrop, setLightBackdrop] = useState(false);
-  const [resolution, setResolution] = useState(1024);
+  const [resolution] = useState(1024);
 
   // Status & Success state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -108,20 +108,20 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
         address: '',
       });
       setTextInput('');
-      setConfig(DEFAULT_QR_CONFIG);
+      setConfig(qrDefault);
       setCreatedAsset(null);
       setIsCopied(false);
     }
-  }, [open]);
+  }, [open, qrDefault]);
 
   // Compute raw payload data for live preview
   const previewPayload = useMemo(() => {
     switch (contentType) {
       case 'dynamic':
-        if (!destinationUrl.trim()) return 'https://linkora.io/qr-preview';
+        if (!destinationUrl.trim()) return `${getHostedOrigin()}/${customAlias.trim() || 'qr-preview'}`;
         return formatQrData.url(destinationUrl);
       case 'url':
-        return formatQrData.url(destinationUrl) || 'https://linkora.io';
+        return formatQrData.url(destinationUrl) || getHostedOrigin();
       case 'wifi':
         return formatQrData.wifi(wifiData);
       case 'vcard':
@@ -129,9 +129,9 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
       case 'text':
         return formatQrData.text(textInput) || 'Linkora QR Engine';
       default:
-        return 'https://linkora.io';
+        return getHostedOrigin();
     }
-  }, [contentType, destinationUrl, wifiData, vcardData, textInput]);
+  }, [contentType, destinationUrl, customAlias, wifiData, vcardData, textInput]);
 
   const generateRandomSlug = () => {
     const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -287,7 +287,7 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
               <div className="rounded-3xl border border-ink-700 bg-ink-950 p-6 shadow-2xl">
                 <QRCodeViewer
                   ref={qrViewerRef}
-                  value={createdAsset.shortUrl}
+                  data={createdAsset.shortUrl}
                   config={createdAsset.qrConfig || config}
                   size={260}
                 />
@@ -451,7 +451,7 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
                       {contentType === 'dynamic' && (
                         <div>
                           <div className="flex items-center justify-between">
-                            <label className="text-xs font-semibold text-paper-300">
+                            <label htmlFor="qr-custom-alias" className="text-xs font-semibold text-paper-300">
                               Custom Alias / Short Code <span className="text-paper-600">(Optional)</span>
                             </label>
                             <button
@@ -463,16 +463,21 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
                               <span>Random</span>
                             </button>
                           </div>
-                          <div className="relative mt-1.5 flex items-center">
-                            <span className="pointer-events-none absolute left-3 text-xs font-mono text-paper-500">
-                              linkora.io/
+                          <div
+                            onClick={() => customAliasInputRef.current?.focus()}
+                            className="mt-1.5 flex items-stretch rounded-xl border border-ink-700 bg-ink-900 focus-within:border-accent-400/80 focus-within:ring-1 focus-within:ring-accent-400/30 overflow-hidden cursor-text transition-all"
+                          >
+                            <span className="inline-flex items-center border-r border-ink-800 bg-ink-950/70 px-3 text-xs font-mono text-paper-400 select-none whitespace-nowrap cursor-default">
+                              {hostedDomain}/
                             </span>
                             <input
+                              ref={customAliasInputRef}
+                              id="qr-custom-alias"
                               type="text"
                               value={customAlias}
                               onChange={(e) => setCustomAlias(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''))}
                               placeholder="custom-slug"
-                              className="w-full rounded-xl border border-ink-700 bg-ink-900 py-2 pl-20 pr-3.5 font-mono text-xs text-paper-100 placeholder:text-paper-600 focus:border-accent-400/80 focus:ring-1 focus:ring-accent-400/30"
+                              className="w-full min-w-0 bg-transparent py-2 px-3 font-mono text-xs text-paper-100 placeholder:text-paper-600 focus:outline-none"
                             />
                           </div>
                         </div>
@@ -637,7 +642,7 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
               >
                 <QRCodeViewer
                   ref={qrViewerRef}
-                  value={previewPayload}
+                  data={previewPayload}
                   config={config}
                   size={220}
                 />

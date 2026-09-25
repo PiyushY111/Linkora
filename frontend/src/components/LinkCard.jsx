@@ -21,6 +21,7 @@ import ActionDropdown from './ui/ActionDropdown';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
 import { useConfirm } from '../context/ConfirmContext';
+import { useCan } from '../context/authStore';
 
 const formatDate = (date) =>
   new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -40,6 +41,7 @@ export default function LinkCard({
   onInspectLink,
 }) {
   const confirm = useConfirm();
+  const canWriteLinks = useCan('links:write');
   const [isLoading, setIsLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -210,29 +212,33 @@ export default function LinkCard({
             >
               <ExternalLink size={13} /> Visit original
             </a>
-            <button
-              type="button"
-              onClick={() => {
-                setShowMenu(false);
-                handleToggle();
-              }}
-              disabled={isLoading}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-paper-200 hover:bg-ink-750 transition-colors"
-            >
-              <Power size={13} /> {link.isActive ? 'Pause link' : 'Activate link'}
-            </button>
-            <div className="my-1 border-t border-ink-700/80" />
-            <button
-              type="button"
-              onClick={() => {
-                setShowMenu(false);
-                handleDelete();
-              }}
-              disabled={isLoading}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-danger hover:bg-danger/10 transition-colors"
-            >
-              <Trash2 size={13} /> Delete
-            </button>
+            {canWriteLinks && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenu(false);
+                    handleToggle();
+                  }}
+                  disabled={isLoading}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                >
+                  <Power size={13} /> {link.isActive ? 'Pause link' : 'Activate link'}
+                </button>
+                <div className="my-1 border-t border-ink-700/80" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenu(false);
+                    handleDelete();
+                  }}
+                  disabled={isLoading}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-danger hover:bg-danger/10 transition-colors"
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              </>
+            )}
           </ActionDropdown>
         </div>
       </div>
@@ -304,7 +310,7 @@ export default function LinkCard({
               <Sparkles size={12} className="text-accent-400" />
             </div>
           </div>
-        ) : (
+        ) : canWriteLinks ? (
           <button
             type="button"
             onClick={(e) => {
@@ -316,7 +322,7 @@ export default function LinkCard({
           >
             <QrCode size={16} />
           </button>
-        )}
+        ) : null}
       </div>
 
       {/* Tags */}

@@ -11,6 +11,7 @@ import {
   GitBranch,
   ScrollText,
 } from 'lucide-react';
+import { getHostedDomain } from '../utils/domain';
 
 const FEATURES = [
   {
@@ -76,22 +77,24 @@ const Sparkline = () => (
   </svg>
 );
 
-const ProductPreview = () => (
-  <div className="panel-elevated relative mx-auto w-full max-w-xl overflow-hidden p-1.5">
-    <div className="flex items-center gap-1.5 px-3 py-2.5">
-      <span className="h-2.5 w-2.5 rounded-full bg-danger/70" />
-      <span className="h-2.5 w-2.5 rounded-full bg-warning/70" />
-      <span className="h-2.5 w-2.5 rounded-full bg-success/70" />
-      <span className="ml-3 truncate font-mono text-xs text-paper-500">linkora.io/dashboard</span>
-    </div>
-    <div className="rounded-lg bg-ink-950 p-5">
-      <div className="flex items-center justify-between rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="badge-accent shrink-0">307</span>
-          <span className="truncate font-mono text-sm text-paper-100">linkora.io/x7K9mP</span>
-        </div>
-        <span className="shrink-0 font-mono text-xs text-paper-500">18ms</span>
+const ProductPreview = () => {
+  const hostedDomain = getHostedDomain();
+  return (
+    <div className="panel-elevated relative mx-auto w-full max-w-xl overflow-hidden p-1.5">
+      <div className="flex items-center gap-1.5 px-3 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-danger/70" />
+        <span className="h-2.5 w-2.5 rounded-full bg-warning/70" />
+        <span className="h-2.5 w-2.5 rounded-full bg-success/70" />
+        <span className="ml-3 truncate font-mono text-xs text-paper-500">{hostedDomain}/dashboard</span>
       </div>
+      <div className="rounded-lg bg-ink-950 p-5">
+        <div className="flex items-center justify-between rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="badge-accent shrink-0">307</span>
+            <span className="truncate font-mono text-sm text-paper-100">{hostedDomain}/x7K9mP</span>
+          </div>
+          <span className="shrink-0 font-mono text-xs text-paper-500">18ms</span>
+        </div>
 
       <div className="mt-5 grid grid-cols-3 gap-3">
         <div className="rounded-lg border border-ink-700 bg-ink-900 p-3">
@@ -113,7 +116,8 @@ const ProductPreview = () => (
       </div>
     </div>
   </div>
-);
+  );
+};
 
 const Landing = () => {
   return (

@@ -25,9 +25,11 @@ import { DEFAULT_QR_CONFIG } from '../../utils/qrPresets';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useCan } from '../../context/authStore';
 
 export default function QRDrawer({ link, open, onClose, onUpdate }) {
   const confirm = useConfirm();
+  const canWriteLinks = useCan('links:write');
   const { updateLink, removeLink } = useLinkStore();
 
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'designer'
@@ -199,16 +201,18 @@ export default function QRDrawer({ link, open, onClose, onUpdate }) {
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleToggleStatus}
-                  className={`rounded-lg p-1.5 transition-colors ${
-                    link.isActive ? 'text-accent-400 hover:bg-ink-800' : 'text-paper-500 hover:bg-ink-800'
-                  }`}
-                  title={link.isActive ? 'Pause QR' : 'Activate QR'}
-                >
-                  <Power size={16} />
-                </button>
+                {canWriteLinks && (
+                  <button
+                    type="button"
+                    onClick={handleToggleStatus}
+                    className={`rounded-lg p-1.5 transition-colors ${
+                      link.isActive ? 'text-accent-400 hover:bg-ink-800' : 'text-paper-500 hover:bg-ink-800'
+                    }`}
+                    title={link.isActive ? 'Pause QR' : 'Activate QR'}
+                  >
+                    <Power size={16} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onClose}
@@ -319,11 +323,13 @@ export default function QRDrawer({ link, open, onClose, onUpdate }) {
                         onChange={(e) => setDestinationUrl(e.target.value)}
                         placeholder="https://new-target-link.com"
                         className="input font-mono text-xs py-2 flex-1"
+                        readOnly={!canWriteLinks}
                       />
                       <button
                         type="button"
                         onClick={handleUpdateDestination}
                         disabled={
+                          !canWriteLinks ||
                           isUpdatingDest ||
                           !destinationUrl.trim() ||
                           destinationUrl.trim() === link.originalUrl
@@ -422,15 +428,17 @@ export default function QRDrawer({ link, open, onClose, onUpdate }) {
                         Changes apply directly to this link's QR code.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleSaveStyle}
-                      disabled={isSavingStyle}
-                      className="btn-primary btn-sm"
-                    >
-                      <Save size={13} />
-                      <span>{isSavingStyle ? 'Saving…' : 'Save Style'}</span>
-                    </button>
+                    {canWriteLinks && (
+                      <button
+                        type="button"
+                        onClick={handleSaveStyle}
+                        disabled={isSavingStyle}
+                        className="btn-primary btn-sm"
+                      >
+                        <Save size={13} />
+                        <span>{isSavingStyle ? 'Saving…' : 'Save Style'}</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* Small Live Preview during styling */}
@@ -460,14 +468,18 @@ export default function QRDrawer({ link, open, onClose, onUpdate }) {
 
             {/* Drawer Footer */}
             <div className="border-t border-ink-700 p-4 bg-ink-950 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="btn-danger btn-sm"
-              >
-                <Trash2 size={13} />
-                <span>Delete QR</span>
-              </button>
+              {canWriteLinks ? (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="btn-danger btn-sm"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete QR</span>
+                </button>
+              ) : (
+                <span />
+              )}
 
               <button
                 type="button"

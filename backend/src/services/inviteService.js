@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import Workspace from '../models/Workspace.js';
+import { ConflictError } from '../lib/errors.js';
 
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -43,4 +45,36 @@ export async function deliverInviteEmail({ inviteId }) {
   return { delivered: false };
 }
 
-export default { INVITE_TTL_MS, hashInviteToken, generateInvite, inviteUrl, deliverInviteEmail };
+/**
+ * Creates the pending invite for `email`, or, if one exists, refreshes it
+ * in place with a new token and expiry (the resend). Expired invites are
+ * dropped on the way. Two conditional updates rather than read-modify-write,
+ * so concurrent invites to one email can't produce two entries. Callers
+ * validate the role and apply the grant rule first.
+ * @param {unknown} workspaceId
+ * @param {{ email: string, role: string, invitedBy: unknown }} invite
+ * @returns {Promise<{ invite: object, token: string, resent: boolean }>} token: the raw token, for the link (never stored)
+ */
+export async function upsertPendingInvite(workspaceId, { email, role, invitedBy }) {
+  const { token, tokenHash, expiresAt } = generateInvite();
+  const fields = { role, tokenHash, invitedBy, createdAt: new Date(), expiresAt };
+
+  await Workspace.updateOne({ _id: workspaceId }, { $pull: { pendingInvites: { expiresAt: { $lte: new Date() } } } });
+  const refreshed = await Workspace.updateOne(
+    { _id: workspaceId, 'pendingInvites.email': email },
+    { $set: Object.fromEntries(Object.entries(fields).map(([k, v]) => [`pendingInvites.$.${k}`, v])) }
+  );
+  const resent = refreshed.matchedCount > 0;
+  if (!resent) {
+    const added = await Workspace.updateOne(
+      { _id: workspaceId, 'pendingInvites.email': { $ne: email } },
+      { $push: { pendingInvites: { email, ...fields } } }
+    );
+    if (added.matchedCount === 0) throw new ConflictError('An invite for this email was just created; try again');
+  }
+
+  const stored = await Workspace.findOne({ _id: workspaceId }, { pendingInvites: { $elemMatch: { tokenHash } } }).lean();
+  return { invite: stored.pendingInvites[0], token, resent };
+}
+
+export default { INVITE_TTL_MS, hashInviteToken, generateInvite, inviteUrl, deliverInviteEmail, upsertPendingInvite };

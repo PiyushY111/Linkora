@@ -110,7 +110,7 @@ const AcceptInvite = () => {
               </h1>
               <p className="mt-2 text-sm text-paper-500">
                 {invite.organization.name && <>{invite.organization.name} · </>}
-                You&apos;ll join as <span className="font-semibold capitalize text-paper-200">{invite.role}</span>.
+                You&apos;ll join as <span className="font-semibold capitalize text-paper-200">{invite.roleName ?? invite.role}</span>.
               </p>
               <p className="mt-1 text-xs text-paper-500">
                 Sent to <span className="text-paper-300">{invite.email}</span>
