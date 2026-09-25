@@ -276,16 +276,6 @@ export const getCacheDiagnosticsHandler = async (req, res) => {
   res.status(200).json({ success: true, diagnostics });
 };
 
-/**
- * Executes an in-memory thundering-herd benchmark to demonstrate XFetch protection.
- */
-export const simulateStampedeHandler = async (req, res) => {
-  const concurrency = Math.min(100, Math.max(10, parseInt(req.body.concurrency || 50, 10)));
-  const { simulateThunderingHerd } = await import('../services/cacheService.js');
-  const result = await simulateThunderingHerd(concurrency);
-  res.status(200).json({ success: true, result });
-};
-
 export default {
   listApiKeys,
   createApiKey,
@@ -295,5 +285,4 @@ export default {
   getDeveloperMetrics,
   listApiLogs,
   getCacheDiagnosticsHandler,
-  simulateStampedeHandler,
 };

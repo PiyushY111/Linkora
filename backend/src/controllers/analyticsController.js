@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 import helmet from 'helmet';
 import Link from '../models/Link.js';
 import { getClientIp, getUserAgent } from '../utils/helpers.js';
@@ -14,6 +13,7 @@ import { dispatchEvent } from '../services/webhookService.js';
 import { detectBot } from '../utils/botDetector.js';
 import { calculateAbTestStatistics } from '../services/statisticsService.js';
 import { NotFoundError, ValidationError, UnauthorizedError } from '../lib/errors.js';
+import { signJwt, verifyJwt, TOKEN_AUDIENCE } from '../utils/jwt.js';
 
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$/;
 
@@ -28,7 +28,6 @@ function isBcryptHash(value) {
   return typeof value === 'string' && BCRYPT_HASH_PATTERN.test(value);
 }
 
-const UNLOCK_TOKEN_AUDIENCE = 'link-unlock';
 const UNLOCK_TOKEN_TTL_SECONDS = 60;
 const unlockConsumedKey = (jti) => `link:unlock:${jti}`;
 
@@ -47,10 +46,7 @@ async function verifyPasswordAndIssueUnlockToken(storedPasswordHash, providedPas
   const jti = crypto.randomBytes(16).toString('hex');
   await getRedis().set(unlockConsumedKey(jti), '1', 'EX', UNLOCK_TOKEN_TTL_SECONDS);
 
-  return jwt.sign({ shortCode, jti }, env.JWT_SECRET, {
-    expiresIn: UNLOCK_TOKEN_TTL_SECONDS,
-    audience: UNLOCK_TOKEN_AUDIENCE,
-  });
+  return signJwt({ shortCode, jti }, { audience: TOKEN_AUDIENCE.LINK_UNLOCK, expiresIn: UNLOCK_TOKEN_TTL_SECONDS });
 }
 
 /**
@@ -64,7 +60,7 @@ async function redeemUnlockToken(token, shortCode) {
 
   let payload;
   try {
-    payload = jwt.verify(token, env.JWT_SECRET, { audience: UNLOCK_TOKEN_AUDIENCE });
+    payload = verifyJwt(token, TOKEN_AUDIENCE.LINK_UNLOCK);
   } catch {
     return false;
   }
@@ -169,7 +165,9 @@ export const redirectLink = async (req, res) => {
       .then((fresh) => {
         if (fresh) {
           const computeDelta = Date.now() - fetchStart;
-          setLinkMeta(shortCode, { ...buildLinkMetaFromDoc(fresh), computeDelta }).catch(() => {});
+          setLinkMeta(shortCode, { ...buildLinkMetaFromDoc(fresh), computeDelta }).catch((err) =>
+            logger.error({ err, shortCode }, 'Failed to write XFetch-refreshed link cache')
+          );
         }
       })
       .catch((err) => logger.warn({ err, shortCode }, 'Background XFetch refresh failed'));

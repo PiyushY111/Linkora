@@ -1,3 +1,5 @@
+import { env } from '../config/env.js';
+
 export const validateUrl = (url) => {
   try {
     new URL(url);
@@ -7,15 +9,20 @@ export const validateUrl = (url) => {
   }
 };
 
+/**
+ * The client IP that rate limits, failed-login counters, audit logs and
+ * click analytics key on. It comes from Express's `req.ip`, which walks
+ * X-Forwarded-For back only as many hops as `trust proxy` allows
+ * (TRUST_PROXY_HOPS), so a client can't choose its own IP by sending
+ * X-Forwarded-For or X-Real-IP. CF-Connecting-IP is read only when
+ * TRUST_CLOUDFLARE is set.
+ * @param {import('express').Request} req
+ * @returns {string}
+ */
 export const getClientIp = (req) => {
+  const cloudflareIp = env.TRUST_CLOUDFLARE ? req.headers['cf-connecting-ip'] : undefined;
   const raw =
-    req.headers['cf-connecting-ip'] ||
-    req.headers['x-real-ip'] ||
-    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-    req.socket?.remoteAddress ||
-    req.connection?.remoteAddress ||
-    req.ip ||
-    '127.0.0.1';
+    (typeof cloudflareIp === 'string' && cloudflareIp.trim()) || req.ip || req.socket?.remoteAddress || '127.0.0.1';
   return String(raw).replace(/^::ffff:/, '');
 };
 

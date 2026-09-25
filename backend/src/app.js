@@ -78,7 +78,7 @@ const limiter = rateLimit({
   max: env.NODE_ENV === 'development' ? 5000 : env.RATE_LIMIT_MAX_REQUESTS,
   message: { success: false, message: 'Too many requests, please try again later' },
   keyGenerator: (req) => getClientIp(req),
-  skip: (req) => req.path.startsWith('/health') || req.path === '/metrics' || (env.NODE_ENV !== 'production' && req.headers['x-benchmark'] === 'true'),
+  skip: (req) => req.path.startsWith('/health') || req.path === '/metrics',
 });
 
 app.use(limiter);

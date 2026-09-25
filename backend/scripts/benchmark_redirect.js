@@ -1,4 +1,6 @@
-process.env.NODE_ENV = 'development';
+// NODE_ENV=test, not development: app.js caps the in-process rate limiter at
+// 5,000 per window in development and ignores RATE_LIMIT_MAX_REQUESTS there.
+process.env.NODE_ENV = 'test';
 process.env.LOG_LEVEL = 'warn';
 process.env.RATE_LIMIT_MAX_REQUESTS = '500000';
 
@@ -79,7 +81,6 @@ async function runBenchmark() {
     duration: 10,
     headers: {
       'User-Agent': 'Linkora-Benchmark-Agent/1.0',
-      'x-benchmark': 'true',
     },
   });
 

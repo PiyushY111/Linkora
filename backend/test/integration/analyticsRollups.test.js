@@ -157,7 +157,8 @@ describe('analytics rollups: consistency with raw events', () => {
       const sum = (docs, f) => docs.reduce((n, d) => n + f(d), 0);
       assert.strictEqual(sum(daily, (d) => d.total), raw.length);
       assert.strictEqual(sum(hourly, (d) => d.total), raw.length);
-      assert.strictEqual(sum(daily, (d) => d.bot), raw.filter((e) => e.isBot).length);
+      // A bucket that never saw a bot has no `bot` field ($inc creates it on first use).
+      assert.strictEqual(sum(daily, (d) => d.bot || 0), raw.filter((e) => e.isBot).length);
 
       // Per-bucket totals line up with raw events bucketed the same way.
       for (const doc of hourly) {

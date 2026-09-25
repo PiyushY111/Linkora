@@ -5,8 +5,18 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import cron from 'node-cron';
 import { Reader } from '@maxmind/geoip2-node';
+import geoip from 'geoip-lite';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+
+/**
+ * Two GeoIP sources, primary and fallback:
+ * - @maxmind/geoip2-node reads a GeoLite2-City .mmdb at GEOIP_DB_PATH, kept
+ *   current by the weekly updater below. Used when that file exists.
+ * - geoip-lite ships its own bundled dataset, so a deployment with no
+ *   MaxMind account (GEOIP_DB_PATH empty, the .env.example default) still
+ *   gets country/city. It's also the fallback if a MaxMind lookup throws.
+ */
 
 const execFileAsync = promisify(execFile);
 
@@ -53,8 +63,6 @@ async function getReader() {
  * @property {number} latitude
  * @property {number} longitude
  */
-
-import geoip from 'geoip-lite';
 
 const EMPTY_RESULT = { countryCode: '', city: '', latitude: 0, longitude: 0 };
 
