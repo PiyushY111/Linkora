@@ -16,7 +16,7 @@ Linkora uses one Redis database (`REDIS_URL`) for everything: the link cache, cl
 | `refresh:family:{familyId}:current` | String | `JWT_REFRESH_TOKEN_TTL_SECONDS` (default 30 days) | `src/utils/jwt.js` | The one currently valid refresh secret for a session family. |
 | `refresh:family:{familyId}:user` | String | Same as above | `src/utils/jwt.js` | Owner user ID for the family. |
 | `sso:state:{state}` | String | 10 min | `src/routes/sso.js` | SSO `state` parameter, consumed on callback. |
-| `ratelimit:{prefix}:{id}` | Sorted set | The window (`PEXPIRE`) | `createSlidingWindowLimiter` | Sliding-window log. Prefixes: `login`, `register`, `refresh` (per IP), `link-unlock` (per IP and short code), `link-creation` (per user, or IP). |
+| `ratelimit:{prefix}:{id}` | Sorted set | The window (`PEXPIRE`) | `createSlidingWindowLimiter` | Sliding-window log. Prefixes: `login`, `register`, `refresh`, `invite` (per IP), `link-unlock` (per IP and short code), `link-creation` (per user, or IP). |
 | `ratelimit:public-api:{apiKey}` | Hash `{ tokens, ts }` | 1 hour, refreshed on use | `createTokenBucketLimiter` | Public API token bucket (capacity 30, refill 10/s). |
 | `ratelimit:auth-failures:{ip}` | String (integer) | 15 min from the first failure (`EXPIRE NX`) | `recordAuthFailure` | Failed-login counter; 5 failures block login from that IP. |
 | `hll:visitors:{linkId}:{yyyymmdd}` | HyperLogLog | 2 days, refreshed on write | `src/repositories/analytics/mongoAnalyticsWriter.js` (Lua) | Unique visitors per link per UTC day. The count is copied into `link_stats_daily.unique` with `$max`. |

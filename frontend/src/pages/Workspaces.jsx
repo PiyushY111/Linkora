@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Building2, Plus, UserPlus, Trash2 } from 'lucide-react';
+import { Building2, Plus, UserPlus, Trash2, Copy, Check, RotateCw, X } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import AppShell from '../components/layout/AppShell';
 import Modal from '../components/ui/Modal';
@@ -11,15 +12,60 @@ import useAuthStore from '../context/authStore';
 
 const ROLE_ORDER = ['owner', 'admin', 'creator', 'viewer'];
 
-const WorkspaceCard = ({ workspace, onChanged }) => {
+// Shows a freshly created invite link once, with a copy button. The link
+// can't be fetched again later (only its hash is stored); resend makes a new one.
+const InviteLinkNotice = ({ invite, onDismiss }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(invite.url);
+      setCopied(true);
+      toast.success('Invite link copied');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Could not copy; select the link and copy it manually');
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-lg border border-accent-400/25 bg-accent-400/5 p-3">
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <p className="text-xs text-paper-300">
+          Share this link with <span className="font-semibold text-paper-100">{invite.email}</span>. It works once,
+          for that email, for 7 days, and won&apos;t be shown again.
+        </p>
+        <button type="button" onClick={onDismiss} className="text-paper-500 hover:text-paper-200" aria-label="Dismiss">
+          <X size={14} />
+        </button>
+      </div>
+      <div className="relative flex items-center">
+        <input readOnly value={invite.url} className="input pr-10 font-mono text-xs" onFocus={(e) => e.target.select()} />
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="absolute right-2.5 rounded p-1.5 text-paper-400 transition-colors hover:bg-ink-800 hover:text-paper-100"
+          aria-label="Copy invite link"
+        >
+          {copied ? <Check size={14} className="text-accent-400" /> : <Copy size={14} />}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const WorkspaceCard = ({ workspace }) => {
   const { user } = useAuthStore();
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState(null);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('viewer');
   const [isBusy, setIsBusy] = useState(false);
+  const [createdInvite, setCreatedInvite] = useState(null); // { email, url }
 
-  const myMembership = workspace.members?.find((m) => m.user === user?.id || m.user?._id === user?.id);
+  // /auth/me returns the user with _id; login/register return id.
+  const userId = user?.id ?? user?._id;
+  const myMembership = workspace.members?.find((m) => String(m.user?._id ?? m.user) === String(userId));
   const canManage = myMembership && ['owner', 'admin'].includes(myMembership.role);
 
   const loadDetail = async () => {
@@ -36,17 +82,38 @@ const WorkspaceCard = ({ workspace, onChanged }) => {
     if (!expanded && !detail) loadDetail();
   };
 
-  const handleInvite = async (e) => {
-    e.preventDefault();
+  // Also the resend path: inviting an already-invited email replaces its
+  // link and extends the expiry.
+  const sendInvite = async (email, role) => {
     setIsBusy(true);
     try {
-      await workspaceService.upsertMember(workspace._id, inviteEmail, inviteRole);
-      await loadDetail(); // re-fetch populated member details (mutation response isn't populated)
-      setInviteEmail('');
-      toast.success('Member added');
-      onChanged?.();
+      const data = await workspaceService.createInvite(workspace._id, email, role);
+      setCreatedInvite({ email: data.invite.email, url: data.inviteUrl });
+      await loadDetail();
+      toast.success(data.resent ? 'Invite resent' : 'Invite created');
+      return true;
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to add member');
+      toast.error(error.response?.data?.message || 'Failed to create invite');
+      return false;
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleInvite = async (e) => {
+    e.preventDefault();
+    if (await sendInvite(inviteEmail, inviteRole)) setInviteEmail('');
+  };
+
+  const handleRevoke = async (invite) => {
+    setIsBusy(true);
+    try {
+      await workspaceService.revokeInvite(workspace._id, invite.id);
+      if (createdInvite?.email === invite.email) setCreatedInvite(null);
+      await loadDetail();
+      toast.success('Invite revoked');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to revoke invite');
     } finally {
       setIsBusy(false);
     }
@@ -117,6 +184,56 @@ const WorkspaceCard = ({ workspace, onChanged }) => {
                   ))}
               </ul>
 
+              {canManage && detail.pendingInvites?.length > 0 && (
+                <>
+                  <p className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-paper-500">
+                    Pending invites
+                  </p>
+                  <ul className="space-y-1.5">
+                    {detail.pendingInvites.map((invite) => (
+                      <li
+                        key={invite.id}
+                        className="flex items-center justify-between rounded-lg bg-ink-800/50 px-3 py-2 text-sm"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-paper-200">{invite.email}</p>
+                          <p className="truncate text-xs text-paper-500">
+                            Expires {formatDistanceToNow(new Date(invite.expiresAt), { addSuffix: true })}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span className="badge-neutral capitalize">{invite.role}</span>
+                          <button
+                            type="button"
+                            onClick={() => sendInvite(invite.email, invite.role)}
+                            disabled={isBusy}
+                            className="text-paper-500 hover:text-paper-200"
+                            aria-label="Resend invite"
+                            title="Resend (new link, 7 more days)"
+                          >
+                            <RotateCw size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRevoke(invite)}
+                            disabled={isBusy}
+                            className="text-paper-500 hover:text-danger"
+                            aria-label="Revoke invite"
+                            title="Revoke"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+
+              {canManage && createdInvite && (
+                <InviteLinkNotice invite={createdInvite} onDismiss={() => setCreatedInvite(null)} />
+              )}
+
               {canManage && (
                 <form onSubmit={handleInvite} className="mt-4 flex flex-col gap-2 sm:flex-row">
                   <input
@@ -133,7 +250,7 @@ const WorkspaceCard = ({ workspace, onChanged }) => {
                     <option value="admin">Admin</option>
                   </select>
                   <button type="submit" className="btn-secondary shrink-0" disabled={isBusy}>
-                    <UserPlus size={14} /> Add
+                    <UserPlus size={14} /> Invite
                   </button>
                 </form>
               )}
@@ -208,7 +325,7 @@ const Workspaces = () => {
         ) : workspaces.length > 0 ? (
           <div className="space-y-3">
             {workspaces.map((ws) => (
-              <WorkspaceCard key={ws._id} workspace={ws} onChanged={fetchWorkspaces} />
+              <WorkspaceCard key={ws._id} workspace={ws} />
             ))}
           </div>
         ) : (

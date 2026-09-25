@@ -1,18 +1,22 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
 import { ArrowRight } from 'lucide-react';
 import { authService } from '../services';
 import useAuthStore from '../context/authStore';
+import { safeRedirectPath } from '../utils/authRedirect';
 
 const Register = () => {
   const navigate = useNavigate();
-  const { setToken, setUser } = useAuthStore();
+  const location = useLocation();
+  // Set by pages that sent the user here to sign in first (e.g. an invite link).
+  const redirectTo = safeRedirectPath(location.state?.from);
+  const { setToken, setUser, setActiveWorkspace, refreshWorkspaces } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
+    email: typeof location.state?.email === 'string' ? location.state.email : '',
     password: '',
     confirmPassword: '',
   });
@@ -31,8 +35,11 @@ const Register = () => {
       const data = await authService.register(formData.name, formData.email, formData.password);
       setToken(data.token);
       setUser(data.user);
+      setActiveWorkspace(data.activeWorkspace);
+      // Non-blocking: the switcher reloads the list when opened if this fails.
+      refreshWorkspaces().catch(() => {});
       toast.success('Account created');
-      navigate('/dashboard');
+      navigate(redirectTo, { replace: true });
     } catch (error) {
       toast.error(error.response?.data?.message || 'Registration failed');
     } finally {
@@ -122,7 +129,7 @@ const Register = () => {
 
           <p className="mt-6 text-center text-sm text-paper-500">
             Already have an account?{' '}
-            <Link to="/login" className="font-semibold text-accent-400 hover:text-accent-300">
+            <Link to="/login" state={location.state} className="font-semibold text-accent-400 hover:text-accent-300">
               Sign in
             </Link>
           </p>

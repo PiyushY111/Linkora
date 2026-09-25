@@ -46,6 +46,12 @@ export class ConflictError extends AppError {
   }
 }
 
+export class GoneError extends AppError {
+  constructor(message = 'No longer available') {
+    super(message, 410);
+  }
+}
+
 export class RateLimitError extends AppError {
   constructor(message = 'Too many requests') {
     super(message, 429);
@@ -98,6 +104,7 @@ export default {
   NotFoundError,
   ForbiddenError,
   ConflictError,
+  GoneError,
   RateLimitError,
   toClientError,
 };

@@ -16,6 +16,13 @@ export const authService = {
     return response.data;
   },
 
+  // Every workspace-owned list (links, analytics, keys, webhooks) is scoped
+  // server-side to the active workspace; this changes which one that is.
+  switchActiveWorkspace: async (workspaceId) => {
+    const response = await api.put('/auth/me/active-workspace', { workspaceId });
+    return response.data;
+  },
+
   updateProfile: async (userData) => {
     const response = await api.put('/auth/profile', userData);
     return response.data;
@@ -127,6 +134,29 @@ export const workspaceService = {
 
   removeMember: async (workspaceId, userId) => {
     const response = await api.delete(`/workspaces/${workspaceId}/members/${userId}`);
+    return response.data;
+  },
+
+  // Creates (or, for an email already invited, resends) an invite. The
+  // response carries the one-time inviteUrl; it can't be fetched again later.
+  createInvite: async (workspaceId, email, role) => {
+    const response = await api.post(`/workspaces/${workspaceId}/invites`, { email, role });
+    return response.data;
+  },
+
+  revokeInvite: async (workspaceId, inviteId) => {
+    const response = await api.delete(`/workspaces/${workspaceId}/invites/${inviteId}`);
+    return response.data;
+  },
+
+  // Public: works without a session, for the invite landing page.
+  getInvite: async (token) => {
+    const response = await api.get(`/workspaces/invites/${token}`);
+    return response.data;
+  },
+
+  acceptInvite: async (token) => {
+    const response = await api.post(`/workspaces/invites/${token}/accept`);
     return response.data;
   },
 };

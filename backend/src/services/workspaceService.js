@@ -117,4 +117,12 @@ export async function resolveActiveWorkspace(user, { retries = 1 } = {}) {
   return { workspace, membership: findMembership(workspace, user._id) };
 }
 
-export default { findOrCreatePersonalWorkspace, resolveActiveWorkspace, PERSONAL_WORKSPACE_NAME };
+/**
+ * The active-workspace block auth responses carry alongside the user.
+ * @returns {{ id: unknown, name: string, role: string }}
+ */
+export function toActiveWorkspacePayload(workspace, membership) {
+  return { id: workspace._id, name: workspace.name, role: membership.role };
+}
+
+export default { findOrCreatePersonalWorkspace, resolveActiveWorkspace, toActiveWorkspacePayload, PERSONAL_WORKSPACE_NAME };

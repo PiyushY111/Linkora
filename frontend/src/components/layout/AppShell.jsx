@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Menu, X, Link2, BarChart3, Webhook, Terminal, Settings, LogOut } from 'lucide-react';
+import { Menu, X, Link2, BarChart3, Webhook, Terminal, Building2, Settings, LogOut } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from './Sidebar';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 import useAuthStore from '../../context/authStore';
 import { authService } from '../../services';
 
@@ -11,6 +12,7 @@ const NAV_ITEMS = [
   { to: '/analytics/all', label: 'Analytics', icon: BarChart3 },
   { to: '/webhooks', label: 'Webhooks', icon: Webhook },
   { to: '/developer', label: 'Developer', icon: Terminal },
+  { to: '/workspaces', label: 'Workspaces', icon: Building2 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -70,6 +72,9 @@ const MobileNav = () => {
                 >
                   <X size={20} />
                 </button>
+              </div>
+              <div className="mb-3">
+                <WorkspaceSwitcher onSwitched={() => setOpen(false)} />
               </div>
               <nav className="flex-1 space-y-1">
                 {NAV_ITEMS.map(({ to, label, icon: Icon }) => (

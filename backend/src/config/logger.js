@@ -49,6 +49,31 @@ export const logger = pino({
   timestamp: pino.stdTimeFunctions.isoTime,
 });
 
+const URL_SECRET_PATTERNS = [
+  // Workspace invite links: /invite/<token> (frontend), /invites/<token> (API)
+  [/(\/invites?\/)[^/?#\s]+/g, '$1[REDACTED]'],
+  // Single-use password-link unlock tokens on the redirect route
+  [/([?&]unlockToken=)[^&#\s]+/g, '$1[REDACTED]'],
+];
+
+/**
+ * Strips bearer-style secrets that travel in URLs out of anything logged
+ * (request line, url, Referer). Exported for tests.
+ * @param {string} value
+ */
+export function redactUrlSecrets(value) {
+  if (typeof value !== 'string') return value;
+  return URL_SECRET_PATTERNS.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), value);
+}
+
+function serializeRequest(req) {
+  const serialized = pinoHttp.stdSerializers.req(req);
+  const headers = serialized.headers?.referer
+    ? { ...serialized.headers, referer: redactUrlSecrets(serialized.headers.referer) }
+    : serialized.headers;
+  return { ...serialized, url: redactUrlSecrets(serialized.url), headers };
+}
+
 /**
  * Generates request IDs in the format c_<timestamp>_<random_hex>.
  */
@@ -70,15 +95,15 @@ export const httpLogger = pinoHttp({
     return 'info';
   },
   customSuccessMessage: (req, res, responseTime) => {
-    return `${req.method} ${req.url} ${res.statusCode} (${responseTime}ms)`;
+    return `${req.method} ${redactUrlSecrets(req.url)} ${res.statusCode} (${responseTime}ms)`;
   },
   customErrorMessage: (req, res, err) => {
-    return `${req.method} ${req.url} ${res.statusCode} (${res.responseTime || 0}ms) - ${err.message}`;
+    return `${req.method} ${redactUrlSecrets(req.url)} ${res.statusCode} (${res.responseTime || 0}ms) - ${err.message}`;
   },
   // In development, strip giant request and response headers (CSP, cookies, sec-ch-ua)
   // so the terminal output stays concise and readable. In production, keep standard serializers.
   serializers: {
-    req: isDev ? () => undefined : pinoHttp.stdSerializers.req,
+    req: isDev ? () => undefined : serializeRequest,
     res: isDev ? () => undefined : pinoHttp.stdSerializers.res,
   },
   customProps: (req) => (isDev ? {} : { requestId: req.id }),

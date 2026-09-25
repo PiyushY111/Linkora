@@ -7,10 +7,11 @@ import { getClientIp } from '../utils/helpers.js';
 import { recordAuthFailure, resetAuthFailures } from '../middleware/rateLimiter.js';
 import { logAudit } from '../utils/auditLogger.js';
 import { env } from '../config/env.js';
-import { ValidationError, UnauthorizedError, NotFoundError } from '../lib/errors.js';
+import { ValidationError, UnauthorizedError, NotFoundError, ForbiddenError } from '../lib/errors.js';
 import { setRefreshTokenCookie, clearRefreshTokenCookie } from '../utils/authCookies.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
-import { resolveActiveWorkspace } from '../services/workspaceService.js';
+import { resolveActiveWorkspace, toActiveWorkspacePayload } from '../services/workspaceService.js';
+import { findWorkspaceMembership } from '../middleware/rbac.js';
 
 // Minimum acceptable password strength at registration: 8+ chars, at least
 // one letter and one digit. Deliberately simple (no forced special-char
@@ -40,7 +41,7 @@ export const register = async (req, res) => {
 
   const user = await User.create({ name, email, password });
   // Every user acts inside a workspace; start them in a personal one.
-  await resolveActiveWorkspace(user);
+  const { workspace, membership } = await resolveActiveWorkspace(user);
 
   const token = generateToken(user._id);
   const refreshToken = await issueRefreshToken(String(user._id));
@@ -57,6 +58,7 @@ export const register = async (req, res) => {
       name: user.name,
       email: user.email,
     },
+    activeWorkspace: toActiveWorkspacePayload(workspace, membership),
   });
 };
 
@@ -79,6 +81,7 @@ export const login = async (req, res) => {
 
   await resetAuthFailures(ip);
 
+  const { workspace, membership } = await resolveActiveWorkspace(user);
   const token = generateToken(user._id);
   const refreshToken = await issueRefreshToken(String(user._id));
   setRefreshTokenCookie(res, refreshToken);
@@ -94,6 +97,7 @@ export const login = async (req, res) => {
       name: user.name,
       email: user.email,
     },
+    activeWorkspace: toActiveWorkspacePayload(workspace, membership),
   });
 };
 
@@ -117,7 +121,8 @@ export const refresh = async (req, res) => {
   const newRefreshToken = await issueRefreshToken(consumed.userId, consumed.familyId);
   setRefreshTokenCookie(res, newRefreshToken);
 
-  const user = await User.findById(consumed.userId).select('name email');
+  const user = await User.findById(consumed.userId).select('name email activeWorkspace');
+  const active = user ? await resolveActiveWorkspace(user) : null;
 
   res.status(200).json({
     success: true,
@@ -130,6 +135,7 @@ export const refresh = async (req, res) => {
           email: user.email,
         }
       : undefined,
+    activeWorkspace: active ? toActiveWorkspacePayload(active.workspace, active.membership) : undefined,
   });
 };
 
@@ -140,6 +146,43 @@ export const getCurrentUser = async (req, res) => {
   res.status(200).json({
     success: true,
     user,
+    activeWorkspace: toActiveWorkspacePayload(req.activeWorkspace, req.activeMembership),
+  });
+};
+
+// Switch which workspace the caller acts in. Membership is checked with the
+// same lookup the /api/workspaces/:workspaceId routes use.
+export const switchActiveWorkspace = async (req, res) => {
+  const { workspaceId } = req.body;
+  if (typeof workspaceId !== 'string' || !workspaceId) {
+    throw new ValidationError('workspaceId is required');
+  }
+
+  const { workspace, membership } = await findWorkspaceMembership(workspaceId, req.user.id);
+  if (!workspace) {
+    throw new NotFoundError('Workspace not found');
+  }
+  if (!membership) {
+    throw new ForbiddenError('Not a member of this workspace');
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    { $set: { activeWorkspace: workspace._id } },
+    { new: true }
+  ).select('name email');
+
+  logAudit({
+    action: 'user.active_workspace.switch',
+    actorUserId: req.user.id,
+    targetResourceId: String(workspace._id),
+    ipAddress: getClientIp(req),
+  });
+
+  res.status(200).json({
+    success: true,
+    user: { id: user._id, name: user.name, email: user.email },
+    activeWorkspace: toActiveWorkspacePayload(workspace, membership),
   });
 };
 

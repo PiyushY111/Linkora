@@ -4,6 +4,8 @@ import request from 'supertest';
 import app from '../../src/app.js';
 import { connectTestDb, disconnectTestDb, resetRateLimits } from '../helpers/testUtils.js';
 import User from '../../src/models/User.js';
+import Organization from '../../src/models/Organization.js';
+import Workspace from '../../src/models/Workspace.js';
 import { closeRedis } from '../../src/services/cacheService.js';
 
 const createdEmails = [];
@@ -13,6 +15,11 @@ beforeAll(async () => {
   await resetRateLimits(['register', 'refresh']);
 });
 afterAll(async () => {
+  // Register provisions a personal org + workspace per user; remove those too.
+  const userIds = await User.find({ email: { $in: createdEmails } }).distinct('_id');
+  const orgIds = await Organization.find({ owner: { $in: userIds } }).distinct('_id');
+  await Workspace.deleteMany({ organization: { $in: orgIds } });
+  await Organization.deleteMany({ _id: { $in: orgIds } });
   await User.deleteMany({ email: { $in: createdEmails } });
   await disconnectTestDb();
   await closeRedis();
@@ -34,6 +41,12 @@ describe('auth: httpOnly refresh cookie', () => {
     assert.strictEqual(res.status, 201);
     assert.ok(res.body.token);
     assert.strictEqual(res.body.refreshToken, undefined, 'refresh token must never appear in the JSON body');
+
+    // Register provisions a personal workspace and reports it as active.
+    assert.strictEqual(res.body.activeWorkspace.name, 'Personal');
+    assert.strictEqual(res.body.activeWorkspace.role, 'owner');
+    const stored = await User.findById(res.body.user.id);
+    assert.strictEqual(String(stored.activeWorkspace), String(res.body.activeWorkspace.id));
 
     const cookie = findCookie(res.headers['set-cookie'], 'refreshToken');
     assert.ok(cookie, 'expected a refreshToken cookie to be set');
@@ -63,6 +76,7 @@ describe('auth: httpOnly refresh cookie', () => {
     assert.strictEqual(refreshRes.status, 200);
     assert.ok(refreshRes.body.token);
     assert.strictEqual(refreshRes.body.refreshToken, undefined);
+    assert.deepStrictEqual(refreshRes.body.activeWorkspace, registerRes.body.activeWorkspace);
   });
 
   it('rejects a refresh attempt with no cookie at all', async () => {

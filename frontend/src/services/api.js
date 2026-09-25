@@ -36,12 +36,27 @@ async function refreshAccessToken() {
     {},
     { withCredentials: true, timeout: 10000 }
   );
-  const { token, user } = response.data;
+  const { token, user, activeWorkspace } = response.data;
   useAuthStore.getState().setToken(token);
   if (user) {
     useAuthStore.getState().setUser(user);
   }
+  if (activeWorkspace) {
+    useAuthStore.getState().setActiveWorkspace(activeWorkspace);
+  }
   return token;
+}
+
+/**
+ * Loads the workspace list for the switcher without holding up the first
+ * render. A failure only leaves the list empty; the switcher reloads it
+ * whenever it's opened.
+ */
+function loadWorkspacesInBackground() {
+  useAuthStore
+    .getState()
+    .refreshWorkspaces()
+    .catch(() => {});
 }
 
 /**
@@ -57,6 +72,10 @@ export async function bootstrapSession() {
       if (res.data?.user) {
         useAuthStore.getState().setUser(res.data.user);
       }
+      if (res.data?.activeWorkspace) {
+        useAuthStore.getState().setActiveWorkspace(res.data.activeWorkspace);
+      }
+      loadWorkspacesInBackground();
       return;
     } catch (err) {
       // If error is transient (network / cold start), preserve session
@@ -71,6 +90,7 @@ export async function bootstrapSession() {
 
   try {
     await refreshAccessToken();
+    loadWorkspacesInBackground();
   } catch {
     useAuthStore.getState().logout();
   } finally {

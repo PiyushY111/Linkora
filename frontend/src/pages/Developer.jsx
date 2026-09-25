@@ -61,7 +61,8 @@ const Developer = () => {
       setCurrentUser(userRes.user);
       setLegacyKey(userRes.user?.apiKey || '');
     } catch (err) {
-      toast.error('Failed to load developer portal state');
+      // API keys are admin-only per workspace; surface the role message.
+      toast.error(err.response?.data?.message || 'Failed to load developer portal state');
     } finally {
       setIsLoading(false);
     }
