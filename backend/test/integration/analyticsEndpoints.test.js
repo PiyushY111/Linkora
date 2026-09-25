@@ -23,10 +23,12 @@ function streamEntry(id, fields) {
 
 beforeAll(async () => {
   await connectTestDb();
-  ({ user, token } = await createTestUser());
+  let workspace;
+  ({ user, token, workspace } = await createTestUser());
   const shortCode = `ae${Date.now().toString(36)}`;
   link = await Link.create({
     user: user._id,
+    workspace: workspace._id,
     originalUrl: 'https://example.com/analytics',
     shortCode,
     shortUrl: `http://localhost/${shortCode}`,

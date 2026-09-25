@@ -20,6 +20,7 @@ export function apiTelemetry(req, res, next) {
 
     ApiLog.create({
       user: req.user._id,
+      workspace: req.activeWorkspace?._id,
       apiKeyId: req.apiKeyDoc?._id || null,
       apiKeyPrefix: req.apiKeyDoc?.prefix || (req.apiKeyUser?.prefix ?? 'legacy'),
       method: req.method,

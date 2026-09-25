@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { env } from '../config/env.js';
 import User from '../models/User.js';
+import { resolveActiveWorkspace } from './workspaceService.js';
 
 /**
  * Enterprise SSO via WorkOS (SAML 2.0 / OIDC — Okta, Azure AD, Google
@@ -70,6 +71,7 @@ export async function provisionUserFromProfile(profile) {
     password: crypto.randomBytes(32).toString('hex'), // unusable local password
     isVerified: true,
   });
+  await resolveActiveWorkspace(user);
   return user;
 }
 

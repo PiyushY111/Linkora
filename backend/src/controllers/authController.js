@@ -10,6 +10,7 @@ import { env } from '../config/env.js';
 import { ValidationError, UnauthorizedError, NotFoundError } from '../lib/errors.js';
 import { setRefreshTokenCookie, clearRefreshTokenCookie } from '../utils/authCookies.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
+import { resolveActiveWorkspace } from '../services/workspaceService.js';
 
 // Minimum acceptable password strength at registration: 8+ chars, at least
 // one letter and one digit. Deliberately simple (no forced special-char
@@ -38,6 +39,8 @@ export const register = async (req, res) => {
   }
 
   const user = await User.create({ name, email, password });
+  // Every user acts inside a workspace; start them in a personal one.
+  await resolveActiveWorkspace(user);
 
   const token = generateToken(user._id);
   const refreshToken = await issueRefreshToken(String(user._id));

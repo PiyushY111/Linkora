@@ -8,7 +8,7 @@ import { logger } from '../config/logger.js';
 import { lookupGeo, scheduleGeoIpUpdates } from '../services/geoipService.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
 import connectDB from '../config/db.js';
-import { dispatchEvent } from '../services/webhookService.js';
+import { dispatchLinkEvent } from '../services/webhookService.js';
 
 /**
  * Redis Streams consumer-group worker for click events. Runs as its own
@@ -79,6 +79,7 @@ async function enrichEvent(id, fields) {
     eventId: id,
     linkId: fields.linkId,
     userId: fields.userId || '',
+    workspaceId: fields.workspaceId || '',
     shortCode: fields.shortCode,
     timestamp: new Date(Number(fields.timestamp) || Date.now()),
     ip: fields.ip || '',
@@ -126,7 +127,6 @@ export async function processBatch(entries, { redis = getRedis() } = {}) {
 
   // Fire-and-forget: click webhook subscribers, only for newly applied events.
   for (const e of applied) {
-    if (!e.userId) continue;
     const data = {
       linkId: e.linkId,
       shortCode: e.shortCode,
@@ -137,7 +137,9 @@ export async function processBatch(entries, { redis = getRedis() } = {}) {
       referrerDomain: e.referrerDomain,
       timestamp: e.timestamp.toISOString(),
     };
-    dispatchEvent(e.userId, 'click', data).catch((err) => logger.error({ err }, 'Failed to dispatch click webhook'));
+    dispatchLinkEvent({ linkId: e.linkId, workspaceId: e.workspaceId }, 'click', data).catch((err) =>
+      logger.error({ err }, 'Failed to dispatch click webhook')
+    );
   }
 
   if (entries.length > 0) {

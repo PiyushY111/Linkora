@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import User from '../src/models/User.js';
 import Webhook from '../src/models/Webhook.js';
 import WebhookDelivery from '../src/models/WebhookDelivery.js';
+import { resolveActiveWorkspace } from '../src/services/workspaceService.js';
 import {
   isSafeEndpointUrl,
   generateSignature,
@@ -63,8 +64,11 @@ async function run() {
     });
   }
 
+  const { workspace } = await resolveActiveWorkspace(user);
+
   const testWebhook = await Webhook.create({
     user: user._id,
+    workspace: workspace._id,
     url: 'http://127.0.0.1:9998/webhook-test',
     description: 'Automated E2E Verification Webhook',
     events: ['link.clicked', 'endpoint.test', 'link.created'],
@@ -74,7 +78,7 @@ async function run() {
 
   // 4. Test Webhook Live Ping
   console.log('\n[4/6] Dispatching live test ping...');
-  const testResult = await testWebhookEndpoint(testWebhook._id, user._id, 'endpoint.test');
+  const testResult = await testWebhookEndpoint(testWebhook._id, workspace._id, 'endpoint.test');
   console.log('Delivery response status:', testResult.delivery.responseStatus);
   console.log('Delivery latency:', testResult.delivery.latencyMs, 'ms');
   console.log('Delivery status:', testResult.delivery.status);

@@ -32,6 +32,7 @@ export const createWebhook = async (req, res) => {
   const secret = `whsec_${crypto.randomBytes(24).toString('hex')}`;
   const webhook = await Webhook.create({
     user: req.user.id,
+    workspace: req.activeWorkspace._id,
     url,
     events,
     secret,
@@ -49,9 +50,9 @@ export const createWebhook = async (req, res) => {
   res.status(201).json({ success: true, webhook });
 };
 
-// List user webhooks enriched with delivery health metrics
+// List the active workspace's webhooks enriched with delivery health metrics
 export const listWebhooks = async (req, res) => {
-  const webhooks = await Webhook.find({ user: req.user.id })
+  const webhooks = await Webhook.find({ workspace: req.activeWorkspace._id })
     .select('-secret')
     .sort({ createdAt: -1 })
     .lean();
@@ -89,7 +90,7 @@ export const listWebhooks = async (req, res) => {
 
 // Get single webhook details + recent 50 delivery records
 export const getWebhook = async (req, res) => {
-  const webhook = await Webhook.findOne({ _id: req.params.id, user: req.user.id })
+  const webhook = await Webhook.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id })
     .select('-secret')
     .lean();
 
@@ -113,7 +114,7 @@ export const getWebhook = async (req, res) => {
 export const updateWebhook = async (req, res) => {
   const { url, events, description, isActive } = req.body;
 
-  const webhook = await Webhook.findOne({ _id: req.params.id, user: req.user.id });
+  const webhook = await Webhook.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!webhook) {
     throw new NotFoundError('Webhook not found');
   }
@@ -149,7 +150,7 @@ export const updateWebhook = async (req, res) => {
     }
   }
 
-  const updated = await Webhook.findByIdAndUpdate(req.params.id, updateFields, {
+  const updated = await Webhook.findByIdAndUpdate(webhook._id, updateFields, {
     new: true,
   }).select('-secret');
 
@@ -166,13 +167,13 @@ export const updateWebhook = async (req, res) => {
 
 // Delete webhook subscription and its delivery logs
 export const deleteWebhook = async (req, res) => {
-  const webhook = await Webhook.findOne({ _id: req.params.id, user: req.user.id });
+  const webhook = await Webhook.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!webhook) {
     throw new NotFoundError('Webhook not found');
   }
 
-  await Webhook.findByIdAndDelete(req.params.id);
-  await WebhookDelivery.deleteMany({ webhook: req.params.id });
+  await Webhook.findByIdAndDelete(webhook._id);
+  await WebhookDelivery.deleteMany({ webhook: webhook._id });
 
   logAudit({
     action: 'webhook.delete',
@@ -187,13 +188,13 @@ export const deleteWebhook = async (req, res) => {
 // Test webhook endpoint with a live synthetic ping
 export const testWebhook = async (req, res) => {
   const { event } = req.body;
-  const result = await testWebhookEndpoint(req.params.id, req.user.id, event || 'endpoint.test');
+  const result = await testWebhookEndpoint(req.params.id, req.activeWorkspace._id, event || 'endpoint.test');
   res.status(200).json({ success: true, result });
 };
 
 // Rotate signing secret
 export const rotateSecret = async (req, res) => {
-  const webhook = await Webhook.findOne({ _id: req.params.id, user: req.user.id });
+  const webhook = await Webhook.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!webhook) {
     throw new NotFoundError('Webhook not found');
   }
@@ -220,7 +221,7 @@ export const rotateSecret = async (req, res) => {
 export const listDeliveries = async (req, res) => {
   const { page = 1, limit = 20, status, event } = req.query;
 
-  const webhook = await Webhook.findOne({ _id: req.params.id, user: req.user.id });
+  const webhook = await Webhook.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!webhook) {
     throw new NotFoundError('Webhook not found');
   }
@@ -254,7 +255,7 @@ export const listDeliveries = async (req, res) => {
 
 // Replay a past delivery attempt
 export const retryDelivery = async (req, res) => {
-  const result = await executeRetryDelivery(req.params.deliveryId, req.user.id);
+  const result = await executeRetryDelivery(req.params.deliveryId, req.params.id, req.activeWorkspace._id);
   res.status(200).json({ success: true, result });
 };
 

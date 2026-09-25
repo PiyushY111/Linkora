@@ -11,6 +11,7 @@ import {
   getOpenApiSpec,
 } from '../controllers/publicApiController.js';
 import { apiKeyAuth, requireScope } from '../middleware/apiKeyAuth.js';
+import { requireActiveRole } from '../middleware/rbac.js';
 import { apiTelemetry } from '../middleware/apiTelemetry.js';
 import { createTokenBucketLimiter } from '../middleware/rateLimiter.js';
 
@@ -50,18 +51,23 @@ v1.use(apiKeyAuth);
 v1.use(apiTelemetry);
 v1.use(publicApiLimiter);
 
+// Scopes limit what the key may do; the key creator's current role in the
+// key's workspace limits it further, so a demoted member's old key can't
+// keep writing.
+const canWriteLinks = requireActiveRole('creator');
+
 // Links Management
 v1.get('/links', requireScope('links:read'), listLinks);
-v1.post('/links', requireScope('links:write'), createLink);
+v1.post('/links', requireScope('links:write'), canWriteLinks, createLink);
 v1.get('/links/:code', requireScope('links:read'), getLink);
-v1.patch('/links/:code', requireScope('links:write'), updateLink);
-v1.delete('/links/:code', requireScope('links:delete'), deleteLink);
+v1.patch('/links/:code', requireScope('links:write'), canWriteLinks, updateLink);
+v1.delete('/links/:code', requireScope('links:delete'), canWriteLinks, deleteLink);
 
 // Link Analytics
 v1.get('/links/:code/analytics', requireScope('analytics:read'), getLinkAnalytics);
 
 // Bulk Provisioning
-v1.post('/links/bulk', requireScope('links:write'), bulkCreateLinks);
+v1.post('/links/bulk', requireScope('links:write'), canWriteLinks, bulkCreateLinks);
 
 // Usage & Telemetry
 v1.get('/usage', getUsage);

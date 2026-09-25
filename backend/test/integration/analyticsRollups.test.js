@@ -21,6 +21,7 @@ const DAY = 24 * HOUR;
 
 let user;
 let token;
+let workspace;
 let seq = 0;
 
 async function createLink() {
@@ -28,6 +29,7 @@ async function createLink() {
   const shortCode = `ro${Date.now().toString(36)}${seq}`;
   return Link.create({
     user: user._id,
+    workspace: workspace._id,
     originalUrl: 'https://example.com/rollups',
     shortCode,
     shortUrl: `http://localhost/${shortCode}`,
@@ -79,7 +81,7 @@ async function rollupDocs(Model, linkId) {
 
 beforeAll(async () => {
   await connectTestDb();
-  ({ user, token } = await createTestUser());
+  ({ user, token, workspace } = await createTestUser());
   await repo.ensureReady();
 });
 

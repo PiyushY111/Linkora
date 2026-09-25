@@ -5,6 +5,7 @@ import ApiKey from '../src/models/ApiKey.js';
 import ApiLog from '../src/models/ApiLog.js';
 import Link from '../src/models/Link.js';
 import { createLinkRecord } from '../src/controllers/linkController.js';
+import { resolveActiveWorkspace } from '../src/services/workspaceService.js';
 
 async function run() {
   console.log('=== Starting Developer Platform & Public API Verification ===');
@@ -30,8 +31,11 @@ async function run() {
   const prefix = rawLiveKey.slice(0, 12);
   const lastFour = rawLiveKey.slice(-4);
 
+  const { workspace } = await resolveActiveWorkspace(user);
+
   const apiKeyDoc = await ApiKey.create({
     user: user._id,
+    workspace: workspace._id,
     name: 'Automated E2E Verification Key',
     keyHash,
     prefix,
@@ -58,7 +62,7 @@ async function run() {
 
   // 4. Test Public Link Creation & Retrieval
   console.log('\n[4/6] Testing Public API Link Creation and Retrieval...');
-  const createResult = await createLinkRecord(user._id, {
+  const createResult = await createLinkRecord({ userId: user._id, workspaceId: workspace._id }, {
     originalUrl: 'https://docs.stripe.com/api',
     title: 'Stripe Documentation E2E',
     tags: ['stripe', 'api-test'],

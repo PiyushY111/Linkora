@@ -43,6 +43,11 @@ const userSchema = new mongoose.Schema(
         ref: 'CustomDomain',
       },
     ],
+    activeWorkspace: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Workspace',
+      default: null,
+    },
     totalClicks: {
       type: Number,
       default: 0,

@@ -114,7 +114,7 @@ export async function rescanActiveLinksForAbuse() {
           await Link.findByIdAndUpdate(link._id, { isActive: false, abuseFlag: true });
           await invalidateLinkMeta(link.shortCode);
           if (link.customAlias) await invalidateLinkMeta(link.customAlias);
-          dispatchEvent(String(link.user), 'abuse.flagged', {
+          dispatchEvent(link.workspace, 'abuse.flagged', {
             linkId: String(link._id),
             shortCode: link.shortCode,
             originalUrl: link.originalUrl,

@@ -1,6 +1,6 @@
 import Workspace from '../models/Workspace.js';
 
-const ROLE_RANK = { viewer: 0, creator: 1, admin: 2, owner: 3 };
+export const ROLE_RANK = { viewer: 0, creator: 1, admin: 2, owner: 3 };
 
 /**
  * Loads the caller's membership for the workspace named in
@@ -43,4 +43,21 @@ export function requireMinRole(minRole) {
   };
 }
 
-export default { loadWorkspaceMembership, requireMinRole };
+/**
+ * Requires the caller's role in their *active* workspace (set by protect or
+ * apiKeyAuth as req.activeMembership) to be at least `minRole`.
+ * @param {'owner' | 'admin' | 'creator' | 'viewer'} minRole
+ */
+export function requireActiveRole(minRole) {
+  return (req, res, next) => {
+    if (!req.activeMembership) {
+      return res.status(500).json({ success: false, message: 'requireActiveRole used without an authenticated workspace' });
+    }
+    if (ROLE_RANK[req.activeMembership.role] < ROLE_RANK[minRole]) {
+      return res.status(403).json({ success: false, message: `Requires ${minRole} role or higher in this workspace` });
+    }
+    next();
+  };
+}
+
+export default { loadWorkspaceMembership, requireMinRole, requireActiveRole };

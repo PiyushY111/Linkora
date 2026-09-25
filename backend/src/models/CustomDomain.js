@@ -7,6 +7,14 @@ const customDomainSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    // Owning workspace; `user` above stays as the creator. Not required yet:
+    // create paths don't set it until the controller phase, and
+    // scripts/migrate-users-to-workspaces.js backfills existing documents.
+    workspace: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Workspace',
+      index: true,
+    },
     domain: {
       type: String,
       required: true,

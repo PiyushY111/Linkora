@@ -258,7 +258,7 @@ Raw click events (`src/models/ClickEvent.js`). `timeField: timestamp`, `metaFiel
 |---|---|---|
 | `timestamp` | `Date` | Click time (UTC) |
 | `meta.linkId` | `ObjectId` | Link |
-| `meta.userId` | `ObjectId` | Link owner (nullable) |
+| `meta.userId` | `ObjectId` | User who created the link (nullable). Workspace-level reads (summary, export) scope by `meta.linkId` instead, since links belong to a workspace |
 | `eventId` | `String` | Stream entry ID; indexed for the redelivery check |
 | `shortCode` | `String` | Code the visitor used |
 | `ip` | `String` | Client IP as received (not anonymized) |
