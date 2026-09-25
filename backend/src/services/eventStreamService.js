@@ -32,6 +32,7 @@ function toXAddArgs(fields) {
  *   referer: string,
  *   timestamp: number,
  *   userId?: string,
+ *   workspaceId?: string,
  *   destinationUrl?: string,
  *   utmSource?: string,
  *   utmMedium?: string,

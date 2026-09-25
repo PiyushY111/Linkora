@@ -1,18 +1,42 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, AlertTriangle, User, Building2 } from 'lucide-react';
 import { authService } from '../services';
 import useAuthStore from '../context/authStore';
+import { safeRedirectPath } from '../utils/authRedirect';
+
+const ACCOUNT_TYPES = [
+  { value: 'personal', label: 'Just for me', icon: User },
+  { value: 'organization', label: 'My team / company', icon: Building2 },
+];
+const ORG_NAME_MIN = 2;
+const ORG_NAME_MAX = 100;
+
+/** Same rule the server applies; null when valid. */
+function organizationNameError(value) {
+  const length = value.trim().length;
+  if (length === 0) return 'Organization name is required';
+  if (length < ORG_NAME_MIN || length > ORG_NAME_MAX) {
+    return `Organization name must be ${ORG_NAME_MIN}-${ORG_NAME_MAX} characters`;
+  }
+  return null;
+}
 
 const Register = () => {
   const navigate = useNavigate();
-  const { setToken, setUser } = useAuthStore();
+  const location = useLocation();
+  const { setToken, setUser, setActiveWorkspace, refreshWorkspaces } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [accountType, setAccountType] = useState('personal');
+  const [organizationName, setOrganizationName] = useState('');
+  const [orgNameTouched, setOrgNameTouched] = useState(false);
+  const isOrganization = accountType === 'organization';
+  const orgNameError = isOrganization ? organizationNameError(organizationName) : null;
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
+    email: typeof location.state?.email === 'string' ? location.state.email : '',
     password: '',
     confirmPassword: '',
   });
@@ -24,15 +48,33 @@ const Register = () => {
       toast.error('Passwords do not match');
       return;
     }
+    if (orgNameError) {
+      setOrgNameTouched(true);
+      return;
+    }
 
     setIsLoading(true);
 
     try {
-      const data = await authService.register(formData.name, formData.email, formData.password);
+      const data = await authService.register({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        accountType,
+        organizationName: isOrganization ? organizationName.trim() : undefined,
+      });
       setToken(data.token);
       setUser(data.user);
+      setActiveWorkspace(data.activeWorkspace);
+      // Non-blocking: the switcher reloads the list when opened if this fails.
+      refreshWorkspaces().catch(() => {});
       toast.success('Account created');
-      navigate('/dashboard');
+      // A page that sent the user here (e.g. an invite link) takes priority;
+      // otherwise a new team goes on to invite people, a personal account
+      // to the dashboard as before.
+      const from = location.state?.from;
+      const next = from ? safeRedirectPath(from) : isOrganization ? '/onboarding/invite-team' : '/dashboard';
+      navigate(next, { replace: true });
     } catch (error) {
       toast.error(error.response?.data?.message || 'Registration failed');
     } finally {
@@ -73,6 +115,56 @@ const Register = () => {
                   autoFocus
                 />
               </div>
+
+              <div>
+                <span className="field-label" id="accountTypeLabel">Account</span>
+                <div
+                  role="radiogroup"
+                  aria-labelledby="accountTypeLabel"
+                  className="grid grid-cols-2 gap-1 rounded-lg border border-ink-700 bg-ink-950 p-0.5"
+                >
+                  {ACCOUNT_TYPES.map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={accountType === value}
+                      onClick={() => setAccountType(value)}
+                      className={`flex items-center justify-center gap-1.5 rounded-md px-2.5 py-2 text-xs font-medium transition-colors ${
+                        accountType === value ? 'bg-ink-800 text-paper-100 shadow-sm' : 'text-paper-400 hover:text-paper-200'
+                      }`}
+                    >
+                      <Icon size={13} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {isOrganization && (
+                <div>
+                  <label className="field-label" htmlFor="organizationName">Organization name</label>
+                  <input
+                    id="organizationName"
+                    type="text"
+                    className="input"
+                    placeholder="Acme Inc"
+                    value={organizationName}
+                    onChange={(e) => setOrganizationName(e.target.value)}
+                    onBlur={() => setOrgNameTouched(true)}
+                    maxLength={ORG_NAME_MAX}
+                    aria-invalid={Boolean(orgNameTouched && orgNameError)}
+                    aria-describedby={orgNameTouched && orgNameError ? 'organizationNameError' : undefined}
+                    required
+                  />
+                  {orgNameTouched && orgNameError && (
+                    <p id="organizationNameError" className="mt-1.5 flex items-center gap-1 text-xs text-danger">
+                      <AlertTriangle size={12} />
+                      <span>{orgNameError}</span>
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="field-label" htmlFor="email">Email</label>
@@ -122,7 +214,7 @@ const Register = () => {
 
           <p className="mt-6 text-center text-sm text-paper-500">
             Already have an account?{' '}
-            <Link to="/login" className="font-semibold text-accent-400 hover:text-accent-300">
+            <Link to="/login" state={location.state} className="font-semibold text-accent-400 hover:text-accent-300">
               Sign in
             </Link>
           </p>

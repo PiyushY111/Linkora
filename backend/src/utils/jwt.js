@@ -40,11 +40,35 @@ export function verifyJwt(token, audience) {
 }
 
 /**
+ * How a session signed in. Carried in access tokens and stored with each
+ * refresh-token family so it survives rotation. SSO enforcement and "prove
+ * SSO works before enforcing it" read it.
+ * @typedef {{ authMethod: 'password' | 'sso', ssoConnectionId?: string | null }} SessionAuth
+ */
+export const PASSWORD_AUTH = Object.freeze({ authMethod: 'password', ssoConnectionId: null });
+
+function normalizeAuth(auth) {
+  return auth?.authMethod === 'sso'
+    ? { authMethod: 'sso', ssoConnectionId: auth.ssoConnectionId ?? null }
+    : PASSWORD_AUTH;
+}
+
+/**
  * Short-lived (15m) signed access token. Kept as `generateToken` for the
  * existing call sites / frontend response shape (`{ token }`).
+ * @param {unknown} id
+ * @param {SessionAuth} [auth] - defaults to a password session
  */
-export const generateToken = (id) =>
-  signJwt({ id }, { audience: TOKEN_AUDIENCE.ACCESS, expiresIn: env.JWT_ACCESS_TOKEN_TTL });
+export const generateToken = (id, auth = PASSWORD_AUTH) =>
+  signJwt({ id, ...normalizeAuth(auth) }, { audience: TOKEN_AUDIENCE.ACCESS, expiresIn: env.JWT_ACCESS_TOKEN_TTL });
+
+/**
+ * The SessionAuth recorded in a verified access-token payload. Tokens issued
+ * before sessions recorded this count as password sessions.
+ * @param {object} payload
+ * @returns {SessionAuth}
+ */
+export const sessionAuthFromToken = (payload) => normalizeAuth(payload);
 
 /**
  * @param {string} token
@@ -63,9 +87,24 @@ export const verifyAccessToken = (token) => verifyJwt(token, TOKEN_AUDIENCE.ACCE
  * Redis layout per family:
  *   refresh:family:{id}:current -> the one currently valid secret
  *   refresh:family:{id}:user    -> the owning userId (stable across rotations)
+ *   refresh:family:{id}:auth    -> SessionAuth JSON (how the session signed in)
+ * and per user:
+ *   refresh:user:{userId}:families -> set of that user's family ids, so
+ *     sessions can be revoked by kind (see revokeUserSessions)
  */
 const familyCurrentKey = (familyId) => `refresh:family:${familyId}:current`;
 const familyUserKey = (familyId) => `refresh:family:${familyId}:user`;
+const familyAuthKey = (familyId) => `refresh:family:${familyId}:auth`;
+const userFamiliesKey = (userId) => `refresh:user:${userId}:families`;
+
+function parseAuth(raw) {
+  if (!raw) return PASSWORD_AUTH; // families created before auth was recorded
+  try {
+    return normalizeAuth(JSON.parse(raw));
+  } catch {
+    return PASSWORD_AUTH;
+  }
+}
 
 function packToken(familyId, secret) {
   return `${familyId}.${secret}`;
@@ -81,11 +120,13 @@ function unpackToken(token) {
  * Issues (or rotates) a refresh token. Pass `familyId` when rotating an
  * existing session so reuse detection stays linked across the chain; omit
  * it for a brand-new session (login/register), which starts a fresh family.
+ * Pass the session's `auth` on rotation too (consumeRefreshToken returns it).
  * @param {string} userId
  * @param {string} [familyId]
+ * @param {SessionAuth} [auth] - defaults to a password session
  * @returns {Promise<string>}
  */
-export async function issueRefreshToken(userId, familyId = crypto.randomBytes(16).toString('hex')) {
+export async function issueRefreshToken(userId, familyId = crypto.randomBytes(16).toString('hex'), auth = PASSWORD_AUTH) {
   const secret = crypto.randomBytes(40).toString('hex');
   const ttl = env.JWT_REFRESH_TOKEN_TTL_SECONDS;
 
@@ -93,6 +134,9 @@ export async function issueRefreshToken(userId, familyId = crypto.randomBytes(16
     .multi()
     .set(familyCurrentKey(familyId), secret, 'EX', ttl)
     .set(familyUserKey(familyId), userId, 'EX', ttl)
+    .set(familyAuthKey(familyId), JSON.stringify(normalizeAuth(auth)), 'EX', ttl)
+    .sadd(userFamiliesKey(userId), familyId)
+    .expire(userFamiliesKey(userId), ttl)
     .exec();
 
   return packToken(familyId, secret);
@@ -108,28 +152,31 @@ export async function issueRefreshToken(userId, familyId = crypto.randomBytes(16
  *
  * @param {string} token
  * @param {{ ip?: string }} [context] - for audit logging on reuse detection
- * @returns {Promise<{ userId: string, familyId: string } | null>}
+ * @returns {Promise<{ userId: string, familyId: string, auth: SessionAuth } | null>}
  */
 const CONSUME_SCRIPT = `
 local currentKey = KEYS[1]
 local userKey = KEYS[2]
+local authKey = KEYS[3]
 local presented = ARGV[1]
 
 local current = redis.call('GET', currentKey)
 if not current then
-  return {0, ''}
+  return {0, '', ''}
 end
 
 local userId = redis.call('GET', userKey) or ''
+local auth = redis.call('GET', authKey) or ''
 
 if current ~= presented then
   redis.call('DEL', currentKey)
   redis.call('DEL', userKey)
-  return {-1, userId}
+  redis.call('DEL', authKey)
+  return {-1, userId, ''}
 end
 
 redis.call('DEL', currentKey)
-return {1, userId}
+return {1, userId, auth}
 `;
 
 let consumeScriptSha = null;
@@ -139,19 +186,19 @@ export async function consumeRefreshToken(token, context = {}) {
   if (!parsed) return null;
   const { familyId, secret } = parsed;
 
-  const keys = [familyCurrentKey(familyId), familyUserKey(familyId)];
+  const keys = [familyCurrentKey(familyId), familyUserKey(familyId), familyAuthKey(familyId)];
 
   let result;
   try {
     if (!consumeScriptSha) consumeScriptSha = await getRedis().script('LOAD', CONSUME_SCRIPT);
-    result = await getRedis().evalsha(consumeScriptSha, 2, ...keys, secret);
+    result = await getRedis().evalsha(consumeScriptSha, keys.length, ...keys, secret);
   } catch (err) {
     if (!String(err.message).includes('NOSCRIPT')) throw err;
     consumeScriptSha = await getRedis().script('LOAD', CONSUME_SCRIPT);
-    result = await getRedis().evalsha(consumeScriptSha, 2, ...keys, secret);
+    result = await getRedis().evalsha(consumeScriptSha, keys.length, ...keys, secret);
   }
 
-  const [status, userId] = result;
+  const [status, userId, rawAuth] = result;
 
   if (status === 0) return null; // unknown, expired, or already fully revoked
 
@@ -163,7 +210,7 @@ export async function consumeRefreshToken(token, context = {}) {
     return null;
   }
 
-  return { userId, familyId };
+  return { userId, familyId, auth: parseAuth(rawAuth) };
 }
 
 /**
@@ -174,5 +221,38 @@ export async function consumeRefreshToken(token, context = {}) {
 export async function revokeRefreshToken(tokenOrFamilyId) {
   const parsed = unpackToken(tokenOrFamilyId);
   const familyId = parsed ? parsed.familyId : tokenOrFamilyId;
-  await getRedis().multi().del(familyCurrentKey(familyId)).del(familyUserKey(familyId)).exec();
+  await getRedis()
+    .multi()
+    .del(familyCurrentKey(familyId))
+    .del(familyUserKey(familyId))
+    .del(familyAuthKey(familyId))
+    .exec();
+}
+
+/**
+ * Revokes the user's refresh-token families for which `shouldRevoke(auth)`
+ * is true (e.g. every password session when an org starts enforcing SSO),
+ * and prunes ids of families that have already expired.
+ * @param {string} userId
+ * @param {(auth: SessionAuth) => boolean} shouldRevoke
+ * @returns {Promise<number>} how many live sessions were revoked
+ */
+export async function revokeUserSessions(userId, shouldRevoke) {
+  const redis = getRedis();
+  const familyIds = await redis.smembers(userFamiliesKey(userId));
+  let revoked = 0;
+
+  for (const familyId of familyIds) {
+    const [current, rawAuth] = await redis.mget(familyCurrentKey(familyId), familyAuthKey(familyId));
+    if (!current) {
+      await redis.srem(userFamiliesKey(userId), familyId);
+      continue;
+    }
+    if (shouldRevoke(parseAuth(rawAuth))) {
+      await revokeRefreshToken(familyId);
+      await redis.srem(userFamiliesKey(userId), familyId);
+      revoked += 1;
+    }
+  }
+  return revoked;
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -15,10 +15,19 @@ import toast from 'react-hot-toast';
 import QRCodeViewer from './QRCodeViewer';
 import QRCodeCustomizer from './QRCodeCustomizer';
 import { DEFAULT_QR_CONFIG } from '../../utils/qrPresets';
-import { linkService } from '../../services';
+import { linkService, workspaceService } from '../../services';
 import useLinkStore from '../../context/linkStore';
+import useAuthStore, { useCan } from '../../context/authStore';
+import { workspaceQrDefault } from '../../utils/workspaceDefaults';
 
 export default function QRCodeModal({ open, onClose, link, onSaveSuccess }) {
+  // Viewers may preview and download a QR code, but not save it to the link.
+  const canWriteLinks = useCan('links:write');
+  const activeWorkspace = useAuthStore((state) => state.activeWorkspace);
+  const setActiveWorkspace = useAuthStore((state) => state.setActiveWorkspace);
+  const canSetWorkspaceDefault = useCan('settings:manage');
+  const [isSavingDefault, setIsSavingDefault] = useState(false);
+  const qrDefault = useMemo(() => workspaceQrDefault(activeWorkspace), [activeWorkspace]);
   const [config, setConfig] = useState(DEFAULT_QR_CONFIG);
   const [lightBackdrop, setLightBackdrop] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -37,12 +46,27 @@ export default function QRCodeModal({ open, onClose, link, onSaveSuccess }) {
       if (link.qrConfig && typeof link.qrConfig === 'object') {
         setConfig(link.qrConfig);
       } else {
-        setConfig(DEFAULT_QR_CONFIG);
+        setConfig(qrDefault);
       }
     }
-  }, [link, open]);
+  }, [link, open, qrDefault]);
 
   if (!open || !link) return null;
+
+  // Saves the style being designed as the active workspace's default for
+  // new QR codes (admin+; the server re-validates the shape).
+  const handleMakeWorkspaceDefault = async () => {
+    setIsSavingDefault(true);
+    try {
+      const data = await workspaceService.updateSettings(activeWorkspace.id, { defaultQrStyle: config });
+      setActiveWorkspace({ ...activeWorkspace, settings: data.settings });
+      toast.success(`Default QR style saved for ${activeWorkspace.name}`);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to save workspace default');
+    } finally {
+      setIsSavingDefault(false);
+    }
+  };
 
   const handleDownload = async (format = 'png') => {
     if (!qrViewerRef.current) return;
@@ -178,7 +202,7 @@ export default function QRCodeModal({ open, onClose, link, onSaveSuccess }) {
               <QRCodeCustomizer
                 config={config}
                 onChange={setConfig}
-                onReset={() => setConfig(DEFAULT_QR_CONFIG)}
+                onReset={() => setConfig(qrDefault)}
               />
             </div>
 
@@ -258,11 +282,12 @@ export default function QRCodeModal({ open, onClose, link, onSaveSuccess }) {
                       onChange={(e) => setDestinationUrl(e.target.value)}
                       className="input text-xs py-1.5 flex-1 font-mono"
                       placeholder="https://new-destination.com"
+                      readOnly={!canWriteLinks}
                     />
                     <button
                       type="button"
                       onClick={handleUpdateDestination}
-                      disabled={isUpdatingDest || !destinationUrl.trim() || destinationUrl.trim() === link.originalUrl}
+                      disabled={!canWriteLinks || isUpdatingDest || !destinationUrl.trim() || destinationUrl.trim() === link.originalUrl}
                       className="btn-secondary btn-sm whitespace-nowrap text-xs"
                     >
                       {isUpdatingDest ? 'Saving…' : 'Update'}
@@ -298,15 +323,28 @@ export default function QRCodeModal({ open, onClose, link, onSaveSuccess }) {
 
               {/* Action Buttons */}
               <div className="mt-6 space-y-2 pt-4 border-t border-ink-700">
-                <button
-                  type="button"
-                  onClick={handleSaveToLink}
-                  disabled={isSaving}
-                  className="btn-primary w-full py-2.5"
-                >
-                  <Save size={15} />
-                  <span>{isSaving ? 'Saving…' : 'Save Custom QR to Link'}</span>
-                </button>
+                {canWriteLinks && (
+                  <button
+                    type="button"
+                    onClick={handleSaveToLink}
+                    disabled={isSaving}
+                    className="btn-primary w-full py-2.5"
+                  >
+                    <Save size={15} />
+                    <span>{isSaving ? 'Saving…' : 'Save Custom QR to Link'}</span>
+                  </button>
+                )}
+                {canSetWorkspaceDefault && (
+                  <button
+                    type="button"
+                    onClick={handleMakeWorkspaceDefault}
+                    disabled={isSavingDefault}
+                    className="btn-secondary w-full py-2 text-xs"
+                    title="New links and QR codes in this workspace start with this style"
+                  >
+                    {isSavingDefault ? 'Saving…' : 'Make workspace default'}
+                  </button>
+                )}
 
                 <div className="flex gap-2">
                   <button

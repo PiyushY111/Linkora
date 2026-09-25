@@ -11,20 +11,26 @@ import {
   retryDelivery,
 } from '../controllers/webhookController.js';
 import { protect } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/rbac.js';
 
 const router = express.Router();
 
-router.post('/', protect, createWebhook);
-router.get('/', protect, listWebhooks);
-router.get('/:id', protect, getWebhook);
-router.put('/:id', protect, updateWebhook);
-router.delete('/:id', protect, deleteWebhook);
+// Webhooks belong to the workspace; see 'webhooks:manage' in
+// utils/permissions.js (reads included: URLs can be secrets, and delivery
+// payloads carry visitor IPs).
+const adminOnly = [protect, requirePermission('webhooks:manage')];
 
-router.post('/:id/test', protect, testWebhook);
-router.post('/:id/rotate-secret', protect, rotateSecret);
+router.post('/', adminOnly, createWebhook);
+router.get('/', adminOnly, listWebhooks);
+router.get('/:id', adminOnly, getWebhook);
+router.put('/:id', adminOnly, updateWebhook);
+router.delete('/:id', adminOnly, deleteWebhook);
 
-router.get('/:id/deliveries', protect, listDeliveries);
-router.post('/:id/deliveries/:deliveryId/retry', protect, retryDelivery);
+router.post('/:id/test', adminOnly, testWebhook);
+router.post('/:id/rotate-secret', adminOnly, rotateSecret);
+
+router.get('/:id/deliveries', adminOnly, listDeliveries);
+router.post('/:id/deliveries/:deliveryId/retry', adminOnly, retryDelivery);
 
 // Built-in public echo endpoint for instant testing with zero external setup
 router.post('/debug/echo', (req, res) => {

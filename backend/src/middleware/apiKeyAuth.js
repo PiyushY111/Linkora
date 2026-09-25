@@ -2,10 +2,31 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import ApiKey from '../models/ApiKey.js';
+import Workspace from '../models/Workspace.js';
 import { env } from '../config/env.js';
 import { verifyAccessToken } from '../utils/jwt.js';
 import { getClientIp } from '../utils/helpers.js';
 import { logger } from '../config/logger.js';
+import { resolveActiveWorkspace } from '../services/workspaceService.js';
+import { withPermissions } from '../services/roleService.js';
+import { assertOrganizationIpAllowed } from '../services/organizationAccess.js';
+import { IpNotAllowedError } from '../lib/errors.js';
+
+/**
+ * Enforces the org's IP allowlist for an API request acting in `workspace`.
+ * Responds 403 itself and returns true when blocked: the key paths below
+ * run inside a try/catch that would turn a thrown error into a 500.
+ */
+async function ipBlocked(req, res, workspace) {
+  try {
+    await assertOrganizationIpAllowed(req, workspace.organization);
+    return false;
+  } catch (err) {
+    if (!(err instanceof IpNotAllowedError)) throw err;
+    res.status(403).json({ success: false, code: err.code, message: err.message });
+    return true;
+  }
+}
 
 /**
  * Authenticates public API requests via the X-API-Key header.
@@ -13,6 +34,11 @@ import { logger } from '../config/logger.js';
  *  1. Hashed API keys (SHA-256 lookup in ApiKey collection)
  *  2. Masked key references from authenticated in-browser playground/CLI
  *  3. Backward-compatible legacy keys stored on User.apiKey
+ *
+ * Also attaches req.activeWorkspace / req.activeMembership. A hashed key
+ * acts in the workspace it belongs to, and only while its creator is still
+ * a member there (their current role is what requirePermission checks).
+ * Session and legacy-key requests act in the user's active workspace.
  */
 export async function apiKeyAuth(req, res, next) {
   const headerKey = env.API_KEY_HEADER || 'x-api-key';
@@ -35,23 +61,27 @@ export async function apiKeyAuth(req, res, next) {
       const user = await User.findById(decoded.id);
 
       if (user) {
-        // Resolve matching active ApiKey document for this user
+        const { workspace, membership } = await resolveActiveWorkspace(user);
+
+        // Resolve the matching active ApiKey document in that workspace
         let keyDoc = null;
         if (rawKey && rawKey.includes('...')) {
           keyDoc = await ApiKey.findOne({
-            user: user._id,
+            workspace: workspace._id,
             maskedKey: rawKey,
             status: 'active',
           });
         }
         if (!keyDoc) {
           keyDoc = await ApiKey.findOne({
-            user: user._id,
+            workspace: workspace._id,
             status: 'active',
           }).sort({ createdAt: -1 });
         }
 
         req.user = user;
+        req.activeWorkspace = workspace;
+        req.activeMembership = membership;
         req.apiKeyDoc = keyDoc;
         req.scopes = keyDoc?.scopes || ['*'];
         req.apiKeyUser = {
@@ -71,6 +101,7 @@ export async function apiKeyAuth(req, res, next) {
           }).catch((err) => logger.error({ err }, 'Failed to update ApiKey lastUsedAt'));
         }
 
+        if (await ipBlocked(req, res, req.activeWorkspace)) return undefined;
         return next();
       }
     } catch (err) {
@@ -115,7 +146,25 @@ export async function apiKeyAuth(req, res, next) {
         return res.status(401).json({ success: false, message: 'Owner user account not found' });
       }
 
+      if (!keyDoc.workspace) {
+        // Only possible for a key created before workspaces that
+        // scripts/migrate-users-to-workspaces.js hasn't backfilled yet.
+        logger.warn({ keyId: keyDoc._id }, 'API key has no workspace; rejecting until migrated');
+        return res.status(401).json({ success: false, message: 'API key is not attached to a workspace' });
+      }
+
+      const workspace = await Workspace.findById(keyDoc.workspace);
+      const rawMembership = workspace?.members.find((m) => String(m.user) === String(user._id));
+      if (!rawMembership) {
+        return res.status(401).json({
+          success: false,
+          message: "API key's creator is no longer a member of its workspace",
+        });
+      }
+
       req.user = user;
+      req.activeWorkspace = workspace;
+      req.activeMembership = await withPermissions(rawMembership, workspace.organization);
       req.apiKeyDoc = keyDoc;
       req.scopes = keyDoc.scopes || ['*'];
       req.apiKeyUser = {
@@ -134,13 +183,17 @@ export async function apiKeyAuth(req, res, next) {
         $inc: { totalRequests: 1 },
       }).catch((err) => logger.error({ err }, 'Failed to update ApiKey lastUsedAt'));
 
+      if (await ipBlocked(req, res, req.activeWorkspace)) return undefined;
       return next();
     }
 
     // 3. Fallback to legacy User.apiKey for backward compatibility
     const legacyUser = await User.findOne({ apiKey: rawKey });
     if (legacyUser) {
+      const { workspace, membership } = await resolveActiveWorkspace(legacyUser);
       req.user = legacyUser;
+      req.activeWorkspace = workspace;
+      req.activeMembership = membership;
       req.apiKeyDoc = null;
       req.scopes = ['*'];
       req.apiKeyUser = {
@@ -150,6 +203,7 @@ export async function apiKeyAuth(req, res, next) {
         prefix: 'legacy',
         environment: 'live',
       };
+      if (await ipBlocked(req, res, req.activeWorkspace)) return undefined;
       return next();
     }
 

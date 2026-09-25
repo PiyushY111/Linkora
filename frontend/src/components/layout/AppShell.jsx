@@ -1,22 +1,26 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Menu, X, Link2, BarChart3, Webhook, Terminal, Settings, LogOut } from 'lucide-react';
+import { Menu, X, Link2, BarChart3, Webhook, Terminal, Building2, Settings, LogOut } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from './Sidebar';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 import useAuthStore from '../../context/authStore';
+import { can } from '../../utils/permissions';
 import { authService } from '../../services';
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Links', icon: Link2 },
   { to: '/analytics/all', label: 'Analytics', icon: BarChart3 },
-  { to: '/webhooks', label: 'Webhooks', icon: Webhook },
-  { to: '/developer', label: 'Developer', icon: Terminal },
+  { to: '/webhooks', label: 'Webhooks', icon: Webhook, permission: 'webhooks:manage' },
+  { to: '/developer', label: 'Developer', icon: Terminal, permission: 'apiKeys:manage' },
+  { to: '/workspaces', label: 'Workspaces', icon: Building2 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 const MobileNav = () => {
   const [open, setOpen] = useState(false);
-  const { logout } = useAuthStore();
+  const { activeWorkspace, logout } = useAuthStore();
+  const navItems = NAV_ITEMS.filter((item) => !item.permission || can(activeWorkspace, item.permission));
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -71,8 +75,11 @@ const MobileNav = () => {
                   <X size={20} />
                 </button>
               </div>
+              <div className="mb-3">
+                <WorkspaceSwitcher onSwitched={() => setOpen(false)} />
+              </div>
               <nav className="flex-1 space-y-1">
-                {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+                {navItems.map(({ to, label, icon: Icon }) => (
                   <NavLink
                     key={to}
                     to={to}

@@ -9,11 +9,13 @@ import { calculateTimeRange } from '../services/analyticsTimeRange.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
 import { getLinkMeta, setLinkMeta, setNegativeCache, invalidateLinkMetaForLink, checkAndIncrementUsage, getCurrentUsage, buildLinkMetaFromDoc, getRedis } from '../services/cacheService.js';
 import { emitClickEvent } from '../services/eventStreamService.js';
-import { dispatchEvent } from '../services/webhookService.js';
+import { dispatchLinkEvent } from '../services/webhookService.js';
 import { detectBot } from '../utils/botDetector.js';
 import { calculateAbTestStatistics } from '../services/statisticsService.js';
 import { NotFoundError, ValidationError, UnauthorizedError } from '../lib/errors.js';
 import { signJwt, verifyJwt, TOKEN_AUDIENCE } from '../utils/jwt.js';
+import { membershipCan } from '../utils/permissions.js';
+import { csvCell } from '../utils/csv.js';
 
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$/;
 
@@ -284,7 +286,7 @@ export const redirectLink = async (req, res) => {
         invalidateLinkMetaForLink(meta).catch((err) =>
           logger.error({ err, shortCode }, 'Failed to invalidate link meta after reaching maxClicks')
         );
-        dispatchEvent(meta.userId, 'link.limit_reached', {
+        dispatchLinkEvent(meta, 'link.limit_reached', {
           linkId: meta.linkId,
           shortCode,
           originalUrl: meta.originalUrl,
@@ -355,6 +357,7 @@ export const redirectLink = async (req, res) => {
       linkId: meta.linkId,
       shortCode,
       userId: meta.userId,
+      workspaceId: meta.workspaceId,
       destinationUrl: dest,
       ip: clientIp,
       ua,
@@ -427,6 +430,7 @@ export const redirectLink = async (req, res) => {
     linkId: meta.linkId,
     shortCode,
     userId: meta.userId,
+    workspaceId: meta.workspaceId,
     destinationUrl,
     ip: clientIp,
     ua,
@@ -444,18 +448,29 @@ export const redirectLink = async (req, res) => {
 
 const EXPORT_ROW_LIMIT = 10000;
 
+/**
+ * Per-click events (IP, city/country, user agent, referrer) are
+ * 'analytics:detail'; members below that get the aggregates only, and
+ * `detailRestricted: true` so the UI can say why the click feed is empty.
+ */
+function withClickDetailFor(membership, recentClicks) {
+  return membershipCan(membership, 'analytics:detail')
+    ? { recentClicks, detailRestricted: false }
+    : { recentClicks: [], detailRestricted: true };
+}
+
 // Get analytics for a specific link
 export const getLinkAnalytics = async (req, res) => {
   const { linkId } = req.params;
   const timeInfo = calculateTimeRange(req.query.timeRange, req.query.startDate, req.query.endDate);
 
-  // Ownership enforced in the query itself, not fetched-then-compared.
-  const link = await Link.findOne({ _id: linkId, user: req.user.id }).lean();
+  // Workspace ownership enforced in the query itself, not fetched-then-compared.
+  const link = await Link.findOne({ _id: linkId, workspace: req.activeWorkspace._id }).lean();
   if (!link) {
     throw new NotFoundError('Link not found');
   }
 
-  const result = await getAnalyticsRepository().getLinkAnalytics(String(link._id), timeInfo, {
+  const { recentClicks, ...result } = await getAnalyticsRepository().getLinkAnalytics(String(link._id), timeInfo, {
     excludeBots: req.query.excludeBots === 'true',
   });
 
@@ -464,28 +479,23 @@ export const getLinkAnalytics = async (req, res) => {
     routingType: link.routingType || 'direct',
     abTestAnalysis: link.routingType === 'ab_test' ? calculateAbTestStatistics(link.variants || []) : null,
     ...result,
+    ...withClickDetailFor(req.activeMembership, recentClicks),
   });
 };
 
-// Get aggregated analytics summary across all of the user's links
+// Get aggregated analytics summary across all of the active workspace's links,
+// whichever member created them.
 export const getAnalyticsSummary = async (req, res) => {
   const timeInfo = calculateTimeRange(req.query.timeRange, req.query.startDate, req.query.endDate);
-  const summary = await getAnalyticsRepository().getUserSummary(req.user.id, timeInfo, {
+  const linkIds = await Link.find({ workspace: req.activeWorkspace._id }).distinct('_id');
+  const { recentClicks, ...summary } = await getAnalyticsRepository().getSummary(linkIds.map(String), timeInfo, {
     excludeBots: req.query.excludeBots === 'true',
   });
-  res.status(200).json({ success: true, summary });
+  res.status(200).json({
+    success: true,
+    summary: { ...summary, ...withClickDetailFor(req.activeMembership, recentClicks) },
+  });
 };
-
-/**
- * Quotes a CSV cell and neutralises spreadsheet formulas: UTM values and
- * cities are visitor-controlled, and a cell starting with = + - @ would be
- * executed by Excel/Sheets when the owner opens the export.
- */
-function csvCell(value) {
-  let text = value instanceof Date ? value.toISOString() : String(value ?? '');
-  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return `"${text.replace(/"/g, '""')}"`;
-}
 
 const CSV_COLUMNS = [
   ['Event ID', 'eventId'],
@@ -509,17 +519,20 @@ export const exportAnalytics = async (req, res) => {
   const timeInfo = calculateTimeRange(timeRange, startDate, endDate);
   const scopedToLink = linkId && linkId !== 'all';
 
+  let linkIds;
   if (scopedToLink) {
-    // Ownership enforced in the query itself, not fetched-then-compared.
-    const link = await Link.exists({ _id: linkId, user: req.user.id });
+    // Workspace ownership enforced in the query itself, not fetched-then-compared.
+    const link = await Link.exists({ _id: linkId, workspace: req.activeWorkspace._id });
     if (!link) {
       throw new NotFoundError('Link not found');
     }
+    linkIds = [String(link._id)];
+  } else {
+    linkIds = (await Link.find({ workspace: req.activeWorkspace._id }).distinct('_id')).map(String);
   }
 
   const rows = getAnalyticsRepository().exportEvents({
-    linkId: scopedToLink ? linkId : undefined,
-    userId: req.user.id,
+    linkIds,
     start: timeInfo.start,
     end: timeInfo.end,
     limit: EXPORT_ROW_LIMIT,

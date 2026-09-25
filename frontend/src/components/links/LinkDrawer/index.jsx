@@ -13,11 +13,13 @@ import QrAssetCard from './QrAssetCard';
 import { AbTestSummary, SocialPreviewSummary } from './LinkSummaryCards';
 import LinkDetailsView from './LinkDetailsView';
 import LinkEditForm from './LinkEditForm';
+import { useCan } from '../../../context/authStore';
 
 export default function LinkDrawer({ link, open, onClose }) {
   const edit = useLinkEditForm(link);
   const actions = useLinkActions(link, onClose);
   const [showQrModal, setShowQrModal] = useState(false);
+  const canWriteLinks = useCan('links:write');
 
   // Handle escape key
   useEffect(() => {
@@ -62,7 +64,7 @@ export default function LinkDrawer({ link, open, onClose }) {
               <LinkDrawerHeader
                 link={link}
                 isUpdating={actions.isUpdating}
-                onToggle={actions.handleToggle}
+                onToggle={canWriteLinks ? actions.handleToggle : undefined}
                 onClose={onClose}
               />
 
@@ -95,13 +97,15 @@ export default function LinkDrawer({ link, open, onClose }) {
                     <span className="text-xs font-semibold uppercase tracking-wider text-paper-400">
                       Settings, Security & Routing
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditing(!isEditing)}
-                      className="text-xs text-accent-400 hover:underline font-medium"
-                    >
-                      {isEditing ? 'Cancel' : 'Edit Details'}
-                    </button>
+                    {canWriteLinks && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditing(!isEditing)}
+                        className="text-xs text-accent-400 hover:underline font-medium"
+                      >
+                        {isEditing ? 'Cancel' : 'Edit Details'}
+                      </button>
+                    )}
                   </div>
 
                   {isEditing ? (
@@ -114,10 +118,14 @@ export default function LinkDrawer({ link, open, onClose }) {
 
               {/* Drawer Footer */}
               <div className="border-t border-ink-700 p-4 bg-ink-950 flex items-center justify-between gap-2">
-                <button type="button" onClick={actions.handleDelete} disabled={actions.isUpdating} className="btn-danger btn-sm">
-                  <Trash2 size={13} />
-                  <span>Delete</span>
-                </button>
+                {canWriteLinks ? (
+                  <button type="button" onClick={actions.handleDelete} disabled={actions.isUpdating} className="btn-danger btn-sm">
+                    <Trash2 size={13} />
+                    <span>Delete</span>
+                  </button>
+                ) : (
+                  <span />
+                )}
                 <RouterLink to={`/analytics/${link._id}`} className="btn-primary btn-sm flex items-center gap-1.5">
                   <BarChart3 size={13} />
                   <span>Open Analytics</span>

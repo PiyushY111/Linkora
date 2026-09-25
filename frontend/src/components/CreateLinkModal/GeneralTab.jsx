@@ -1,8 +1,11 @@
+import { useMemo } from 'react';
 import { Dice5 } from 'lucide-react';
 import { CATEGORIES } from './constants';
+import { getHostedDomain } from '../../utils/domain';
 
 export default function GeneralTab({ formData, domain, actions }) {
   const { setField, randomAlias, handleAddTag, removeTag } = actions;
+  const hostedDomain = useMemo(() => getHostedDomain(), []);
 
   return (
     <div className="space-y-4">
@@ -53,17 +56,20 @@ export default function GeneralTab({ formData, domain, actions }) {
               <span>Random</span>
             </button>
           </div>
-          <div className="relative flex items-center">
-            <span className="absolute left-3 text-xs font-mono text-paper-500 pointer-events-none">
-              /
+          <div
+            onClick={() => document.getElementById('customAlias')?.focus()}
+            className="flex items-stretch rounded-xl border border-ink-700 bg-ink-900 focus-within:border-accent-400/80 focus-within:ring-1 focus-within:ring-accent-400/30 overflow-hidden cursor-text transition-all"
+          >
+            <span className="inline-flex items-center border-r border-ink-800 bg-ink-950/70 px-2.5 text-xs font-mono text-paper-400 select-none whitespace-nowrap cursor-default">
+              {hostedDomain}/
             </span>
             <input
               id="customAlias"
               type="text"
               placeholder="launch-2026"
               value={formData.customAlias}
-              onChange={(e) => setField('customAlias', e.target.value)}
-              className="input-mono pl-6"
+              onChange={(e) => setField('customAlias', e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''))}
+              className="w-full min-w-0 bg-transparent py-2 px-3 font-mono text-xs text-paper-100 placeholder:text-paper-600 focus:outline-none"
             />
           </div>
         </div>

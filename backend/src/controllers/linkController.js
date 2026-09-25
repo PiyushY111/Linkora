@@ -13,7 +13,9 @@ import { logAudit } from '../utils/auditLogger.js';
 import { dispatchEvent } from '../services/webhookService.js';
 import { validateLinkRedirectFields } from '../services/linkUrlValidation.js';
 import { isReservedAlias } from '../lib/reservedAliases.js';
-import { ValidationError, NotFoundError, ConflictError } from '../lib/errors.js';
+import { ValidationError, NotFoundError, ConflictError, ForbiddenError } from '../lib/errors.js';
+import { findWorkspaceMembership } from '../middleware/rbac.js';
+import { membershipCan, permissionDeniedMessage } from '../utils/permissions.js';
 
 const ALIAS_PATTERN = /^[a-z0-9-]+$/;
 
@@ -38,15 +40,18 @@ async function assertAliasAvailable(customAlias) {
   }
 }
 
+// Fields of the creating user that teammates may see on a link.
+const CREATOR_PUBLIC_FIELDS = 'name email avatar avatarColor';
+
 /**
  * Core link-creation logic, shared by the single-create route and the
  * public API's bulk-create endpoint. Does not touch req/res so it can be
  * called in parallel for a batch.
- * @param {string} userId
+ * @param {{ userId: string, workspaceId: string }} owner - who created it, and the workspace that owns it
  * @param {{ originalUrl: string, customAlias?: string, title?: string, description?: string, tags?: string[], category?: string, expiryDate?: string, password?: string }} payload
  * @param {{ generateQr?: boolean }} [options]
  */
-export async function createLinkRecord(userId, payload, { generateQr = true } = {}) {
+export async function createLinkRecord({ userId, workspaceId }, payload, { generateQr = true } = {}) {
   const {
     originalUrl,
     customAlias,
@@ -101,6 +106,7 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
         // writing null here would collide across every alias-less link.
         ...(customAlias ? { customAlias } : {}),
         user: userId,
+        workspace: workspaceId,
         title,
         description,
         tags,
@@ -161,17 +167,18 @@ export async function createLinkRecord(userId, payload, { generateQr = true } = 
 
 // Create short link
 export const createLink = async (req, res) => {
-  const link = await createLinkRecord(req.user.id, req.body);
+  const link = await createLinkRecord({ userId: req.user.id, workspaceId: req.activeWorkspace._id }, req.body);
 
   logAudit({
     action: 'link.create',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: String(link._id),
     ipAddress: getClientIp(req),
     diff: { shortCode: link.shortCode, originalUrl: link.originalUrl },
   });
 
-  dispatchEvent(req.user.id, 'link.created', {
+  dispatchEvent(req.activeWorkspace._id, 'link.created', {
     linkId: String(link._id),
     shortCode: link.shortCode,
     originalUrl: link.originalUrl,
@@ -182,11 +189,11 @@ export const createLink = async (req, res) => {
   res.status(201).json({ success: true, link });
 };
 
-// Get user's links with optional filtering, search, and sorting
+// Get the active workspace's links with optional filtering, search, and sorting
 export const getUserLinks = async (req, res) => {
   const { page = 1, limit = 50, sort = '-createdAt', search, status, category, tag } = req.query;
 
-  const query = { user: req.user.id };
+  const query = { workspace: req.activeWorkspace._id };
 
   if (search && search.trim()) {
     const sanitized = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -235,12 +242,13 @@ export const getUserLinks = async (req, res) => {
   });
 };
 
-// Get single link. Ownership is enforced in the query itself
-// (findOne({ _id, user })) rather than fetched-then-compared, so a
-// not-owned resource is indistinguishable from a nonexistent one.
+// Get single link. Workspace ownership is enforced in the query itself
+// (findOne({ _id, workspace })) rather than fetched-then-compared, so
+// another workspace's link is indistinguishable from a nonexistent one.
 export const getLink = async (req, res) => {
-  const link = await Link.findOne({ _id: req.params.id, user: req.user.id })
-    .populate('analytics user')
+  const link = await Link.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id })
+    .populate('analytics')
+    .populate('user', CREATOR_PUBLIC_FIELDS)
     .read('secondaryPreferred');
 
   if (!link) {
@@ -283,7 +291,7 @@ export const updateLink = async (req, res) => {
     ogImage,
   } = req.body;
 
-  const link = await Link.findOne({ _id: req.params.id, user: req.user.id });
+  const link = await Link.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!link) {
     throw new NotFoundError('Link not found');
   }
@@ -373,13 +381,15 @@ export const updateLink = async (req, res) => {
 
   logAudit({
     action: 'link.update',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: req.params.id,
     ipAddress: getClientIp(req),
-    diff: { title, description, tags, category, expiryDate },
+    // Which fields changed, not their values: they include the password hash.
+    diff: { shortCode: updated.shortCode, changedFields: Object.keys(updateFields) },
   });
 
-  dispatchEvent(req.user.id, 'link.updated', {
+  dispatchEvent(req.activeWorkspace._id, 'link.updated', {
     linkId: String(updated._id),
     shortCode: updated.shortCode,
     originalUrl: updated.originalUrl,
@@ -395,7 +405,7 @@ export const updateLink = async (req, res) => {
 
 // Delete link
 export const deleteLink = async (req, res) => {
-  const link = await Link.findOne({ _id: req.params.id, user: req.user.id });
+  const link = await Link.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!link) {
     throw new NotFoundError('Link not found');
   }
@@ -408,21 +418,22 @@ export const deleteLink = async (req, res) => {
     getAnalyticsRepository().deleteAnalytics({ linkId: String(link._id) }),
   ]);
 
-  // Remove from user's links array
-  await req.user.updateOne({ $pull: { links: link._id } });
+  // Remove from the creator's links array (not necessarily the caller's)
+  await User.updateOne({ _id: link.user }, { $pull: { links: link._id } });
 
   await invalidateLinkMeta(link.shortCode);
   if (link.customAlias) await invalidateLinkMeta(link.customAlias);
 
   logAudit({
     action: 'link.delete',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: req.params.id,
     ipAddress: getClientIp(req),
     diff: { shortCode: link.shortCode },
   });
 
-  dispatchEvent(req.user.id, 'link.deleted', {
+  dispatchEvent(req.activeWorkspace._id, 'link.deleted', {
     linkId: String(link._id),
     shortCode: link.shortCode,
     originalUrl: link.originalUrl,
@@ -437,7 +448,7 @@ export const deleteLink = async (req, res) => {
 
 // Disable/Enable link
 export const toggleLinkStatus = async (req, res) => {
-  const link = await Link.findOne({ _id: req.params.id, user: req.user.id });
+  const link = await Link.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!link) {
     throw new NotFoundError('Link not found');
   }
@@ -450,6 +461,7 @@ export const toggleLinkStatus = async (req, res) => {
 
   logAudit({
     action: 'link.toggle_status',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     targetResourceId: req.params.id,
     ipAddress: getClientIp(req),
@@ -460,4 +472,54 @@ export const toggleLinkStatus = async (req, res) => {
     success: true,
     link,
   });
+};
+
+/**
+ * PATCH /api/links/:id/transfer — move a link to another workspace. Needs
+ * 'links:write' in the link's current workspace (route) and in the
+ * destination. Clicks and analytics follow the link: they're keyed by
+ * linkId. Both workspaces get an audit entry.
+ */
+export const transferLink = async (req, res) => {
+  const { workspaceId } = req.body ?? {};
+  if (typeof workspaceId !== 'string' || !workspaceId) throw new ValidationError('workspaceId is required');
+
+  const source = req.activeWorkspace._id;
+  const link = await Link.findOne({ _id: req.params.id, workspace: source });
+  if (!link) throw new NotFoundError('Link not found');
+  if (String(workspaceId) === String(source)) throw new ValidationError('The link is already in that workspace');
+
+  const destination = await findWorkspaceMembership(workspaceId, req.user.id);
+  if (!destination.workspace) throw new NotFoundError('Workspace not found');
+  if (!destination.membership) throw new ForbiddenError('Not a member of the destination workspace');
+  if (!membershipCan(destination.membership, 'links:write')) {
+    throw new ForbiddenError(`${permissionDeniedMessage('links:write')} in the destination workspace`);
+  }
+  // A custom domain belongs to the source workspace; moving the link would
+  // leave it pointing at another workspace's domain.
+  if (link.customDomain) throw new ConflictError('Remove the custom domain from this link before moving it');
+
+  // Conditional on the link still being in the source workspace, so two
+  // concurrent transfers can't both "succeed".
+  const moved = await Link.findOneAndUpdate(
+    { _id: link._id, workspace: source },
+    { $set: { workspace: destination.workspace._id } },
+    { new: true }
+  );
+  if (!moved) throw new NotFoundError('Link not found');
+
+  // The cached redirect meta carries workspaceId (webhook routing).
+  await invalidateLinkMeta(moved.shortCode);
+  if (moved.customAlias) await invalidateLinkMeta(moved.customAlias);
+
+  const audit = {
+    actorUserId: req.user.id,
+    targetResourceId: String(moved._id),
+    ipAddress: getClientIp(req),
+    diff: { shortCode: moved.shortCode, from: String(source), to: String(destination.workspace._id) },
+  };
+  logAudit({ ...audit, action: 'link.transfer.out', workspace: source });
+  logAudit({ ...audit, action: 'link.transfer.in', workspace: destination.workspace._id });
+
+  res.status(200).json({ success: true, link: moved });
 };

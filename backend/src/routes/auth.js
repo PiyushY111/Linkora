@@ -4,6 +4,7 @@ import {
   login,
   refresh,
   getCurrentUser,
+  switchActiveWorkspace,
   updateProfile,
   generateApiKey,
   changePassword,
@@ -33,6 +34,7 @@ router.post('/login', loginRateLimiter, authRateLimitMiddleware, validateLogin, 
 router.post('/refresh', verifyOriginForCsrf, requireRefreshTokenCookie, refreshRateLimiter, refresh);
 router.post('/logout', verifyOriginForCsrf, logout);
 router.get('/me', protect, getCurrentUser);
+router.put('/me/active-workspace', protect, switchActiveWorkspace);
 router.put('/profile', protect, updateProfile);
 router.put('/password', protect, changePassword);
 router.get('/export-data', protect, exportAccountData);

@@ -250,6 +250,22 @@ export const unlockRateLimiter = createSlidingWindowLimiter({
   keyFn: (req) => `${getClientIp(req)}:${req.params.shortCode}`,
 });
 
+// Invite link lookups/accepts: 30 per 15 min per IP. Tokens are 256-bit so
+// this isn't about guessing; it bounds a public, unauthenticated DB lookup.
+export const inviteRateLimiter = createSlidingWindowLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyPrefix: 'invite',
+});
+
+// "Sign in with SSO" org lookups: 30 per 15 min per IP, bounding slug
+// probing on this unauthenticated endpoint.
+export const ssoStartRateLimiter = createSlidingWindowLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyPrefix: 'sso-start',
+});
+
 // Login attempts: 20 per 15 min per IP in production (protects CPU & bcrypt hashing against request flooding).
 export const loginRateLimiter = createSlidingWindowLimiter({
   windowMs: 15 * 60 * 1000,

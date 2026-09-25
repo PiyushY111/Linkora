@@ -75,6 +75,7 @@ export const xfetchLockKey = (shortCode) => `lock:xfetch:${shortCode}`;
  * @property {string} passwordHash
  * @property {string} linkId
  * @property {string} userId
+ * @property {string} workspaceId - '' for a link not yet migrated to a workspace
  * @property {number} [maxClicks] - 0 if no click limit
  * @property {number} [clicks] - Mongo's click count as of when this was cached;
  *   used only to seed the Redis usage counter the first time it's touched.
@@ -102,6 +103,7 @@ export function buildLinkMetaFromDoc(link) {
     passwordHash: link.password || '',
     linkId: String(link._id),
     userId: String(link.user),
+    workspaceId: link.workspace ? String(link.workspace) : '',
     maxClicks: link.maxClicks || 0,
     clicks: link.clicks || 0,
     iosRedirect: link.iosRedirect || '',
@@ -159,6 +161,8 @@ export async function getLinkMeta(shortCode) {
     passwordHash: hash.passwordHash || '',
     linkId: hash.linkId,
     userId: hash.userId,
+    // Absent on entries cached before links carried a workspace.
+    workspaceId: hash.workspaceId || '',
     maxClicks: Number(hash.maxClicks) || 0,
     clicks: Number(hash.clicks) || 0,
     iosRedirect: hash.iosRedirect || '',
@@ -228,6 +232,7 @@ export async function setLinkMeta(shortCode, meta) {
     passwordHash: meta.passwordHash || '',
     linkId: meta.linkId || '',
     userId: meta.userId || '',
+    workspaceId: meta.workspaceId || '',
     maxClicks: String(meta.maxClicks || 0),
     clicks: String(meta.clicks || 0),
     iosRedirect: meta.iosRedirect || '',

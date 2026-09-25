@@ -6,10 +6,10 @@ import { getClientIp } from '../utils/helpers.js';
 import { ValidationError, NotFoundError } from '../lib/errors.js';
 
 /**
- * List all API Keys belonging to the authenticated user.
+ * List all API Keys belonging to the active workspace.
  */
 export const listApiKeys = async (req, res) => {
-  const keys = await ApiKey.find({ user: req.user.id })
+  const keys = await ApiKey.find({ workspace: req.activeWorkspace._id })
     .select('-keyHash')
     .sort({ createdAt: -1 })
     .lean();
@@ -52,6 +52,7 @@ export const createApiKey = async (req, res) => {
 
   const newKey = await ApiKey.create({
     user: req.user.id,
+    workspace: req.activeWorkspace._id,
     name: name.trim(),
     keyHash,
     prefix,
@@ -64,6 +65,7 @@ export const createApiKey = async (req, res) => {
 
   logAudit({
     action: 'apikey.create',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(newKey._id),
@@ -92,7 +94,7 @@ export const createApiKey = async (req, res) => {
  * Update an existing API key's name or scopes.
  */
 export const updateApiKey = async (req, res) => {
-  const key = await ApiKey.findOne({ _id: req.params.id, user: req.user.id });
+  const key = await ApiKey.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!key) {
     throw new NotFoundError('API key not found');
   }
@@ -108,6 +110,7 @@ export const updateApiKey = async (req, res) => {
 
   logAudit({
     action: 'apikey.update',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(key._id),
@@ -122,7 +125,7 @@ export const updateApiKey = async (req, res) => {
  * Generates a new secret and invalidates the previous hash.
  */
 export const rollApiKey = async (req, res) => {
-  const key = await ApiKey.findOne({ _id: req.params.id, user: req.user.id });
+  const key = await ApiKey.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!key) {
     throw new NotFoundError('API key not found');
   }
@@ -143,6 +146,7 @@ export const rollApiKey = async (req, res) => {
 
   logAudit({
     action: 'apikey.roll',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(key._id),
@@ -168,7 +172,7 @@ export const rollApiKey = async (req, res) => {
  * Revoke an API key.
  */
 export const revokeApiKey = async (req, res) => {
-  const key = await ApiKey.findOne({ _id: req.params.id, user: req.user.id });
+  const key = await ApiKey.findOne({ _id: req.params.id, workspace: req.activeWorkspace._id });
   if (!key) {
     throw new NotFoundError('API key not found');
   }
@@ -178,6 +182,7 @@ export const revokeApiKey = async (req, res) => {
 
   logAudit({
     action: 'apikey.revoke',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(key._id),
@@ -191,20 +196,21 @@ export const revokeApiKey = async (req, res) => {
  */
 export const getDeveloperMetrics = async (req, res) => {
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const workspace = req.activeWorkspace._id;
 
   const [totalKeys, activeKeys, totalCalls24h, successCalls24h, errorCalls24h, throttledCalls24h] =
     await Promise.all([
-      ApiKey.countDocuments({ user: req.user.id }),
-      ApiKey.countDocuments({ user: req.user.id, status: 'active' }),
-      ApiLog.countDocuments({ user: req.user.id, createdAt: { $gte: since24h } }),
-      ApiLog.countDocuments({ user: req.user.id, statusCode: { $gte: 200, $lt: 300 }, createdAt: { $gte: since24h } }),
-      ApiLog.countDocuments({ user: req.user.id, statusCode: { $gte: 400 }, createdAt: { $gte: since24h } }),
-      ApiLog.countDocuments({ user: req.user.id, statusCode: 429, createdAt: { $gte: since24h } }),
+      ApiKey.countDocuments({ workspace }),
+      ApiKey.countDocuments({ workspace, status: 'active' }),
+      ApiLog.countDocuments({ workspace, createdAt: { $gte: since24h } }),
+      ApiLog.countDocuments({ workspace, statusCode: { $gte: 200, $lt: 300 }, createdAt: { $gte: since24h } }),
+      ApiLog.countDocuments({ workspace, statusCode: { $gte: 400 }, createdAt: { $gte: since24h } }),
+      ApiLog.countDocuments({ workspace, statusCode: 429, createdAt: { $gte: since24h } }),
     ]);
 
   // Compute average latency
   const latencyAgg = await ApiLog.aggregate([
-    { $match: { user: req.user._id, createdAt: { $gte: since24h } } },
+    { $match: { workspace, createdAt: { $gte: since24h } } },
     { $group: { _id: null, avgLatency: { $avg: '$latencyMs' } } },
   ]);
 
@@ -235,7 +241,7 @@ export const listApiLogs = async (req, res) => {
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100);
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
 
-  const query = { user: req.user.id };
+  const query = { workspace: req.activeWorkspace._id };
   if (statusCode) {
     if (statusCode === '2xx') query.statusCode = { $gte: 200, $lt: 300 };
     else if (statusCode === '4xx') query.statusCode = { $gte: 400, $lt: 500 };

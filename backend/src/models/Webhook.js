@@ -17,6 +17,10 @@ export const WEBHOOK_EVENTS = [
 const webhookSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    // Owning workspace; `user` above stays as the creator. Not required yet:
+    // create paths don't set it until the controller phase, and
+    // scripts/migrate-users-to-workspaces.js backfills existing documents.
+    workspace: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', index: true },
     url: { type: String, required: true },
     events: [{ type: String, enum: WEBHOOK_EVENTS }],
     secret: { type: String, required: true },

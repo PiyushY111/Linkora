@@ -4,6 +4,7 @@ import { env } from '../../src/config/env.js';
 import User from '../../src/models/User.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { getRedis } from '../../src/services/cacheService.js';
+import { resolveActiveWorkspace } from '../../src/services/workspaceService.js';
 
 /**
  * Tests never touch the real dev database: they connect to a sibling
@@ -28,9 +29,11 @@ export async function disconnectTestDb() {
 /**
  * Creates a throwaway user for a test and returns it alongside a valid
  * access token, so tests can hit protected routes with
- * `Authorization: Bearer ${token}`.
+ * `Authorization: Bearer ${token}`, and the personal workspace those routes
+ * will act in (stamp `workspace: workspace._id` on fixtures they should see).
+ * Pass `{ withWorkspace: false }` to get a user with no workspace yet.
  */
-export async function createTestUser(overrides = {}) {
+export async function createTestUser(overrides = {}, { withWorkspace = true } = {}) {
   const suffix = crypto.randomBytes(6).toString('hex');
   const user = await User.create({
     name: 'Test User',
@@ -39,7 +42,8 @@ export async function createTestUser(overrides = {}) {
     ...overrides,
   });
   const token = generateToken(user._id);
-  return { user, token };
+  const workspace = withWorkspace ? (await resolveActiveWorkspace(user)).workspace : null;
+  return { user, token, workspace };
 }
 
 export function authHeader(token) {

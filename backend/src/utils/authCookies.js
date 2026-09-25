@@ -11,7 +11,8 @@ const REFRESH_COOKIE_PATH = '/api/auth';
  */
 export function setRefreshTokenCookie(res, token) {
   const isProd = env.NODE_ENV === 'production';
-  const sameSite = env.COOKIE_SAMESITE || (isProd ? 'none' : 'strict');
+  const defaultSameSite = isProd ? 'none' : env.NODE_ENV === 'development' ? 'lax' : 'strict';
+  const sameSite = env.COOKIE_SAMESITE || defaultSameSite;
   const secure = env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : isProd;
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
@@ -25,7 +26,8 @@ export function setRefreshTokenCookie(res, token) {
 
 export function clearRefreshTokenCookie(res) {
   const isProd = env.NODE_ENV === 'production';
-  const sameSite = env.COOKIE_SAMESITE || (isProd ? 'none' : 'strict');
+  const defaultSameSite = isProd ? 'none' : env.NODE_ENV === 'development' ? 'lax' : 'strict';
+  const sameSite = env.COOKIE_SAMESITE || defaultSameSite;
   const secure = env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : isProd;
   res.clearCookie(REFRESH_COOKIE_NAME, {
     httpOnly: true,

@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import Link from '../../models/Link.js';
 import ClickEvent from '../../models/ClickEvent.js';
 import { LinkStatsHourly, LinkStatsDaily } from '../../models/LinkStats.js';
 import { env } from '../../config/env.js';
@@ -170,25 +169,29 @@ export async function getLinkAnalytics(linkId, timeInfo, { excludeBots } = {}) {
   return { analytics, recentClicks: recent };
 }
 
-export async function getUserSummary(userId, timeInfo, options = {}) {
-  const id = new mongoose.Types.ObjectId(userId);
-  const [aggregated, recent, totalLinks] = await Promise.all([
-    aggregate({ userId: id }, timeInfo, { excludeBots: Boolean(options.excludeBots) }),
-    recentClicks({ 'meta.userId': id }).catch((err) => {
-      logger.warn({ err, userId }, 'Failed to fetch recent clicks for user summary; returning empty list');
+/**
+ * Summary across a set of links (a workspace's). Scoped by linkId rather
+ * than the userId stamped on rollups/events, which is the link's creator
+ * and so doesn't follow workspace membership.
+ * @param {string[]} linkIds
+ */
+export async function getSummary(linkIds, timeInfo, options = {}) {
+  const ids = linkIds.map((id) => new mongoose.Types.ObjectId(id));
+  const [aggregated, recent] = await Promise.all([
+    aggregate({ linkId: { $in: ids } }, timeInfo, { excludeBots: Boolean(options.excludeBots) }),
+    recentClicks({ 'meta.linkId': { $in: ids } }).catch((err) => {
+      logger.warn({ err }, 'Failed to fetch recent clicks for summary; returning empty list');
       return [];
     }),
-    Link.countDocuments({ user: id }).catch(() => 0),
   ]);
-  return { ...aggregated, totalLinks, recentClicks: recent };
+  return { ...aggregated, totalLinks: ids.length, recentClicks: recent };
 }
 
-export async function* exportEvents({ linkId, userId, start, end, limit }) {
-  const scope = linkId
-    ? { 'meta.linkId': new mongoose.Types.ObjectId(linkId) }
-    : { 'meta.userId': new mongoose.Types.ObjectId(userId) };
+/** @param {{ linkIds: string[], start: Date, end: Date, limit: number }} filter */
+export async function* exportEvents({ linkIds, start, end, limit }) {
+  const ids = linkIds.map((id) => new mongoose.Types.ObjectId(id));
   const cursor = ClickEvent.collection
-    .find({ ...scope, timestamp: { $gte: start, $lte: end } })
+    .find({ 'meta.linkId': { $in: ids }, timestamp: { $gte: start, $lte: end } })
     .sort({ timestamp: -1 })
     .limit(limit);
   for await (const ev of cursor) {

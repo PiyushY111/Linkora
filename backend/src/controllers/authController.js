@@ -2,14 +2,24 @@ import User from '../models/User.js';
 import Link from '../models/Link.js';
 import ApiKey from '../models/ApiKey.js';
 import Webhook from '../models/Webhook.js';
-import { generateToken, issueRefreshToken, consumeRefreshToken, revokeRefreshToken } from '../utils/jwt.js';
+import {
+  generateToken,
+  issueRefreshToken,
+  consumeRefreshToken,
+  revokeRefreshToken,
+  PASSWORD_AUTH,
+} from '../utils/jwt.js';
+import { findEnforcingOrganization, createAuthorizationRequest } from '../services/ssoService.js';
 import { getClientIp } from '../utils/helpers.js';
 import { recordAuthFailure, resetAuthFailures } from '../middleware/rateLimiter.js';
 import { logAudit } from '../utils/auditLogger.js';
 import { env } from '../config/env.js';
-import { ValidationError, UnauthorizedError, NotFoundError } from '../lib/errors.js';
+import { logger } from '../config/logger.js';
+import { ValidationError, UnauthorizedError, NotFoundError, ForbiddenError } from '../lib/errors.js';
 import { setRefreshTokenCookie, clearRefreshTokenCookie } from '../utils/authCookies.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
+import { resolveActiveWorkspace, setUpNewUserWorkspace, toActiveWorkspacePayload } from '../services/workspaceService.js';
+import { findWorkspaceMembership } from '../middleware/rbac.js';
 
 // Minimum acceptable password strength at registration: 8+ chars, at least
 // one letter and one digit. Deliberately simple (no forced special-char
@@ -26,11 +36,63 @@ function assertStrongPassword(password) {
   }
 }
 
+const ACCOUNT_TYPES = ['personal', 'organization'];
+const ORG_NAME_MIN = 2;
+const ORG_NAME_MAX = 100;
+const TEAM_WORKSPACE_NAME = 'Main';
+
+/**
+ * Which first workspace to create at signup: none of the overrides for a
+ * personal account, or the given organization name plus a "Main" workspace
+ * for a team account. A structural choice only; there are no plans or seats.
+ * @returns {{ orgName: string, workspaceName: string } | undefined}
+ */
+function signupWorkspaceNames(accountType = 'personal', organizationName) {
+  if (!ACCOUNT_TYPES.includes(accountType)) {
+    throw new ValidationError(`accountType must be one of: ${ACCOUNT_TYPES.join(', ')}`);
+  }
+  if (accountType === 'personal') return undefined;
+
+  const orgName = typeof organizationName === 'string' ? organizationName.trim() : '';
+  if (orgName.length < ORG_NAME_MIN || orgName.length > ORG_NAME_MAX) {
+    throw new ValidationError(`Organization name must be ${ORG_NAME_MIN}-${ORG_NAME_MAX} characters`);
+  }
+  return { orgName, workspaceName: TEAM_WORKSPACE_NAME };
+}
+
+/**
+ * The 403 for a password sign-in (or password-session refresh) by a member
+ * of an organization that requires SSO. Carries the SSO authorize URL so the
+ * login page can send them straight into it.
+ */
+async function ssoRequiredResponse(res, org) {
+  const body = {
+    success: false,
+    code: 'SSO_REQUIRED',
+    organization: { name: org.name },
+  };
+  if (!env.SSO_ENABLED) {
+    // Enforcement can't be switched on without SSO, but the deployment could
+    // have turned SSO off since. Fail closed, and say who can fix it.
+    return res.status(403).json({
+      ...body,
+      message: `${org.name} requires single sign-on, which isn't available right now. Contact your administrator.`,
+    });
+  }
+  return res.status(403).json({
+    ...body,
+    message: `${org.name} requires single sign-on. Continue with SSO to sign in.`,
+    ssoUrl: await createAuthorizationRequest({ connectionId: org.ssoConnectionId }),
+  });
+}
+
 // Register user
 export const register = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, accountType, organizationName } = req.body;
 
   assertStrongPassword(password);
+  // Validated before any document is written.
+  const workspaceNames = signupWorkspaceNames(accountType, organizationName);
 
   const existing = await User.findOne({ email });
   if (existing) {
@@ -39,8 +101,23 @@ export const register = async (req, res) => {
 
   const user = await User.create({ name, email, password });
 
-  const token = generateToken(user._id);
-  const refreshToken = await issueRefreshToken(String(user._id));
+  // Every user acts inside a workspace: their personal one, or the team's.
+  let workspace;
+  let membership;
+  try {
+    ({ workspace, membership } = await setUpNewUserWorkspace(user, workspaceNames));
+  } catch (err) {
+    // Without this the account would exist with no workspace, and the lazy
+    // fallback would quietly give a team signup a personal workspace
+    // instead. Remove it so the signup can simply be retried.
+    await User.deleteOne({ _id: user._id }).catch((cleanupErr) =>
+      logger.error({ err: cleanupErr, userId: user._id }, 'Failed to remove user after workspace setup failed')
+    );
+    throw err;
+  }
+
+  const token = generateToken(user._id, PASSWORD_AUTH);
+  const refreshToken = await issueRefreshToken(String(user._id), undefined, PASSWORD_AUTH);
   setRefreshTokenCookie(res, refreshToken);
 
   logAudit({ action: 'user.register', actorUserId: user._id, ipAddress: getClientIp(req) });
@@ -54,6 +131,7 @@ export const register = async (req, res) => {
       name: user.name,
       email: user.email,
     },
+    activeWorkspace: toActiveWorkspacePayload(workspace, membership),
   });
 };
 
@@ -76,8 +154,22 @@ export const login = async (req, res) => {
 
   await resetAuthFailures(ip);
 
-  const token = generateToken(user._id);
-  const refreshToken = await issueRefreshToken(String(user._id));
+  // Checked only after the password verified, so this can't be used to find
+  // out which emails have accounts or which orgs they belong to.
+  const enforcing = await findEnforcingOrganization(user._id);
+  if (enforcing) {
+    logAudit({
+      action: 'auth.login.sso_required',
+      actorUserId: user._id,
+      ipAddress: ip,
+      diff: { organization: String(enforcing._id) },
+    });
+    return ssoRequiredResponse(res, enforcing);
+  }
+
+  const { workspace, membership } = await resolveActiveWorkspace(user);
+  const token = generateToken(user._id, PASSWORD_AUTH);
+  const refreshToken = await issueRefreshToken(String(user._id), undefined, PASSWORD_AUTH);
   setRefreshTokenCookie(res, refreshToken);
 
   logAudit({ action: 'auth.login.success', actorUserId: user._id, ipAddress: ip });
@@ -91,6 +183,7 @@ export const login = async (req, res) => {
       name: user.name,
       email: user.email,
     },
+    activeWorkspace: toActiveWorkspacePayload(workspace, membership),
   });
 };
 
@@ -108,13 +201,25 @@ export const refresh = async (req, res) => {
     throw new UnauthorizedError('Invalid or expired refresh token');
   }
 
-  const token = generateToken(consumed.userId);
+  // A password session can't outlive SSO enforcement: e.g. its user joined
+  // an enforcing org after signing in. End it; they sign in with SSO.
+  if (consumed.auth.authMethod === 'password') {
+    const enforcing = await findEnforcingOrganization(consumed.userId);
+    if (enforcing) {
+      await revokeRefreshToken(consumed.familyId);
+      clearRefreshTokenCookie(res);
+      return ssoRequiredResponse(res, enforcing);
+    }
+  }
+
+  const token = generateToken(consumed.userId, consumed.auth);
   // Reuse the same family across rotations so a later replay of this (now
   // spent) token is recognized as reuse and revokes the whole session chain.
-  const newRefreshToken = await issueRefreshToken(consumed.userId, consumed.familyId);
+  const newRefreshToken = await issueRefreshToken(consumed.userId, consumed.familyId, consumed.auth);
   setRefreshTokenCookie(res, newRefreshToken);
 
-  const user = await User.findById(consumed.userId).select('name email');
+  const user = await User.findById(consumed.userId).select('name email activeWorkspace');
+  const active = user ? await resolveActiveWorkspace(user) : null;
 
   res.status(200).json({
     success: true,
@@ -127,6 +232,7 @@ export const refresh = async (req, res) => {
           email: user.email,
         }
       : undefined,
+    activeWorkspace: active ? toActiveWorkspacePayload(active.workspace, active.membership) : undefined,
   });
 };
 
@@ -137,6 +243,43 @@ export const getCurrentUser = async (req, res) => {
   res.status(200).json({
     success: true,
     user,
+    activeWorkspace: toActiveWorkspacePayload(req.activeWorkspace, req.activeMembership),
+  });
+};
+
+// Switch which workspace the caller acts in. Membership is checked with the
+// same lookup the /api/workspaces/:workspaceId routes use.
+export const switchActiveWorkspace = async (req, res) => {
+  const { workspaceId } = req.body;
+  if (typeof workspaceId !== 'string' || !workspaceId) {
+    throw new ValidationError('workspaceId is required');
+  }
+
+  const { workspace, membership } = await findWorkspaceMembership(workspaceId, req.user.id);
+  if (!workspace) {
+    throw new NotFoundError('Workspace not found');
+  }
+  if (!membership) {
+    throw new ForbiddenError('Not a member of this workspace');
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    { $set: { activeWorkspace: workspace._id } },
+    { new: true }
+  ).select('name email');
+
+  logAudit({
+    action: 'user.active_workspace.switch',
+    actorUserId: req.user.id,
+    targetResourceId: String(workspace._id),
+    ipAddress: getClientIp(req),
+  });
+
+  res.status(200).json({
+    success: true,
+    user: { id: user._id, name: user.name, email: user.email },
+    activeWorkspace: toActiveWorkspacePayload(workspace, membership),
   });
 };
 

@@ -14,6 +14,7 @@ export default function ActionDropdown({
   anchorEl,
   children,
   width = 176,
+  align = 'auto',
 }) {
   const [style, setStyle] = useState(null);
 
@@ -25,26 +26,45 @@ export default function ActionDropdown({
     const spaceAbove = rect.top;
     const openUpward = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
 
-    const right = Math.max(8, window.innerWidth - rect.right);
+    const actualWidth = Math.min(width, window.innerWidth - 16);
+
+    // Resolve horizontal alignment:
+    // If align === 'auto', pick 'left' when anchor is on the left half of the viewport (e.g. sidebar),
+    // and 'right' when anchor is on the right half (e.g. table rows or cards).
+    const resolvedAlign =
+      align === 'auto'
+        ? (rect.left < window.innerWidth / 2 ? 'left' : 'right')
+        : align;
+
+    let horizontalStyle = {};
+    if (resolvedAlign === 'left') {
+      // Align to trigger element's left edge, ensuring it never clips on the left (min 8px) or right
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - actualWidth - 8));
+      horizontalStyle = { left: `${left}px` };
+    } else {
+      // Align to trigger element's right edge, ensuring it never overflows off left or right
+      const right = Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - actualWidth - 8));
+      horizontalStyle = { right: `${right}px` };
+    }
 
     if (openUpward) {
       return {
         position: 'fixed',
         bottom: `${Math.max(8, window.innerHeight - rect.top + 4)}px`,
-        right: `${right}px`,
-        width: `${width}px`,
+        ...horizontalStyle,
+        width: `${actualWidth}px`,
         maxHeight: `${Math.max(120, spaceAbove - 16)}px`,
       };
     } else {
       return {
         position: 'fixed',
         top: `${Math.max(8, rect.bottom + 4)}px`,
-        right: `${right}px`,
-        width: `${width}px`,
+        ...horizontalStyle,
+        width: `${actualWidth}px`,
         maxHeight: `${Math.max(120, spaceBelow - 16)}px`,
       };
     }
-  }, [anchorEl, width]);
+  }, [anchorEl, width, align]);
 
   useEffect(() => {
     if (!isOpen || !anchorEl) {

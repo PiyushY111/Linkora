@@ -19,6 +19,7 @@ import ActionDropdown from '../ui/ActionDropdown';
 import { linkService } from '../../services';
 import useLinkStore from '../../context/linkStore';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useCan } from '../../context/authStore';
 
 function getDomain(url) {
   try {
@@ -37,6 +38,7 @@ export default function LinkTableView({
   onInspectLink,
 }) {
   const confirm = useConfirm();
+  const canWriteLinks = useCan('links:write');
   const { updateLink, removeLink } = useLinkStore();
   const [copiedId, setCopiedId] = useState(null);
   const [activeMenu, setActiveMenu] = useState(null);
@@ -336,37 +338,41 @@ export default function LinkTableView({
                           >
                             <QrCode size={13} /> Customize QR
                           </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              setActiveMenu(null);
-                              handleToggle(link, e);
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
-                          >
-                            <Power size={13} /> {link.isActive ? 'Pause link' : 'Activate link'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveMenu(null);
-                              onInspectLink(link);
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
-                          >
-                            <SlidersHorizontal size={13} /> Edit settings
-                          </button>
-                          <div className="my-1 border-t border-ink-700/80" />
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              setActiveMenu(null);
-                              handleDelete(link._id, e);
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10 transition-colors"
-                          >
-                            <Trash2 size={13} /> Delete
-                          </button>
+                          {canWriteLinks && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  setActiveMenu(null);
+                                  handleToggle(link, e);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                              >
+                                <Power size={13} /> {link.isActive ? 'Pause link' : 'Activate link'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveMenu(null);
+                                  onInspectLink(link);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                              >
+                                <SlidersHorizontal size={13} /> Edit settings
+                              </button>
+                              <div className="my-1 border-t border-ink-700/80" />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  setActiveMenu(null);
+                                  handleDelete(link._id, e);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10 transition-colors"
+                              >
+                                <Trash2 size={13} /> Delete
+                              </button>
+                            </>
+                          )}
                         </ActionDropdown>
                       </div>
                     </div>

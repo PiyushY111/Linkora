@@ -224,7 +224,8 @@ Link configuration, access controls and routing (`src/models/Link.js`).
 | Field | Type | Constraints | Description |
 |---|---|---|---|
 | `_id` | `ObjectId` | Primary key | Internal identifier |
-| `user` | `ObjectId` | Required, ref `User` | Owner; queries filter by it |
+| `user` | `ObjectId` | Required, ref `User` | Member who created the link |
+| `workspace` | `ObjectId` | Ref `Workspace`, indexed | Owning workspace; every query filters by it, and the caller's role in it gates each action (`src/utils/permissions.js`) |
 | `originalUrl` | `String` | Required, trimmed | Destination URL |
 | `shortCode` | `String` | Required, unique, case-sensitive | Generated Base62 code |
 | `shortUrl` | `String` | Required, unique | Full public short URL |
@@ -258,7 +259,7 @@ Raw click events (`src/models/ClickEvent.js`). `timeField: timestamp`, `metaFiel
 |---|---|---|
 | `timestamp` | `Date` | Click time (UTC) |
 | `meta.linkId` | `ObjectId` | Link |
-| `meta.userId` | `ObjectId` | Link owner (nullable) |
+| `meta.userId` | `ObjectId` | User who created the link (nullable). Workspace-level reads (summary, export) scope by `meta.linkId` instead, since links belong to a workspace |
 | `eventId` | `String` | Stream entry ID; indexed for the redelivery check |
 | `shortCode` | `String` | Code the visitor used |
 | `ip` | `String` | Client IP as received (not anonymized) |

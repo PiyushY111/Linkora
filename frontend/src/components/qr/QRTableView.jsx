@@ -39,6 +39,8 @@ export default function QRTableView({
   onDelete,
   onUpdateDestination,
 }) {
+  // onToggleStatus / onDelete / onUpdateDestination are only passed for roles
+  // that may change links; their controls are hidden otherwise.
   const [copiedId, setCopiedId] = useState(null);
   const [activeMenu, setActiveMenu] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -283,14 +285,16 @@ export default function QRTableView({
                           </a>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={(e) => handleStartEdit(link, e)}
-                          className="rounded p-1 text-paper-500 opacity-0 transition-opacity hover:bg-ink-800 hover:text-accent-400 group-hover/dest:opacity-100"
-                          title="Change destination link without reprinting QR"
-                        >
-                          <Edit3 size={13} />
-                        </button>
+                        {onUpdateDestination && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleStartEdit(link, e)}
+                            className="rounded p-1 text-paper-500 opacity-0 transition-opacity hover:bg-ink-800 hover:text-accent-400 group-hover/dest:opacity-100"
+                            title="Change destination link without reprinting QR"
+                          >
+                            <Edit3 size={13} />
+                          </button>
+                        )}
                       </div>
                     )}
                   </td>
@@ -390,16 +394,18 @@ export default function QRTableView({
                           anchorEl={activeMenu?.anchorEl}
                           width={180}
                         >
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              setActiveMenu(null);
-                              handleStartEdit(link, e);
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
-                          >
-                            <Edit3 size={13} /> Change Destination
-                          </button>
+                          {onUpdateDestination && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                setActiveMenu(null);
+                                handleStartEdit(link, e);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                            >
+                              <Edit3 size={13} /> Change Destination
+                            </button>
+                          )}
 
                           <button
                             type="button"
@@ -423,29 +429,34 @@ export default function QRTableView({
                             <Copy size={13} /> Copy Short URL
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              setActiveMenu(null);
-                              onToggleStatus && onToggleStatus(link);
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
-                          >
-                            <Power size={13} /> {link.isActive ? 'Pause QR' : 'Activate QR'}
-                          </button>
+                          {onToggleStatus && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                setActiveMenu(null);
+                                onToggleStatus && onToggleStatus(link);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-paper-200 hover:bg-ink-750 transition-colors"
+                            >
+                              <Power size={13} /> {link.isActive ? 'Pause QR' : 'Activate QR'}
+                            </button>
+                          )}
 
-                          <div className="my-1 border-t border-ink-700/80" />
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              setActiveMenu(null);
-                              onDelete && onDelete(link._id);
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10 transition-colors"
-                          >
-                            <Trash2 size={13} /> Delete QR
-                          </button>
+                          {onDelete && (
+                            <>
+                              <div className="my-1 border-t border-ink-700/80" />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveMenu(null);
+                                  onDelete(link._id);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-danger hover:bg-danger/10 transition-colors"
+                              >
+                                <Trash2 size={13} /> Delete QR
+                              </button>
+                            </>
+                          )}
                         </ActionDropdown>
                       </div>
                     </div>

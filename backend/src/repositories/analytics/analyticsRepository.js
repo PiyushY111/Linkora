@@ -11,6 +11,7 @@ import { mongoAnalyticsRepository } from './mongoAnalyticsRepository.js';
  * @property {string} eventId - stream entry ID; the idempotency key
  * @property {string} linkId
  * @property {string} userId
+ * @property {string} [workspaceId] - used only to route click webhooks; not stored
  * @property {string} shortCode
  * @property {Date} timestamp
  * @property {string} [ip]
@@ -44,8 +45,9 @@ import { mongoAnalyticsRepository } from './mongoAnalyticsRepository.js';
  *   Persists a batch. Must be idempotent per eventId: re-recording an event
  *   already recorded is a no-op. Returns the events that were newly applied.
  * @property {(linkId: string, timeInfo: TimeInfo, options: { excludeBots: boolean }) => Promise<object>} getLinkAnalytics
- * @property {(userId: string, timeInfo: TimeInfo, options?: { excludeBots?: boolean }) => Promise<object>} getUserSummary
- * @property {(filter: { linkId?: string, userId: string, start: Date, end: Date, limit: number }) => AsyncIterable<object>} exportEvents
+ * @property {(linkIds: string[], timeInfo: TimeInfo, options?: { excludeBots?: boolean }) => Promise<object>} getSummary
+ *   Aggregate across a set of links (a workspace's links).
+ * @property {(filter: { linkIds: string[], start: Date, end: Date, limit: number }) => AsyncIterable<object>} exportEvents
  * @property {(scope: { linkId?: string, userId?: string }) => Promise<void>} deleteAnalytics
  *   Removes every stored click for a link or a user (link/account deletion).
  */

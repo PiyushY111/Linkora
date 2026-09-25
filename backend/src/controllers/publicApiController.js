@@ -29,12 +29,12 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 }
 
 /**
- * Helper to resolve link by shortCode or Mongo ID owned by the user.
+ * Helper to resolve link by shortCode or Mongo ID owned by the workspace.
  * Ownership is enforced in the query itself, not fetched-then-compared.
  */
-async function findUserLink(codeOrId, userId) {
+async function findWorkspaceLink(codeOrId, workspaceId) {
   const query = {
-    user: userId,
+    workspace: workspaceId,
     $or: [{ shortCode: codeOrId }],
   };
   if (codeOrId.match(/^[0-9a-fA-F]{24}$/)) {
@@ -53,7 +53,7 @@ export const listLinks = async (req, res) => {
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
   const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
 
-  const query = { user: req.user.id };
+  const query = { workspace: req.activeWorkspace._id };
 
   if (search && search.trim()) {
     query.$or = [
@@ -124,10 +124,12 @@ export const createLink = async (req, res) => {
     throw new ValidationError('originalUrl is required');
   }
 
-  const link = await createLinkRecord(req.user.id, req.body, { generateQr: true });
+  const owner = { userId: req.user.id, workspaceId: req.activeWorkspace._id };
+  const link = await createLinkRecord(owner, req.body, { generateQr: true });
 
   logAudit({
     action: 'api.link.create',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(link._id),
@@ -158,7 +160,7 @@ export const createLink = async (req, res) => {
  * Retrieve link metadata by shortCode or ID.
  */
 export const getLink = async (req, res) => {
-  const link = await findUserLink(req.params.code, req.user.id);
+  const link = await findWorkspaceLink(req.params.code, req.activeWorkspace._id);
   if (!link) {
     throw new NotFoundError('Link not found');
   }
@@ -193,7 +195,7 @@ export const getLink = async (req, res) => {
  * Update destination URL or metadata for a link.
  */
 export const updateLink = async (req, res) => {
-  const link = await findUserLink(req.params.code, req.user.id);
+  const link = await findWorkspaceLink(req.params.code, req.activeWorkspace._id);
   if (!link) {
     throw new NotFoundError('Link not found');
   }
@@ -239,6 +241,7 @@ export const updateLink = async (req, res) => {
 
   logAudit({
     action: 'api.link.update',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(link._id),
@@ -269,7 +272,7 @@ export const updateLink = async (req, res) => {
  * Delete short link.
  */
 export const deleteLink = async (req, res) => {
-  const link = await findUserLink(req.params.code, req.user.id);
+  const link = await findWorkspaceLink(req.params.code, req.activeWorkspace._id);
   if (!link) {
     throw new NotFoundError('Link not found');
   }
@@ -281,6 +284,7 @@ export const deleteLink = async (req, res) => {
 
   logAudit({
     action: 'api.link.delete',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     targetResourceId: String(link._id),
@@ -294,7 +298,7 @@ export const deleteLink = async (req, res) => {
  * Retrieve analytics metrics for a specific link.
  */
 export const getLinkAnalytics = async (req, res) => {
-  const link = await findUserLink(req.params.code, req.user.id);
+  const link = await findWorkspaceLink(req.params.code, req.activeWorkspace._id);
   if (!link) {
     throw new NotFoundError('Link not found');
   }
@@ -318,12 +322,13 @@ export const bulkCreateLinks = async (req, res) => {
     throw new ValidationError(`links cannot exceed ${MAX_BULK_SIZE} entries per batch`);
   }
 
+  const owner = { userId: req.user.id, workspaceId: req.activeWorkspace._id };
   const results = await mapWithConcurrency(links, VALIDATION_CONCURRENCY, async (item) => {
     const originalUrl = typeof item === 'string' ? item : item.originalUrl;
 
     try {
       const payload = typeof item === 'string' ? { originalUrl } : item;
-      const link = await createLinkRecord(req.user.id, payload, { generateQr: false });
+      const link = await createLinkRecord(owner, payload, { generateQr: false });
       return {
         originalUrl,
         success: true,
@@ -341,6 +346,7 @@ export const bulkCreateLinks = async (req, res) => {
 
   logAudit({
     action: 'api.link.bulk_create',
+    workspace: req.activeWorkspace._id,
     actorUserId: req.user.id,
     ipAddress: getClientIp(req),
     diff: { requested: links.length, succeeded },

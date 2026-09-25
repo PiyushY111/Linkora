@@ -97,8 +97,9 @@ const Webhooks = () => {
     try {
       const data = await webhookService.list();
       setWebhooks(data.webhooks || []);
-    } catch {
-      toast.error('Failed to load webhooks');
+    } catch (error) {
+      // Webhooks are admin-only per workspace; surface the role message.
+      toast.error(error.response?.data?.message || 'Failed to load webhooks');
     } finally {
       setIsLoading(false);
     }

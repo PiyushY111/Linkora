@@ -8,6 +8,7 @@ import Link from '../models/Link.js';
 import { addToStream } from './eventStreamService.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { NotFoundError } from '../lib/errors.js';
 
 // Exponential backoff delays: 10s, 1m, 5m, 30m, 2h
 const RETRY_DELAYS_MS = [10000, 60000, 300000, 1800000, 7200000];
@@ -354,14 +355,14 @@ export async function executeDelivery(
 }
 
 /**
- * Dispatches an event to all active webhooks subscribed to this event.
+ * Dispatches an event to the workspace's active webhooks subscribed to it.
  * Runs asynchronously without blocking the caller.
- * @param {string} userId
+ * @param {string | import('mongoose').Types.ObjectId} workspaceId
  * @param {string} event
  * @param {Record<string, unknown>} data
  */
-export async function dispatchEvent(userId, event, data) {
-  if (!userId) return;
+export async function dispatchEvent(workspaceId, event, data) {
+  if (!workspaceId) return;
 
   try {
     // Map event aliases for backward compatibility
@@ -372,7 +373,7 @@ export async function dispatchEvent(userId, event, data) {
     if (event === 'abuse.flagged') eventQuery.push('security.abuse_flagged');
 
     const webhooks = await Webhook.find({
-      user: userId,
+      workspace: workspaceId,
       isActive: true,
       events: { $in: eventQuery },
     });
@@ -383,17 +384,38 @@ export async function dispatchEvent(userId, event, data) {
       );
     }
   } catch (err) {
-    logger.error({ err, userId, event }, 'Failed to query webhooks for dispatch');
+    logger.error({ err, workspaceId, event }, 'Failed to query webhooks for dispatch');
   }
+}
+
+/**
+ * dispatchEvent for an event about a link, where the caller may only hold a
+ * cached link:meta hash or click-stream entry written before those carried
+ * workspaceId: the owning workspace is then looked up from the link itself.
+ * @param {{ linkId: string, workspaceId?: string }} link
+ * @param {string} event
+ * @param {Record<string, unknown>} data
+ */
+export async function dispatchLinkEvent({ linkId, workspaceId }, event, data) {
+  let resolved = workspaceId;
+  if (!resolved) {
+    try {
+      resolved = (await Link.findById(linkId).select('workspace').lean())?.workspace;
+    } catch (err) {
+      logger.error({ err, linkId, event }, 'Failed to resolve link workspace for webhook dispatch');
+      return;
+    }
+  }
+  return dispatchEvent(resolved, event, data);
 }
 
 /**
  * Triggers a live synthetic test event and returns the full HTTP exchange synchronously.
  */
-export async function testWebhookEndpoint(webhookId, userId, eventType = 'endpoint.test') {
-  const webhook = await Webhook.findOne({ _id: webhookId, user: userId });
+export async function testWebhookEndpoint(webhookId, workspaceId, eventType = 'endpoint.test') {
+  const webhook = await Webhook.findOne({ _id: webhookId, workspace: workspaceId });
   if (!webhook) {
-    throw new Error('Webhook endpoint not found or unauthorized');
+    throw new NotFoundError('Webhook not found');
   }
 
   // Generate realistic sample payloads per event type
@@ -482,16 +504,18 @@ export async function testWebhookEndpoint(webhookId, userId, eventType = 'endpoi
 
 /**
  * Replays a past webhook delivery using the exact payload and destination.
+ * The delivery must belong to `webhookId`, and that webhook to the
+ * workspace; anything else is reported as not found.
  */
-export async function retryDelivery(deliveryId, userId) {
-  const delivery = await WebhookDelivery.findOne({ _id: deliveryId, user: userId }).populate('webhook');
-  if (!delivery) {
-    throw new Error('Delivery record not found');
+export async function retryDelivery(deliveryId, webhookId, workspaceId) {
+  const webhook = await Webhook.findOne({ _id: webhookId, workspace: workspaceId });
+  if (!webhook) {
+    throw new NotFoundError('Webhook not found');
   }
 
-  const webhook = delivery.webhook || (await Webhook.findById(delivery.webhook));
-  if (!webhook) {
-    throw new Error('Associated webhook endpoint no longer exists');
+  const delivery = await WebhookDelivery.findOne({ _id: deliveryId, webhook: webhook._id });
+  if (!delivery) {
+    throw new NotFoundError('Delivery record not found');
   }
 
   return await executeDelivery(
@@ -514,7 +538,7 @@ export async function checkExpiredLinks() {
   }).lean();
 
   for (const link of expired) {
-    await dispatchEvent(String(link.user), 'link.expired', {
+    await dispatchEvent(link.workspace, 'link.expired', {
       linkId: String(link._id),
       shortCode: link.shortCode,
       originalUrl: link.originalUrl,
@@ -540,6 +564,7 @@ export default {
   generateSignature,
   executeDelivery,
   dispatchEvent,
+  dispatchLinkEvent,
   testWebhookEndpoint,
   retryDelivery,
   checkExpiredLinks,

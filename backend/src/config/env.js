@@ -114,6 +114,9 @@ const envSchema = z
     WORKOS_API_KEY: z.string().optional().default(''),
     WORKOS_CLIENT_ID: z.string().optional().default(''),
     WORKOS_REDIRECT_URI: z.string().optional().default(''),
+    // Signing secret of the WorkOS webhook endpoint that delivers Directory
+    // Sync (SCIM) events. Directory sync is unavailable while it's empty.
+    WORKOS_WEBHOOK_SECRET: z.string().optional().default(''),
 
     // Webhooks
     WEBHOOK_SIGNING_SECRET: z.string().optional().default(''),

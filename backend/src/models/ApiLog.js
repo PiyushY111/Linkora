@@ -8,6 +8,12 @@ const apiLogSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // Workspace the request acted in; the developer portal's metrics and
+    // logs are scoped by it. Unset on logs written before workspaces.
+    workspace: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Workspace',
+    },
     apiKeyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ApiKey',
@@ -61,6 +67,8 @@ apiLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
 // Compound index for user query filtering and sorting
 apiLogSchema.index({ user: 1, createdAt: -1 });
 apiLogSchema.index({ user: 1, statusCode: 1, createdAt: -1 });
+apiLogSchema.index({ workspace: 1, createdAt: -1 });
+apiLogSchema.index({ workspace: 1, statusCode: 1, createdAt: -1 });
 
 const ApiLog = mongoose.model('ApiLog', apiLogSchema);
 

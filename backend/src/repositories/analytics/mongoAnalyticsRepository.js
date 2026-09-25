@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import ClickEvent from '../../models/ClickEvent.js';
 import { LinkStatsHourly, LinkStatsDaily } from '../../models/LinkStats.js';
 import { recordClicks } from './mongoAnalyticsWriter.js';
-import { getLinkAnalytics, getUserSummary, exportEvents } from './mongoAnalyticsReader.js';
+import { getLinkAnalytics, getSummary, exportEvents } from './mongoAnalyticsReader.js';
 import { ensureAnalyticsCollections } from './analyticsCollections.js';
 
 /**
@@ -26,7 +26,7 @@ export const mongoAnalyticsRepository = {
   ensureReady: ensureAnalyticsCollections,
   recordClicks,
   getLinkAnalytics,
-  getUserSummary,
+  getSummary,
   exportEvents,
   deleteAnalytics,
 };

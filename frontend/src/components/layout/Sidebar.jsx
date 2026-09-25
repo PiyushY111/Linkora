@@ -1,19 +1,23 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Link2, BarChart3, QrCode, Webhook, Terminal, Settings, LogOut } from 'lucide-react';
+import { Link2, BarChart3, QrCode, Webhook, Terminal, Building2, Settings, LogOut } from 'lucide-react';
 import useAuthStore from '../../context/authStore';
+import { can } from '../../utils/permissions';
 import { authService } from '../../services';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Links', icon: Link2 },
   { to: '/qr-codes', label: 'QR Studio', icon: QrCode },
   { to: '/analytics/all', label: 'Analytics', icon: BarChart3 },
-  { to: '/webhooks', label: 'Webhooks', icon: Webhook },
-  { to: '/developer', label: 'Developer', icon: Terminal },
+  { to: '/webhooks', label: 'Webhooks', icon: Webhook, permission: 'webhooks:manage' },
+  { to: '/developer', label: 'Developer', icon: Terminal, permission: 'apiKeys:manage' },
+  { to: '/workspaces', label: 'Workspaces', icon: Building2 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 const Sidebar = () => {
-  const { user, logout } = useAuthStore();
+  const { user, activeWorkspace, logout } = useAuthStore();
+  const navItems = NAV_ITEMS.filter((item) => !item.permission || can(activeWorkspace, item.permission));
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -33,8 +37,12 @@ const Sidebar = () => {
         <span className="text-base font-bold tracking-tight text-paper-100">Linkora</span>
       </div>
 
+      <div className="px-3 pb-2">
+        <WorkspaceSwitcher />
+      </div>
+
       <nav className="flex-1 space-y-1 px-3 py-2">
-        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+        {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}

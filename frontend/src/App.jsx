@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { Toaster } from 'react-hot-toast';
 
 import useAuthStore from './context/authStore';
 import { bootstrapSession } from './services/api';
 import ProtectedRoute from './components/ProtectedRoute';
+import { safeRedirectPath } from './utils/authRedirect';
 
 // Pages
 import Landing from './pages/Landing';
@@ -19,9 +20,23 @@ import Settings from './pages/Settings';
 import QRCodeStudio from './pages/QRCodeStudio';
 import NotFound from './pages/NotFound';
 import Redirect from './pages/Redirect';
+import Workspaces from './pages/Workspaces';
+import AcceptInvite from './pages/AcceptInvite';
+import OnboardingInviteTeam from './pages/OnboardingInviteTeam';
 
 import { ConfirmProvider } from './context/ConfirmContext';
 import './styles/globals.css';
+
+// Login/register for signed-out users only. Someone already signed in when
+// they arrive goes wherever the sending page asked (router state `from`),
+// else the dashboard. When they sign in *on* the page, the page navigates
+// itself (register may send a new team to onboarding), so this doesn't race
+// it with a redirect of its own.
+function GuestRoute({ children }) {
+  const location = useLocation();
+  const [signedInOnArrival] = useState(() => Boolean(useAuthStore.getState().token));
+  return signedInOnArrival ? <Navigate to={safeRedirectPath(location.state?.from)} replace /> : children;
+}
 
 function App() {
   const { token, isBootstrapping } = useAuthStore();
@@ -47,16 +62,19 @@ function App() {
         <Router>
           <Routes>
             <Route path="/" element={!token ? <Landing /> : <Navigate to="/dashboard" />} />
-            <Route path="/login" element={!token ? <Login /> : <Navigate to="/dashboard" />} />
-            <Route path="/register" element={!token ? <Register /> : <Navigate to="/dashboard" />} />
+            <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
+            <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
+            {/* Public: an invitee may not have an account yet. */}
+            <Route path="/invite/:token" element={<AcceptInvite />} />
 
             <Route path="/dashboard" element={<ProtectedRoute component={Dashboard} />} />
             <Route path="/qr-codes" element={<ProtectedRoute component={QRCodeStudio} />} />
             <Route path="/analytics" element={<Navigate to="/analytics/all" replace />} />
             <Route path="/analytics/:linkId" element={<ProtectedRoute component={Analytics} />} />
-            <Route path="/workspaces" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/webhooks" element={<ProtectedRoute component={Webhooks} />} />
-            <Route path="/developer" element={<ProtectedRoute component={Developer} />} />
+            <Route path="/workspaces" element={<ProtectedRoute component={Workspaces} />} />
+            <Route path="/onboarding/invite-team" element={<ProtectedRoute component={OnboardingInviteTeam} />} />
+            <Route path="/webhooks" element={<ProtectedRoute component={Webhooks} permission="webhooks:manage" />} />
+            <Route path="/developer" element={<ProtectedRoute component={Developer} permission="apiKeys:manage" />} />
             <Route path="/settings" element={<ProtectedRoute component={Settings} />} />
 
             {/* Catch short links and redirect through backend */}

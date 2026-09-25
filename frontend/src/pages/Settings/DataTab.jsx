@@ -1,5 +1,6 @@
 import { AlertTriangle, Download, Trash2, FileSpreadsheet } from 'lucide-react';
 import SettingsTabPanel from './SettingsTabPanel';
+import { useCan } from '../../context/authStore';
 
 function ExportCard({ icon, title, description, buttonIcon, buttonLabel, busyLabel, isBusy, onClick }) {
   return (
@@ -27,6 +28,8 @@ function ExportCard({ icon, title, description, buttonIcon, buttonLabel, busyLab
 export default function DataTab({ account }) {
   const { isExportingJson, isExportingCsv, isDeletingAccount, handleExportJson, handleExportCsv, openDeleteModal } =
     account;
+  // Raw click CSV is creator+ in the active workspace (backend enforces).
+  const canExportClicks = useCan('analytics:export');
 
   return (
     <SettingsTabPanel>
@@ -54,16 +57,18 @@ export default function DataTab({ account }) {
           />
 
           {/* CSV Analytics Export */}
-          <ExportCard
-            icon={<FileSpreadsheet size={16} className="text-emerald-400" />}
-            title="Raw Click Telemetry (CSV)"
-            description="Download individual click events including timestamps, referrers, device models, and geo country codes."
-            buttonIcon={<FileSpreadsheet size={13} />}
-            buttonLabel="Download CSV Stream"
-            busyLabel="Exporting..."
-            isBusy={isExportingCsv}
-            onClick={handleExportCsv}
-          />
+          {canExportClicks && (
+            <ExportCard
+              icon={<FileSpreadsheet size={16} className="text-emerald-400" />}
+              title="Raw Click Telemetry (CSV)"
+              description="Download individual click events including timestamps, referrers, device models, and geo country codes."
+              buttonIcon={<FileSpreadsheet size={13} />}
+              buttonLabel="Download CSV Stream"
+              busyLabel="Exporting..."
+              isBusy={isExportingCsv}
+              onClick={handleExportCsv}
+            />
+          )}
         </div>
       </div>
 

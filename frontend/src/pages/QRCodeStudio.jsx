@@ -30,6 +30,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { linkService } from '../services';
 import useLinkStore from '../context/linkStore';
 import { useConfirm } from '../context/ConfirmContext';
+import { useCan } from '../context/authStore';
 
 const CATEGORY_OPTIONS = [
   { value: 'all', label: 'All Categories' },
@@ -49,6 +50,8 @@ const SORT_OPTIONS = [
 ];
 
 export default function QRCodeStudio() {
+  // Viewers can see and download QR codes but not create or change them.
+  const canWriteLinks = useCan('links:write');
   const confirm = useConfirm();
   const { links, setLinks, updateLink, removeLink } = useLinkStore();
   const [isLoading, setIsLoading] = useState(true);
@@ -94,6 +97,7 @@ export default function QRCodeStudio() {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        if (!canWriteLinks) return;
         e.preventDefault();
         setShowCreateModal(true);
       } else if (
@@ -107,7 +111,7 @@ export default function QRCodeStudio() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [canWriteLinks]);
 
   // Fetch links from backend
   const fetchLinks = async () => {
@@ -269,17 +273,19 @@ export default function QRCodeStudio() {
               <Download size={14} />
               <span>Export CSV</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setShowCreateModal(true)}
-              className="btn-primary inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-xs font-semibold"
-            >
-              <Plus size={14} />
-              <span>Create QR Code</span>
-              <kbd className="ml-1 hidden rounded bg-ink-950/20 px-1.5 py-0.5 text-[10px] font-semibold text-ink-950/80 sm:inline-block">
-                ⌘K
-              </kbd>
-            </button>
+            {canWriteLinks && (
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(true)}
+                className="btn-primary inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-xs font-semibold"
+              >
+                <Plus size={14} />
+                <span>Create QR Code</span>
+                <kbd className="ml-1 hidden rounded bg-ink-950/20 px-1.5 py-0.5 text-[10px] font-semibold text-ink-950/80 sm:inline-block">
+                  ⌘K
+                </kbd>
+              </button>
+            )}
           </div>
         </div>
 
@@ -344,14 +350,16 @@ export default function QRCodeStudio() {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="btn-secondary btn-sm shrink-0 whitespace-nowrap self-start sm:self-auto"
-          >
-            <Plus size={14} />
-            <span>New Dynamic QR</span>
-          </button>
+          {canWriteLinks && (
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="btn-secondary btn-sm shrink-0 whitespace-nowrap self-start sm:self-auto"
+            >
+              <Plus size={14} />
+              <span>New Dynamic QR</span>
+            </button>
+          )}
         </div>
 
         {/* Controls Bar: Search, Status Tabs, Category, Sort & Layout Switcher */}
@@ -478,9 +486,9 @@ export default function QRCodeStudio() {
                 onSelectAll={handleSelectAll}
                 onInspect={(link) => setInspectedLink(link)}
                 onEditStyle={(link) => setStylingLink(link)}
-                onToggleStatus={handleToggleStatus}
-                onDelete={handleDeleteLink}
-                onUpdateDestination={handleUpdateDestination}
+                onToggleStatus={canWriteLinks ? handleToggleStatus : undefined}
+                onDelete={canWriteLinks ? handleDeleteLink : undefined}
+                onUpdateDestination={canWriteLinks ? handleUpdateDestination : undefined}
               />
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -493,9 +501,9 @@ export default function QRCodeStudio() {
                       onToggleSelect={handleToggleSelect}
                       onInspect={(l) => setInspectedLink(l)}
                       onEditStyle={(l) => setStylingLink(l)}
-                      onToggleStatus={handleToggleStatus}
-                      onDelete={handleDeleteLink}
-                      onUpdateDestination={handleUpdateDestination}
+                      onToggleStatus={canWriteLinks ? handleToggleStatus : undefined}
+                      onDelete={canWriteLinks ? handleDeleteLink : undefined}
+                      onUpdateDestination={canWriteLinks ? handleUpdateDestination : undefined}
                     />
                   ))}
                 </AnimatePresence>
@@ -524,7 +532,7 @@ export default function QRCodeStudio() {
                 >
                   Clear Filters
                 </button>
-              ) : (
+              ) : canWriteLinks ? (
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(true)}
@@ -532,7 +540,7 @@ export default function QRCodeStudio() {
                 >
                   <Plus size={16} /> Create Dynamic QR Code
                 </button>
-              )
+              ) : null
             }
           />
         )}
