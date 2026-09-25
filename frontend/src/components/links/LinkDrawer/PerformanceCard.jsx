@@ -1,6 +1,6 @@
 import { BarChart3, Users } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
-import { getQuotaProgress } from './linkDrawerHelpers';
+import { getQuotaProgress, hasClickLimit } from './linkDrawerHelpers';
 
 function QuotaBar({ link }) {
   const { percent, remaining, isFull, barClass } = getQuotaProgress(link);
@@ -65,7 +65,7 @@ export default function PerformanceCard({ link }) {
       </div>
 
       {/* Click Quota Progress Bar */}
-      {link.maxClicks && link.maxClicks > 0 && <QuotaBar link={link} />}
+      {hasClickLimit(link) && <QuotaBar link={link} />}
     </div>
   );
 }

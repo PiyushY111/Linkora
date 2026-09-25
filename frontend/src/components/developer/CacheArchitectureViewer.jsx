@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, RefreshCw, Zap, Database } from 'lucide-react';
+import { RefreshCw, Zap, Database } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { developerService } from '../../services';
 
@@ -62,7 +62,7 @@ export default function CacheArchitectureViewer() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="panel p-4">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-medium uppercase tracking-wider text-paper-500">
@@ -90,21 +90,6 @@ export default function CacheArchitectureViewer() {
           </div>
           <p className="mt-1 text-[11px] text-paper-500">
             XFetch background triggers
-          </p>
-        </div>
-
-        <div className="panel p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-paper-500">
-              Stampedes Prevented
-            </span>
-            <ShieldCheck size={14} className="text-emerald-400" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2 font-mono text-2xl font-bold text-emerald-400">
-            {diagnostics?.stampedesAvoided ?? 0}
-          </div>
-          <p className="mt-1 text-[11px] text-paper-500">
-            Thundering herds eliminated
           </p>
         </div>
 

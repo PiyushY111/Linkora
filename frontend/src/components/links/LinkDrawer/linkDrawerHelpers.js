@@ -68,6 +68,14 @@ export function formFromLink(link) {
   };
 }
 
+/**
+ * Whether the link has a click cap. A real boolean on purpose: `maxClicks`
+ * can be 0, and `{link.maxClicks && <X />}` would render a literal "0".
+ */
+export function hasClickLimit(link) {
+  return Number(link.maxClicks) > 0;
+}
+
 export function isQuotaFull(link) {
   return Boolean(link.maxClicks && (link.clicks || 0) >= link.maxClicks);
 }

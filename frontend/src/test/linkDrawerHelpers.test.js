@@ -4,6 +4,7 @@ import {
   formFromLink,
   getLinkStatus,
   getQuotaProgress,
+  hasClickLimit,
   presetExpiry,
   buildLinkUpdatePayload,
 } from '../components/links/LinkDrawer/linkDrawerHelpers.js';
@@ -25,6 +26,13 @@ describe('linkDrawerHelpers', () => {
     it('treats a zero or missing click cap as unlimited', () => {
       expect(getLinkStatus({ ...baseLink, maxClicks: 0, clicks: 10 }, now)).toBe('active');
     });
+  });
+
+  it('hasClickLimit is a real boolean, false for 0, null and missing caps', () => {
+    expect(hasClickLimit({ maxClicks: 25 })).toBe(true);
+    for (const maxClicks of [0, null, undefined, '']) {
+      expect(hasClickLimit({ maxClicks })).toBe(false);
+    }
   });
 
   describe('getQuotaProgress', () => {

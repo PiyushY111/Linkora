@@ -391,8 +391,9 @@ export async function getCacheDiagnostics() {
     misses,
     totalRequests: total,
     hitRatio,
+    // XFetch early refreshes that won the lock. Not a count of prevented
+    // stampedes: nothing measures what would have happened without them.
     earlyRefreshes,
-    stampedesAvoided: earlyRefreshes,
     algorithm: 'XFetch (Probabilistic Early Expiration)',
     formula: 'delta * beta * (-ln(rand)) >= remaining_ttl',
     params: {

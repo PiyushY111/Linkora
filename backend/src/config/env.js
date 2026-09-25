@@ -32,6 +32,10 @@ const envSchema = z
     // bypass IP-based rate limiting — trust only as many hops as you
     // actually have.
     TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(1),
+    // Read the client IP from CF-Connecting-IP. Only safe when the origin is
+    // reachable exclusively through Cloudflare; otherwise any client can set
+    // that header and pick its own IP.
+    TRUST_CLOUDFLARE: booleanFromEnv,
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
     // MongoDB

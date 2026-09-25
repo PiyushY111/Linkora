@@ -165,7 +165,9 @@ export const redirectLink = async (req, res) => {
       .then((fresh) => {
         if (fresh) {
           const computeDelta = Date.now() - fetchStart;
-          setLinkMeta(shortCode, { ...buildLinkMetaFromDoc(fresh), computeDelta }).catch(() => {});
+          setLinkMeta(shortCode, { ...buildLinkMetaFromDoc(fresh), computeDelta }).catch((err) =>
+            logger.error({ err, shortCode }, 'Failed to write XFetch-refreshed link cache')
+          );
         }
       })
       .catch((err) => logger.warn({ err, shortCode }, 'Background XFetch refresh failed'));

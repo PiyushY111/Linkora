@@ -1,5 +1,5 @@
 import { Lock, Users, Calendar, Eye, EyeOff } from 'lucide-react';
-import { MAX_CLICK_PRESETS, EXPIRY_PRESETS, presetExpiry } from './linkDrawerHelpers';
+import { MAX_CLICK_PRESETS, EXPIRY_PRESETS, presetExpiry, hasClickLimit } from './linkDrawerHelpers';
 
 const SECTION_CLASS = 'rounded-lg border border-ink-700 bg-ink-950/60 p-3 space-y-2';
 const REMOVE_BUTTON_CLASS = 'text-[11px] text-danger hover:underline';
@@ -61,7 +61,7 @@ function ClickLimitSection({ link, edit }) {
           <Users size={13} className="text-accent-400" />
           <span>Click Limit (Max Opens)</span>
         </label>
-        {link.maxClicks && !form.removeMaxClicks && (
+        {hasClickLimit(link) && !form.removeMaxClicks && (
           <button type="button" onClick={removeMaxClicks} className={REMOVE_BUTTON_CLASS}>
             Remove limit
           </button>
@@ -71,7 +71,7 @@ function ClickLimitSection({ link, edit }) {
             Undo remove
           </button>
         )}
-        {!link.maxClicks && (
+        {!hasClickLimit(link) && (
           <button
             type="button"
             onClick={toggleMaxClicks}

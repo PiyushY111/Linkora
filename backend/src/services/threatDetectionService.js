@@ -13,11 +13,12 @@ const BREAKER_OPTIONS = {
 };
 
 async function callSafeBrowsing(url) {
+  // The key goes in a header, not ?key=, so it never lands in URL logs.
   const response = await fetch(
-    `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${env.SAFE_BROWSING_API_KEY}`,
+    'https://safebrowsing.googleapis.com/v4/threatMatches:find',
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': env.SAFE_BROWSING_API_KEY },
       body: JSON.stringify({
         client: { clientId: 'linkora', clientVersion: '1.0.0' },
         threatInfo: {
