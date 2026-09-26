@@ -1,4 +1,5 @@
 import Link from '../models/Link.js';
+import ApiLog from '../models/ApiLog.js';
 import { createLinkRecord } from './linkController.js';
 import { getLinkAnalytics as fetchLinkAnalytics } from './analyticsController.js';
 import { validateLinkRedirectFields } from '../services/linkUrlValidation.js';
@@ -8,25 +9,17 @@ import { invalidateLinkMeta } from '../services/cacheService.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { PUBLIC_API_TOKEN_BUCKET, peekTokenBucket, tokenBucketKey } from '../middleware/rateLimiter.js';
 import { ValidationError, NotFoundError, toClientError } from '../lib/errors.js';
+import { mapWithConcurrency } from '../utils/concurrency.js';
 
 const MAX_BULK_SIZE = 1000;
+const DEFAULT_HISTORY_DAYS = 7;
+// ApiLog documents expire after 30 days, so there is nothing older to report.
+const MAX_HISTORY_DAYS = 30;
+const TOP_ENDPOINTS_LIMIT = 10;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const VALIDATION_CONCURRENCY = 50;
-
-async function mapWithConcurrency(items, concurrency, mapper) {
-  const results = new Array(items.length);
-  let cursor = 0;
-
-  async function worker() {
-    while (cursor < items.length) {
-      const index = cursor++;
-      results[index] = await mapper(items[index], index);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
-  return results;
-}
 
 /**
  * Helper to resolve link by shortCode or Mongo ID owned by the workspace.
@@ -366,8 +359,8 @@ export const bulkCreateLinks = async (req, res) => {
  * Telemetry endpoint returning rate limit and quota information.
  */
 export const getUsage = async (req, res) => {
-  const capacity = req.apiKeyDoc?.rateLimit?.capacity || 20;
-  const refillRate = req.apiKeyDoc?.rateLimit?.refillPerSecond || 5;
+  const { capacity, refillPerSecond, keyPrefix } = PUBLIC_API_TOKEN_BUCKET;
+  const remainingTokens = await peekTokenBucket(tokenBucketKey(keyPrefix, req), capacity, refillPerSecond);
 
   res.status(200).json({
     success: true,
@@ -382,9 +375,93 @@ export const getUsage = async (req, res) => {
     rateLimits: {
       algorithm: 'token-bucket',
       burstCapacity: capacity,
-      refillPerSecond: refillRate,
+      refillPerSecond,
+      remainingTokens: Math.floor(remainingTokens),
       standardWindow: '1 second',
     },
+  });
+};
+
+function parseHistoryDays(raw) {
+  if (raw === undefined) return DEFAULT_HISTORY_DAYS;
+  const days = Number(raw);
+  if (!Number.isInteger(days) || days < 1 || days > MAX_HISTORY_DAYS) {
+    throw new ValidationError(`days must be an integer between 1 and ${MAX_HISTORY_DAYS}`);
+  }
+  return days;
+}
+
+/**
+ * One entry per UTC day from `start` through today, so a chart gets a
+ * continuous x-axis even on days with no requests.
+ */
+function fillDailySeries(start, days, rows) {
+  const byDate = new Map(rows.map((row) => [row._id, row]));
+  return Array.from({ length: days }, (_, i) => {
+    const date = new Date(start.getTime() + i * MS_PER_DAY).toISOString().slice(0, 10);
+    const row = byDate.get(date);
+    return { date, count: row?.count ?? 0, errorCount: row?.errorCount ?? 0 };
+  });
+}
+
+/**
+ * GET /api/public/v1/usage/history
+ * Per-day request counts, busiest endpoints and error rate for the calling
+ * API key over the last `days` UTC days (today included).
+ */
+export const getUsageHistory = async (req, res) => {
+  const days = parseHistoryDays(req.query.days);
+
+  // Legacy User.apiKey callers have no ApiKey document, and their logs all
+  // share apiKeyId: null, so there is no per-key history to scope to.
+  if (!req.apiKeyDoc) {
+    throw new NotFoundError('Usage history is only available for API keys created in the Developer portal');
+  }
+
+  const now = new Date();
+  const todayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const start = new Date(todayStart - (days - 1) * MS_PER_DAY);
+  const isError = { $cond: [{ $gte: ['$statusCode', 400] }, 1, 0] };
+
+  const [result] = await ApiLog.aggregate([
+    { $match: { apiKeyId: req.apiKeyDoc._id, createdAt: { $gte: start } } },
+    {
+      $facet: {
+        daily: [
+          {
+            $group: {
+              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } },
+              count: { $sum: 1 },
+              errorCount: { $sum: isError },
+            },
+          },
+        ],
+        topEndpoints: [
+          {
+            $group: {
+              _id: { endpoint: '$endpoint', method: '$method' },
+              count: { $sum: 1 },
+              errorCount: { $sum: isError },
+            },
+          },
+          { $sort: { count: -1, '_id.endpoint': 1, '_id.method': 1 } },
+          { $limit: TOP_ENDPOINTS_LIMIT },
+          { $project: { _id: 0, endpoint: '$_id.endpoint', method: '$_id.method', count: 1, errorCount: 1 } },
+        ],
+        totals: [{ $group: { _id: null, count: { $sum: 1 }, errorCount: { $sum: isError } } }],
+      },
+    },
+  ]);
+
+  const totals = result.totals[0] ?? { count: 0, errorCount: 0 };
+  const errorRate = totals.count === 0 ? 0 : Math.round((totals.errorCount / totals.count) * 10000) / 100;
+
+  res.status(200).json({
+    success: true,
+    days,
+    daily: fillDailySeries(start, days, result.daily),
+    topEndpoints: result.topEndpoints,
+    errorRate,
   });
 };
 
@@ -465,6 +542,19 @@ export const getOpenApiSpec = (req, res) => {
       '/usage': {
         get: { summary: 'Retrieve API rate limits and quota status' },
       },
+      '/usage/history': {
+        get: {
+          summary: 'Daily request counts, top endpoints and error rate for the calling API key',
+          parameters: [
+            {
+              name: 'days',
+              in: 'query',
+              schema: { type: 'integer', default: DEFAULT_HISTORY_DAYS, minimum: 1, maximum: MAX_HISTORY_DAYS },
+            },
+          ],
+          responses: { 200: { description: 'Usage history' } },
+        },
+      },
     },
   };
 
@@ -480,5 +570,6 @@ export default {
   getLinkAnalytics,
   bulkCreateLinks,
   getUsage,
+  getUsageHistory,
   getOpenApiSpec,
 };

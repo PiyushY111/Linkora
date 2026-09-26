@@ -139,7 +139,7 @@ export async function resetAuthFailures(ip) {
 }
 
 /**
- * Token-bucket rate limiter (Phase 7.4's public API gateway). Unlike the
+ * Token-bucket rate limiter for the public API gateway. Unlike the
  * sliding-window limiter above, this allows short bursts up to `capacity`
  * while enforcing a steady-state `refillPerSecond` average — the shape
  * expected of a public API gateway.
@@ -201,13 +201,52 @@ async function evalTokenBucket(key, capacity, refillPerSecond, cost) {
   }
 }
 
+// Public API bucket: bursts up to 30 requests, sustained ~10 req/s per API
+// key. Shared by the route's limiter and GET /usage so the usage endpoint
+// reports the limits that are actually enforced.
+export const PUBLIC_API_TOKEN_BUCKET = Object.freeze({
+  capacity: 30,
+  refillPerSecond: 10,
+  keyPrefix: 'public-api',
+});
+
+/**
+ * The Redis key of the bucket a request draws from. Keyed by the ApiKey
+ * document id, so a key's raw-key traffic and the dashboard's masked-key
+ * requests for it share one bucket, and raw keys never appear in Redis key
+ * names. Legacy User.apiKey callers have no document and keep the old key.
+ * @param {string} keyPrefix
+ * @param {import('express').Request} req
+ */
+export function tokenBucketKey(keyPrefix, req) {
+  const identifier = req.apiKeyDoc?._id
+    ? `key:${req.apiKeyDoc._id}`
+    : req.apiKeyUser?.apiKey || getClientIp(req);
+  return `ratelimit:${keyPrefix}:${identifier}`;
+}
+
+/**
+ * Current token count of a bucket, using the same refill math as
+ * TOKEN_BUCKET_SCRIPT but without consuming a token or writing anything
+ * back. A bucket that doesn't exist yet is full, as the script treats it.
+ * @param {string} key
+ * @param {number} capacity
+ * @param {number} refillPerSecond
+ */
+export async function peekTokenBucket(key, capacity, refillPerSecond) {
+  const [storedTokens, storedTs] = await getRedis().hmget(key, 'tokens', 'ts');
+  if (storedTokens === null) return capacity;
+
+  const elapsedSeconds = Math.max(0, Date.now() - Number(storedTs)) / 1000;
+  return Math.min(capacity, Number(storedTokens) + elapsedSeconds * refillPerSecond);
+}
+
 /**
  * @param {{ capacity: number, refillPerSecond: number, keyPrefix: string, cost?: number }} options
  */
 export function createTokenBucketLimiter({ capacity, refillPerSecond, keyPrefix, cost = 1 }) {
   return async (req, res, next) => {
-    const identifier = req.apiKeyUser?.apiKey || getClientIp(req);
-    const key = `ratelimit:${keyPrefix}:${identifier}`;
+    const key = tokenBucketKey(keyPrefix, req);
 
     try {
       const { allowed, remaining } = await evalTokenBucket(key, capacity, refillPerSecond, cost);
@@ -264,6 +303,15 @@ export const ssoStartRateLimiter = createSlidingWindowLimiter({
   windowMs: 15 * 60 * 1000,
   max: 30,
   keyPrefix: 'sso-start',
+});
+
+// Bio page slug availability: 60 per 15 min per IP. The builder checks as
+// the user types (debounced), and this bounds slug enumeration on an
+// unauthenticated lookup.
+export const bioSlugCheckRateLimiter = createSlidingWindowLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  keyPrefix: 'bio-slug-check',
 });
 
 // Login attempts: 20 per 15 min per IP in production (protects CPU & bcrypt hashing against request flooding).

@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Link2, BarChart3, QrCode, Webhook, Terminal, Building2, Settings, LogOut } from 'lucide-react';
+import { Link2, BarChart3, QrCode, Contact, Webhook, Terminal, Building2, Settings, LogOut } from 'lucide-react';
 import useAuthStore from '../../context/authStore';
 import { can } from '../../utils/permissions';
 import { authService } from '../../services';
@@ -8,6 +8,7 @@ import WorkspaceSwitcher from './WorkspaceSwitcher';
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Links', icon: Link2 },
   { to: '/qr-codes', label: 'QR Studio', icon: QrCode },
+  { to: '/bio', label: 'Bio Page', icon: Contact, permission: 'links:read' },
   { to: '/analytics/all', label: 'Analytics', icon: BarChart3 },
   { to: '/webhooks', label: 'Webhooks', icon: Webhook, permission: 'webhooks:manage' },
   { to: '/developer', label: 'Developer', icon: Terminal, permission: 'apiKeys:manage' },

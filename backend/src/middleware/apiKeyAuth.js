@@ -11,6 +11,7 @@ import { resolveActiveWorkspace } from '../services/workspaceService.js';
 import { withPermissions } from '../services/roleService.js';
 import { assertOrganizationIpAllowed } from '../services/organizationAccess.js';
 import { IpNotAllowedError } from '../lib/errors.js';
+import { isUsageRead } from './apiTelemetry.js';
 
 /**
  * Enforces the org's IP allowlist for an API request acting in `workspace`.
@@ -92,7 +93,9 @@ export async function apiKeyAuth(req, res, next) {
           environment: keyDoc ? keyDoc.environment : 'live',
         };
 
-        if (keyDoc) {
+        // The Developer dashboard's usage polls are someone viewing the key,
+        // not using it; counting them would make it look recently used.
+        if (keyDoc && !isUsageRead(req)) {
           const clientIp = getClientIp(req);
           ApiKey.findByIdAndUpdate(keyDoc._id, {
             lastUsedAt: new Date(),

@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { BarChart2 } from 'lucide-react';
 
-const CustomTooltip = ({ active, payload, label }) => {
+const CustomTooltip = ({ active, payload, label, unit }) => {
   if (!active || !payload?.length) return null;
   const count = payload[0].value;
   return (
@@ -19,14 +19,28 @@ const CustomTooltip = ({ active, payload, label }) => {
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-accent-400 animate-pulse" />
         <span className="font-mono text-sm font-bold text-paper-100">
-          {Number(count).toLocaleString()} {count === 1 ? 'click' : 'clicks'}
+          {Number(count).toLocaleString()} {count === 1 ? unit.singular : unit.plural}
         </span>
       </div>
     </div>
   );
 };
 
-export default function ClicksOverTimeChart({ data = [], granularity = 'day', totalClicks = 0 }) {
+const CLICK_UNIT = { singular: 'click', plural: 'clicks' };
+
+/**
+ * Time series of `{ day, clicks }` points. Title, unit and empty-state copy
+ * default to clicks; other counts (e.g. bio page views) pass their own.
+ */
+export default function ClicksOverTimeChart({
+  data = [],
+  granularity = 'day',
+  totalClicks = 0,
+  title = 'Clicks Activity',
+  unit = CLICK_UNIT,
+  emptyTitle = 'No clicks recorded in this period',
+  emptyDescription = 'Share your link or widen the selected date window to view high-resolution click streams.',
+}) {
   const chartData = useMemo(() => {
     if (!Array.isArray(data)) return [];
     return data.map((item) => {
@@ -68,7 +82,7 @@ export default function ClicksOverTimeChart({ data = [], granularity = 'day', to
     <div className="panel p-5 relative">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-ink-700/60 pb-3">
         <div className="flex items-center gap-2.5">
-          <h3 className="text-sm font-semibold tracking-tight text-paper-100">Clicks Activity</h3>
+          <h3 className="text-sm font-semibold tracking-tight text-paper-100">{title}</h3>
           <span className="rounded-full bg-accent-400/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-accent-400 border border-accent-400/20">
             {totalClicks.toLocaleString()} total
           </span>
@@ -89,10 +103,8 @@ export default function ClicksOverTimeChart({ data = [], granularity = 'day', to
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ink-800 text-paper-500 ring-1 ring-ink-700 mb-3">
             <BarChart2 size={22} />
           </div>
-          <p className="text-sm font-medium text-paper-300">No clicks recorded in this period</p>
-          <p className="mt-1 text-xs text-paper-500 max-w-xs">
-            Share your link or widen the selected date window to view high-resolution click streams.
-          </p>
+          <p className="text-sm font-medium text-paper-300">{emptyTitle}</p>
+          <p className="mt-1 text-xs text-paper-500 max-w-xs">{emptyDescription}</p>
         </div>
       ) : (
         <div className="h-64 w-full">
@@ -120,7 +132,7 @@ export default function ClicksOverTimeChart({ data = [], granularity = 'day', to
                 axisLine={false}
                 allowDecimals={false}
               />
-              <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#3E3E48', strokeDasharray: '4 4' }} />
+              <Tooltip content={<CustomTooltip unit={unit} />} cursor={{ stroke: '#3E3E48', strokeDasharray: '4 4' }} />
               <Area
                 type="monotone"
                 dataKey="clicks"

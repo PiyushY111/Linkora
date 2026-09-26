@@ -17,6 +17,7 @@ import {
   Check,
   AlertTriangle,
   Cpu,
+  BarChart3,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppShell from '../components/layout/AppShell';
@@ -29,6 +30,8 @@ import ApiCodeSnippets from '../components/developer/ApiCodeSnippets';
 import ApiLogsViewer from '../components/developer/ApiLogsViewer';
 import LinkoraCliTerminal from '../components/developer/LinkoraCliTerminal';
 import CacheArchitectureViewer from '../components/developer/CacheArchitectureViewer';
+import UsageDashboard from '../components/developer/UsageDashboard';
+import { mostRecentlyUsedKey } from '../components/developer/UsageDashboard/usageHelpers';
 import { useConfirm } from '../context/ConfirmContext';
 import { developerService, authService } from '../services';
 
@@ -39,6 +42,7 @@ const Developer = () => {
   const [keys, setKeys] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [legacyKey, setLegacyKey] = useState('');
+  const [usageKeyId, setUsageKeyId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Modals state
@@ -130,8 +134,15 @@ const Developer = () => {
     }
   };
 
-  const defaultKeyForPlayground =
-    keys.find((k) => k.status === 'active')?.maskedKey || legacyKey;
+  const activeKeys = keys.filter((k) => k.status === 'active');
+  const defaultKeyForPlayground = activeKeys[0]?.maskedKey || legacyKey;
+  // Until a key is picked (or if the picked one was revoked), show the most
+  // recently used one.
+  const usageKeyDoc = activeKeys.find((k) => k._id === usageKeyId) || mostRecentlyUsedKey(activeKeys);
+  const usageKey = usageKeyDoc?.maskedKey;
+  // The Usage tab needs an ApiKey document to report on; if the last active
+  // key is revoked while it's open, fall back to the key list.
+  const visibleTab = activeTab === 'usage' && !usageKey ? 'keys' : activeTab;
 
   return (
     <>
@@ -250,6 +261,7 @@ const Developer = () => {
         <div className="mb-6 flex border-b border-ink-700 overflow-x-auto">
           {[
             { id: 'keys', label: 'API Keys', icon: Key },
+            ...(usageKey ? [{ id: 'usage', label: 'Usage', icon: BarChart3 }] : []),
             { id: 'playground', label: 'Interactive Playground', icon: Play },
             { id: 'cli', label: 'Interactive CLI (linkora-cli)', icon: Terminal },
             { id: 'cache', label: 'Cache & XFetch Defense', icon: Cpu },
@@ -257,7 +269,7 @@ const Developer = () => {
             { id: 'logs', label: 'Request Logs & Audit', icon: Activity },
           ].map((tab) => {
             const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+            const isActive = visibleTab === tab.id;
             return (
               <button
                 key={tab.id}
@@ -277,7 +289,7 @@ const Developer = () => {
         </div>
 
         {/* Tab 1: API Keys */}
-        {activeTab === 'keys' && (
+        {visibleTab === 'keys' && (
           <div className="space-y-6">
             {/* Terminal Teaser Banner */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-accent-400/20 bg-accent-400/5 p-4">
@@ -337,8 +349,39 @@ const Developer = () => {
           </div>
         )}
 
+        {/* Usage: live burst capacity and request history for the selected key */}
+        {visibleTab === 'usage' && (
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-paper-100">API Usage</h2>
+                <p className="text-xs text-paper-500">
+                  Live token-bucket headroom and request history for <span className="font-mono">{usageKey}</span>.
+                </p>
+              </div>
+              {activeKeys.length > 1 && (
+                <label className="flex items-center gap-2 text-xs text-paper-400">
+                  <span>API key</span>
+                  <select
+                    value={usageKeyDoc._id}
+                    onChange={(e) => setUsageKeyId(e.target.value)}
+                    className="input text-xs font-mono py-1.5 max-w-[240px]"
+                  >
+                    {activeKeys.map((k) => (
+                      <option key={k._id} value={k._id}>
+                        {k.name} ({k.prefix}…)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <UsageDashboard key={usageKey} apiKey={usageKey} />
+          </div>
+        )}
+
         {/* Tab 2: Interactive Playground */}
-        {activeTab === 'playground' && (
+        {visibleTab === 'playground' && (
           <ApiPlayground
             activeKeys={keys.filter((k) => k.status === 'active')}
             defaultApiKey={defaultKeyForPlayground}
@@ -346,7 +389,7 @@ const Developer = () => {
         )}
 
         {/* Tab 3: Interactive CLI */}
-        {activeTab === 'cli' && (
+        {visibleTab === 'cli' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -370,10 +413,10 @@ const Developer = () => {
         )}
 
         {/* Tab 4: Cache Architecture & XFetch Stampede Defense */}
-        {activeTab === 'cache' && <CacheArchitectureViewer />}
+        {visibleTab === 'cache' && <CacheArchitectureViewer />}
 
         {/* Tab 5: Code Snippets */}
-        {activeTab === 'snippets' && (
+        {visibleTab === 'snippets' && (
           <ApiCodeSnippets
             apiKey={
               keys.find((k) => k.status === 'active')?.maskedKey || legacyKey || 'YOUR_API_KEY'
@@ -382,7 +425,7 @@ const Developer = () => {
         )}
 
         {/* Tab 5: Live Request Logs */}
-        {activeTab === 'logs' && <ApiLogsViewer />}
+        {visibleTab === 'logs' && <ApiLogsViewer />}
       </AppShell>
 
       {/* Modal: Create API Key */}

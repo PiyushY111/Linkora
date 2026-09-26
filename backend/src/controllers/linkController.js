@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import Link from '../models/Link.js';
+import BioPage from '../models/BioPage.js';
 import Analytics from '../models/Analytics.js';
 import User from '../models/User.js';
 import { getClientIp } from '../utils/helpers.js';
@@ -165,10 +166,13 @@ export async function createLinkRecord({ userId, workspaceId }, payload, { gener
   return link;
 }
 
-// Create short link
-export const createLink = async (req, res) => {
-  const link = await createLinkRecord({ userId: req.user.id, workspaceId: req.activeWorkspace._id }, req.body);
-
+/**
+ * The audit entry and `link.created` webhook every dashboard-created link
+ * gets, whichever route created it.
+ * @param {import('express').Request} req
+ * @param {import('mongoose').Document} link
+ */
+export function announceLinkCreated(req, link) {
   logAudit({
     action: 'link.create',
     workspace: req.activeWorkspace._id,
@@ -185,7 +189,12 @@ export const createLink = async (req, res) => {
     title: link.title || '',
     createdAt: link.createdAt,
   }).catch((err) => logger.error({ err }, 'Failed to dispatch link.created webhook'));
+}
 
+// Create short link
+export const createLink = async (req, res) => {
+  const link = await createLinkRecord({ userId: req.user.id, workspaceId: req.activeWorkspace._id }, req.body);
+  announceLinkCreated(req, link);
   res.status(201).json({ success: true, link });
 };
 
@@ -420,6 +429,13 @@ export const deleteLink = async (req, res) => {
 
   // Remove from the creator's links array (not necessarily the caller's)
   await User.updateOne({ _id: link.user }, { $pull: { links: link._id } });
+
+  // A deleted link can't stay listed on the workspace's bio page. The $inc
+  // makes a concurrent reorder of the old item list fail (bioPageController).
+  await BioPage.updateMany(
+    { workspace: req.activeWorkspace._id, 'items.linkId': link._id },
+    { $pull: { items: { linkId: link._id } }, $inc: { __v: 1 } }
+  );
 
   await invalidateLinkMeta(link.shortCode);
   if (link.customAlias) await invalidateLinkMeta(link.customAlias);

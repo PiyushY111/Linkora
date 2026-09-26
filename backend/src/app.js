@@ -22,6 +22,8 @@ import workspaceRoutes from './routes/workspaces.js';
 import webhookRoutes from './routes/webhooks.js';
 import publicApiRoutes from './routes/publicApi.js';
 import developerRoutes from './routes/developer.js';
+import bioPageRoutes from './routes/bioPages.js';
+import { renderPublicBioPage } from './controllers/bioPageController.js';
 
 /**
  * Builds and returns the Express app. Importing this file has no side
@@ -167,6 +169,10 @@ app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/public', publicApiRoutes);
 app.use('/api/developer', developerRoutes);
+app.use('/api/bio-pages', bioPageRoutes);
+// Public bio pages. The frontend host proxies /b/:slug here (see
+// frontend/vercel.json) so link previews get server-rendered meta tags.
+app.get('/b/:slug', renderPublicBioPage);
 
 // Error handling
 app.use(notFound);

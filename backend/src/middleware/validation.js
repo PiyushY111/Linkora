@@ -92,8 +92,11 @@ const withProtocol = sanitize((value) => {
   return value;
 });
 
+// A link destination as typed by a user: trimmed, https:// assumed.
+const destinationUrlSteps = [trim, withProtocol, check((str) => validator.isURL(str), 'Please provide a valid URL')];
+
 export const validateCreateLink = validateBody({
-  originalUrl: field([trim, withProtocol, check((str) => validator.isURL(str), 'Please provide a valid URL')]),
+  originalUrl: field(destinationUrlSteps),
   customAlias: field(
     [
       trim,
@@ -108,6 +111,17 @@ export const validateCreateLink = validateBody({
     optional: true,
   }),
   description: field([trim], { optional: true }),
+});
+
+// Adding a bio page item: either an existing linkId (checked in the
+// controller) or a destinationUrl that becomes a new link.
+export const validateBioPageItem = validateBody({
+  destinationUrl: field(destinationUrlSteps, { optional: true }),
+  label: field([
+    trim,
+    check((str) => !validator.isEmpty(str), 'Item label is required'),
+    check((str) => validator.isLength(str, { max: 100 }), 'Item label cannot exceed 100 characters'),
+  ]),
 });
 
 export const validateRegister = validateBody({
