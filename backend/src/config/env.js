@@ -87,8 +87,6 @@ const envSchema = z
     // Approximate caps (XADD MAXLEN ~). If the consumer falls further behind
     // than this, the oldest unprocessed clicks are trimmed and lost.
     CLICK_STREAM_MAXLEN: z.coerce.number().int().positive().default(10000),
-    WEBHOOK_DLQ_STREAM_KEY: z.string().default('stream:webhooks:dlq'),
-    WEBHOOK_DLQ_STREAM_MAXLEN: z.coerce.number().int().positive().default(1000),
 
     // Analytics: raw click events (time-series) and hourly rollups are
     // kept this long; daily rollups are kept indefinitely.
@@ -118,8 +116,16 @@ const envSchema = z
     // Sync (SCIM) events. Directory sync is unavailable while it's empty.
     WORKOS_WEBHOOK_SECRET: z.string().optional().default(''),
 
-    // Webhooks
-    WEBHOOK_SIGNING_SECRET: z.string().optional().default(''),
+    // Webhooks. Signing secrets are AES-256-GCM encrypted at rest under
+    // WEBHOOK_SECRET_KEY (32 bytes, hex or base64); required in production,
+    // derived from JWT_SECRET otherwise (lib/webhookSecrets.js).
+    WEBHOOK_SECRET_KEY: z.string().optional().default(''),
+    WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
+    WEBHOOK_WORKER_CONCURRENCY: z.coerce.number().int().positive().default(10),
+    WEBHOOK_WORKER_POLL_MS: z.coerce.number().int().positive().default(1000),
+    // An endpoint failing without a single success for this long is disabled.
+    WEBHOOK_AUTO_DISABLE_AFTER_HOURS: z.coerce.number().positive().default(72),
+    WEBHOOK_MAX_ENDPOINTS_PER_WORKSPACE: z.coerce.number().int().positive().default(20),
 
     // Public API
     API_KEY_HEADER: z.string().default('x-api-key'),
@@ -153,6 +159,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['WORKOS_API_KEY'],
         message: 'WORKOS_API_KEY and WORKOS_CLIENT_ID are required when SSO_ENABLED=true',
+      });
+    }
+    if (env.NODE_ENV === 'production' && !env.WEBHOOK_SECRET_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['WEBHOOK_SECRET_KEY'],
+        message: 'WEBHOOK_SECRET_KEY is required in production (32 bytes as 64 hex chars or base64)',
       });
     }
     if (env.NODE_ENV === 'production' && env.JWT_SECRET.includes('your_')) {

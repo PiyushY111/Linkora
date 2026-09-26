@@ -15,6 +15,7 @@ import Webhook from '../../src/models/Webhook.js';
 import WebhookDelivery from '../../src/models/WebhookDelivery.js';
 import { closeRedis } from '../../src/services/cacheService.js';
 import { dispatchLinkEvent } from '../../src/services/webhookService.js';
+import { createWebhookWorker } from '../../src/workers/webhookWorker.js';
 
 // Workspace A: owner creates everything; admin, creator and viewer are
 // teammates with those roles and A as their active workspace. The outsider
@@ -81,14 +82,17 @@ function webhookFixture(creatorUser, workspace, overrides = {}) {
   });
 }
 
-// Deliveries are fire-and-forget, so poll for the delivery record.
+// Dispatch queues deliveries after the response is sent, so poll for the
+// rows, then drain the queue the way a worker would.
 async function waitForDeliveries(webhookId, count, timeoutMs = 5000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const deliveries = await WebhookDelivery.find({ webhook: webhookId }).lean();
-    if (deliveries.length >= count || Date.now() > deadline) return deliveries;
+    if (deliveries.length >= count || Date.now() > deadline) break;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  await createWebhookWorker({ concurrency: 2, scope: { webhook: webhookId } }).drainOnce();
+  return WebhookDelivery.find({ webhook: webhookId }).lean();
 }
 
 beforeAll(async () => {
@@ -266,10 +270,12 @@ describe('webhooks belong to the workspace', () => {
     const hook = await webhookFixture(owner.user, workspaceA);
     const delivery = await WebhookDelivery.create({
       webhook: hook._id,
-      user: owner.user._id,
-      event: 'link.created',
+      workspace: workspaceA._id,
+      event: 'evt_000000000000000000000000',
+      eventType: 'link.created',
       url: hook.url,
       status: 'failed',
+      maxAttempts: 1,
     });
 
     const get = await request(app).get(`/api/webhooks/${hook._id}`).set(authHeader(admin.token));
@@ -280,12 +286,12 @@ describe('webhooks belong to the workspace', () => {
       (await request(app).post(`/api/webhooks/${hook._id}/rotate-secret`).set(authHeader(outsider.token))).status,
       404
     );
-    // Retry via the outsider's own webhook id must not reach A's delivery either.
+    // Replay via the outsider's own webhook id must not reach A's delivery either.
     const outsiderHook = await webhookFixture(outsider.user, workspaceB);
-    const crossRetry = await request(app)
-      .post(`/api/webhooks/${outsiderHook._id}/deliveries/${delivery._id}/retry`)
+    const crossReplay = await request(app)
+      .post(`/api/webhooks/${outsiderHook._id}/deliveries/${delivery._id}/replay`)
       .set(authHeader(outsider.token));
-    assert.strictEqual(crossRetry.status, 404);
+    assert.strictEqual(crossReplay.status, 404);
 
     assert.strictEqual((await request(app).get(`/api/webhooks/${hook._id}`).set(authHeader(viewer.token))).status, 403);
 
@@ -372,14 +378,14 @@ describe('webhook events are routed by workspace', () => {
     assert.strictEqual(res.status, 201);
 
     const deliveriesA = await waitForDeliveries(hookA._id, 1);
-    assert.deepStrictEqual(deliveriesA.map((d) => d.event), ['link.created']);
-    assert.strictEqual(deliveriesA[0].status, 'success');
+    assert.deepStrictEqual(deliveriesA.map((d) => d.eventType), ['link.created']);
+    assert.strictEqual(deliveriesA[0].status, 'succeeded');
 
     // No workspaceId given (a stale link:meta hash or stream entry): the
     // link's own workspace is looked up instead.
     await dispatchLinkEvent({ linkId: res.body.link._id }, 'link.updated', { linkId: res.body.link._id });
     const afterFallback = await waitForDeliveries(hookA._id, 2);
-    assert.deepStrictEqual(afterFallback.map((d) => d.event).sort(), ['link.created', 'link.updated']);
+    assert.deepStrictEqual(afterFallback.map((d) => d.eventType).sort(), ['link.created', 'link.updated']);
 
     assert.strictEqual(await WebhookDelivery.countDocuments({ webhook: hookB._id }), 0);
   });

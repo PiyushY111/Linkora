@@ -182,13 +182,12 @@ export function announceLinkCreated(req, link) {
     diff: { shortCode: link.shortCode, originalUrl: link.originalUrl },
   });
 
-  dispatchEvent(req.activeWorkspace._id, 'link.created', {
-    linkId: String(link._id),
-    shortCode: link.shortCode,
-    originalUrl: link.originalUrl,
-    title: link.title || '',
-    createdAt: link.createdAt,
-  }).catch((err) => logger.error({ err }, 'Failed to dispatch link.created webhook'));
+  dispatchEvent(
+    req.activeWorkspace._id,
+    'link.created',
+    { linkId: String(link._id), shortCode: link.shortCode, originalUrl: link.originalUrl, title: link.title || '', createdAt: link.createdAt },
+    { sourceKey: `link.created:${link._id}` }
+  ).catch((err) => logger.error({ err }, 'Failed to dispatch link.created webhook'));
 }
 
 // Create short link
@@ -398,13 +397,12 @@ export const updateLink = async (req, res) => {
     diff: { shortCode: updated.shortCode, changedFields: Object.keys(updateFields) },
   });
 
-  dispatchEvent(req.activeWorkspace._id, 'link.updated', {
-    linkId: String(updated._id),
-    shortCode: updated.shortCode,
-    originalUrl: updated.originalUrl,
-    title: updated.title || '',
-    updatedAt: updated.updatedAt,
-  }).catch((err) => logger.error({ err }, 'Failed to dispatch link.updated webhook'));
+  dispatchEvent(
+    req.activeWorkspace._id,
+    'link.updated',
+    { linkId: String(updated._id), shortCode: updated.shortCode, originalUrl: updated.originalUrl, title: updated.title || '', updatedAt: updated.updatedAt },
+    { sourceKey: `link.updated:${updated._id}:${new Date(updated.updatedAt).getTime()}` }
+  ).catch((err) => logger.error({ err }, 'Failed to dispatch link.updated webhook'));
 
   res.status(200).json({
     success: true,
@@ -449,12 +447,12 @@ export const deleteLink = async (req, res) => {
     diff: { shortCode: link.shortCode },
   });
 
-  dispatchEvent(req.activeWorkspace._id, 'link.deleted', {
-    linkId: String(link._id),
-    shortCode: link.shortCode,
-    originalUrl: link.originalUrl,
-    deletedAt: new Date().toISOString(),
-  }).catch((err) => logger.error({ err }, 'Failed to dispatch link.deleted webhook'));
+  dispatchEvent(
+    req.activeWorkspace._id,
+    'link.deleted',
+    { linkId: String(link._id), shortCode: link.shortCode, originalUrl: link.originalUrl, deletedAt: new Date().toISOString() },
+    { sourceKey: `link.deleted:${link._id}` }
+  ).catch((err) => logger.error({ err }, 'Failed to dispatch link.deleted webhook'));
 
   res.status(200).json({
     success: true,

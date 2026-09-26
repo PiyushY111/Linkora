@@ -286,13 +286,12 @@ export const redirectLink = async (req, res) => {
         invalidateLinkMetaForLink(meta).catch((err) =>
           logger.error({ err, shortCode }, 'Failed to invalidate link meta after reaching maxClicks')
         );
-        dispatchLinkEvent(meta, 'link.limit_reached', {
-          linkId: meta.linkId,
-          shortCode,
-          originalUrl: meta.originalUrl,
-          maxClicks: meta.maxClicks,
-          totalClicks: usage.current,
-        }).catch((err) =>
+        dispatchLinkEvent(
+          meta,
+          'link.limit_reached',
+          { linkId: meta.linkId, shortCode, originalUrl: meta.originalUrl, maxClicks: meta.maxClicks, totalClicks: usage.current },
+          { sourceKey: `link.limit_reached:${meta.linkId}` }
+        ).catch((err) =>
           logger.error({ err, linkId: meta.linkId }, 'Failed to dispatch link.limit_reached webhook')
         );
       }

@@ -16,7 +16,6 @@ import { getRedis, closeRedis } from '../../src/services/cacheService.js';
 const APPROXIMATE_TRIM_SLACK = 100;
 const CAPPED_STREAMS = {
   [env.CLICK_STREAM_KEY]: env.CLICK_STREAM_MAXLEN,
-  [env.WEBHOOK_DLQ_STREAM_KEY]: env.WEBHOOK_DLQ_STREAM_MAXLEN,
 };
 
 // Key families the integration suites are known to leave behind. Asserting

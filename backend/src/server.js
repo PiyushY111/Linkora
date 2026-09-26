@@ -10,6 +10,8 @@ import { scheduleAuditRetention } from './services/auditRetentionService.js';
 import { closeRedis } from './services/cacheService.js';
 import { getAnalyticsRepository } from './repositories/analytics/analyticsRepository.js';
 import { createClickConsumer, prepareClickConsumer } from './consumers/clickConsumer.js';
+import { createWebhookWorker } from './workers/webhookWorker.js';
+import { registerWebhookQueueMetrics } from './services/webhookQueueMetrics.js';
 
 const SHUTDOWN_DRAIN_MS = 15000;
 
@@ -27,15 +29,19 @@ const SHUTDOWN_DRAIN_MS = 15000;
 export async function startServer({ port = env.PORT, workerMode = env.WORKER_MODE, mongoUri = env.MONGODB_URI } = {}) {
   await connectDB(mongoUri, { exitOnFailure: false });
   await getAnalyticsRepository().ensureReady();
+  registerWebhookQueueMetrics();
 
   const cronTasks = [scheduleAbuseRescan(), scheduleExpiryWebhookCheck(), scheduleAuditRetention()].filter(Boolean);
 
   let consumer = null;
+  let webhookWorker = null;
   if (workerMode === 'embedded') {
     const prepared = await prepareClickConsumer();
     cronTasks.push(...prepared.cronTasks);
     consumer = createClickConsumer();
     consumer.start();
+    webhookWorker = createWebhookWorker();
+    webhookWorker.start();
   }
 
   const server = await new Promise((resolve, reject) => {
@@ -65,7 +71,7 @@ export async function startServer({ port = env.PORT, workerMode = env.WORKER_MOD
         drainTimer.unref();
 
         cronTasks.forEach((task) => task.stop());
-        await Promise.all([httpClosed, consumer?.stop()]);
+        await Promise.all([httpClosed, consumer?.stop(), webhookWorker?.stop()]);
         clearTimeout(drainTimer);
 
         // closeRedis() uses QUIT, which waits for in-flight commands

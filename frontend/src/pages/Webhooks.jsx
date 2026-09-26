@@ -1,18 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Helmet } from 'react-helmet-async';
-import {
-  Webhook as WebhookIcon,
-  Plus,
-  ShieldCheck,
-  Activity,
-  CheckCircle2,
-  AlertTriangle,
-  RotateCw,
-  Copy,
-  Check,
-  ExternalLink,
-  BookOpen,
-} from 'lucide-react';
+import { Webhook as WebhookIcon, Plus, CheckCircle2, AlertTriangle, RotateCw, Copy, Check, BookOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppShell from '../components/layout/AppShell';
 import Modal from '../components/ui/Modal';
@@ -22,78 +10,118 @@ import WebhookCard from '../components/webhooks/WebhookCard';
 import WebhookTestModal from '../components/webhooks/WebhookTestModal';
 import WebhookDeliveryDrawer from '../components/webhooks/WebhookDeliveryDrawer';
 import WebhookVerificationGuideModal from '../components/webhooks/WebhookVerificationGuideModal';
+import WebhookEventPicker from '../components/webhooks/WebhookEventPicker';
+import WebhookRotateSecretModal from '../components/webhooks/WebhookRotateSecretModal';
+import { endpointHealth, formatDateTime } from '../components/webhooks/webhookFormat';
 import { useConfirm } from '../context/ConfirmContext';
 import { webhookService } from '../services';
+import { getApiOrigin } from '../services/api';
 
-const ALL_EVENTS = [
-  {
-    value: 'link.clicked',
-    label: 'link.clicked',
-    description: 'Triggered whenever a link redirect occurs with device/geo data.',
-  },
-  {
-    value: 'link.created',
-    label: 'link.created',
-    description: 'Triggered when a new short link is provisioned.',
-  },
-  {
-    value: 'link.updated',
-    label: 'link.updated',
-    description: 'Triggered when link destination, tags, or settings are altered.',
-  },
-  {
-    value: 'link.deleted',
-    label: 'link.deleted',
-    description: 'Triggered when a link is removed from the system.',
-  },
-  {
-    value: 'link.limit_reached',
-    label: 'link.limit_reached',
-    description: 'Triggered when link exceeds max clicks or unique visitor cap.',
-  },
-  {
-    value: 'link.expired',
-    label: 'link.expired',
-    description: 'Triggered when a link passes its expiration date.',
-  },
-  {
-    value: 'security.abuse_flagged',
-    label: 'security.abuse_flagged',
-    description: 'Triggered when phishing, malware, or spam threat is flagged.',
-  },
-  {
-    value: 'endpoint.test',
-    label: 'endpoint.test',
-    description: 'Synthetic verification pings sent via test runner.',
-  },
-];
+const DEFAULT_EVENTS = ['link.clicked', 'link.created', 'link.limit_reached'];
+const EMPTY_FORM = { url: '', description: '', events: DEFAULT_EVENTS };
+
+// The backend's echo receiver exists only outside production.
+const ECHO_URL = import.meta.env.DEV ? `${getApiOrigin() || window.location.origin}/api/webhooks/debug/echo` : null;
+
+function WebhookForm({ form, setForm, catalog, onSubmit, submitLabel, busyLabel, isBusy, onCancel, autoFocus }) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div>
+        <label className="field-label" htmlFor="webhook-url">
+          Endpoint URL
+        </label>
+        <input
+          id="webhook-url"
+          type="url"
+          className="input-mono text-xs"
+          placeholder="https://api.yourdomain.com/webhooks/linkora"
+          value={form.url}
+          onChange={(e) => setForm({ ...form, url: e.target.value })}
+          required
+          autoFocus={autoFocus}
+        />
+        <p className="mt-1 text-[11px] text-paper-500">
+          HTTPS in production. Private, loopback and cloud-metadata addresses are refused, and DNS is re-checked before every
+          delivery.
+        </p>
+        {ECHO_URL && (
+          <button
+            type="button"
+            onClick={() => setForm({ ...form, url: ECHO_URL, description: form.description || 'Local echo receiver' })}
+            className="mt-2 text-[11px] text-accent-400 hover:underline font-mono bg-accent-400/10 px-2 py-0.5 rounded border border-accent-400/20"
+          >
+            Use the local echo endpoint
+          </button>
+        )}
+      </div>
+
+      <div>
+        <label className="field-label" htmlFor="webhook-desc">
+          Name (optional)
+        </label>
+        <input
+          id="webhook-desc"
+          type="text"
+          maxLength={200}
+          className="input text-xs"
+          placeholder="e.g. Analytics ingestion, Zapier"
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+        />
+      </div>
+
+      <WebhookEventPicker catalog={catalog} selected={form.events} onChange={(events) => setForm({ ...form, events })} />
+
+      <div className="flex gap-3 pt-2">
+        <button type="submit" className="btn-primary flex-1" disabled={isBusy}>
+          {isBusy ? (
+            <>
+              <RotateCw size={14} className="animate-spin" />
+              <span>{busyLabel}</span>
+            </>
+          ) : (
+            submitLabel
+          )}
+        </button>
+        <button type="button" className="btn-secondary" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function SummaryTile({ label, children }) {
+  return (
+    <div className="panel p-4">
+      <div className="text-[11px] font-medium uppercase tracking-wider text-paper-500">{label}</div>
+      <div className="mt-1 flex items-baseline gap-2 font-mono text-xl font-bold text-paper-100">{children}</div>
+    </div>
+  );
+}
 
 const Webhooks = () => {
   const confirm = useConfirm();
   const [webhooks, setWebhooks] = useState([]);
+  const [catalog, setCatalog] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Modals state
   const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState(EMPTY_FORM);
   const [isCreating, setIsCreating] = useState(false);
-  const [createData, setCreateData] = useState({
-    url: '',
-    description: '',
-    events: ['link.clicked', 'link.created', 'link.limit_reached'],
-  });
 
   const [editWebhook, setEditWebhook] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const [activeSecretModal, setActiveSecretModal] = useState(null); // { secret, title, subtitle }
+  const [secretReveal, setSecretReveal] = useState(null); // { secret, title, subtitle }
   const [copiedSecret, setCopiedSecret] = useState(false);
 
+  const [rotateTarget, setRotateTarget] = useState(null);
   const [testModalWebhook, setTestModalWebhook] = useState(null);
   const [drawerWebhook, setDrawerWebhook] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
 
-  const fetchWebhooks = async () => {
-    setIsLoading(true);
+  const fetchWebhooks = useCallback(async () => {
     try {
       const data = await webhookService.list();
       setWebhooks(data.webhooks || []);
@@ -103,94 +131,53 @@ const Webhooks = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchWebhooks();
-  }, []);
+    webhookService
+      .eventCatalog()
+      .then((data) => setCatalog(data.events || []))
+      .catch(() => toast.error('Failed to load the event catalog'));
+  }, [fetchWebhooks]);
 
-  // Summary Metrics
   const stats = useMemo(() => {
-    const total = webhooks.length;
-    const active = webhooks.filter((w) => w.isActive).length;
-    const degraded = webhooks.filter((w) => w.isActive && (w.consecutiveFailures || 0) > 0).length;
-    const disabled = total - active;
-
-    let total24hDeliveries = 0;
-    let total24hSuccess = 0;
-
-    webhooks.forEach((w) => {
-      if (w.health) {
-        total24hDeliveries += w.health.totalDeliveries24h || 0;
-        total24hSuccess += w.health.successful24h || 0;
-      }
-    });
-
-    const avgSuccessRate =
-      total24hDeliveries > 0
-        ? Math.round((total24hSuccess / total24hDeliveries) * 100)
-        : 100;
-
-    return {
-      total,
-      active,
-      degraded,
-      disabled,
-      total24hDeliveries,
-      avgSuccessRate,
-    };
+    const totals = webhooks.reduce(
+      (acc, w) => {
+        const s = w.deliveryStats || {};
+        const tone = endpointHealth(w).tone;
+        return {
+          succeeded: acc.succeeded + (s.succeeded || 0),
+          settled: acc.settled + (s.succeeded || 0) + (s.failed || 0),
+          pending: acc.pending + (s.pending || 0),
+          active: acc.active + (w.isActive ? 1 : 0),
+          attention: acc.attention + (tone === 'warn' || tone === 'bad' ? 1 : 0),
+        };
+      },
+      { succeeded: 0, settled: 0, pending: 0, active: 0, attention: 0 }
+    );
+    return { ...totals, successRate: totals.settled > 0 ? Math.round((totals.succeeded / totals.settled) * 100) : null };
   }, [webhooks]);
 
-  const toggleEventInCreate = (evt) => {
-    setCreateData((prev) => ({
-      ...prev,
-      events: prev.events.includes(evt)
-        ? prev.events.filter((e) => e !== evt)
-        : [...prev.events, evt],
-    }));
-  };
-
-  const toggleAllEventsInCreate = () => {
-    if (createData.events.length === ALL_EVENTS.length) {
-      setCreateData((prev) => ({ ...prev, events: [] }));
-    } else {
-      setCreateData((prev) => ({
-        ...prev,
-        events: ALL_EVENTS.map((e) => e.value),
-      }));
-    }
-  };
+  const replaceWebhook = (updated) => setWebhooks((prev) => prev.map((w) => (w._id === updated._id ? { ...w, ...updated } : w)));
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (createData.events.length === 0) {
+    if (createForm.events.length === 0) {
       toast.error('Select at least one event');
       return;
     }
-
     setIsCreating(true);
     try {
-      const data = await webhookService.create({
-        url: createData.url,
-        description: createData.description,
-        events: createData.events,
-      });
-
+      const data = await webhookService.create(createForm);
       setShowCreate(false);
-      setCreateData({
-        url: '',
-        description: '',
-        events: ['link.clicked', 'link.created', 'link.limit_reached'],
+      setCreateForm(EMPTY_FORM);
+      setSecretReveal({
+        secret: data.secret,
+        title: 'Webhook endpoint created',
+        subtitle: 'Save this signing secret now; it is never shown again. Use it to verify the Linkora-Signature header.',
       });
-
-      setActiveSecretModal({
-        secret: data.webhook.secret,
-        title: 'Webhook Endpoint Provisioned',
-        subtitle:
-          'Save this signing secret now — it cannot be viewed again. Verify the Linkora-Signature header on every payload using this secret.',
-      });
-
-      toast.success('Webhook created successfully');
+      toast.success('Webhook created');
       fetchWebhooks();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create webhook');
@@ -201,24 +188,20 @@ const Webhooks = () => {
 
   const handleUpdate = async (e) => {
     e.preventDefault();
-    if (!editWebhook) return;
     if (editWebhook.events.length === 0) {
       toast.error('Select at least one event');
       return;
     }
-
     setIsUpdating(true);
     try {
-      await webhookService.update(editWebhook._id, {
+      const { webhook } = await webhookService.update(editWebhook._id, {
         url: editWebhook.url,
         description: editWebhook.description,
         events: editWebhook.events,
-        isActive: editWebhook.isActive,
       });
-
+      replaceWebhook(webhook);
       setEditWebhook(null);
       toast.success('Webhook updated');
-      fetchWebhooks();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update webhook');
     } finally {
@@ -227,41 +210,40 @@ const Webhooks = () => {
   };
 
   const handleToggleActive = async (webhook) => {
-    const nextActive = !webhook.isActive;
+    const resuming = !webhook.isActive;
+    if (!resuming) {
+      const confirmed = await confirm({
+        title: 'Pause webhook',
+        message: 'While paused, no events are queued for this endpoint and any deliveries still waiting are cancelled. You can replay them after resuming.',
+        confirmText: 'Pause',
+        cancelText: 'Cancel',
+        variant: 'warning',
+        detail: webhook.url,
+      });
+      if (!confirmed) return;
+    }
     try {
-      await webhookService.update(webhook._id, { isActive: nextActive });
-      setWebhooks((prev) =>
-        prev.map((w) =>
-          w._id === webhook._id ? { ...w, isActive: nextActive, disabledAt: null, consecutiveFailures: 0 } : w
-        )
-      );
-      toast.success(nextActive ? 'Webhook enabled' : 'Webhook paused');
+      const { webhook: updated } = await webhookService.update(webhook._id, { isActive: resuming });
+      replaceWebhook(updated);
+      toast.success(resuming ? 'Webhook resumed' : 'Webhook paused');
     } catch (err) {
-      toast.error('Failed to toggle webhook status');
+      toast.error(err.response?.data?.message || 'Failed to change webhook status');
     }
   };
 
-  const handleRotateSecret = async (webhook) => {
-    const confirmed = await confirm({
-      title: 'Rotate Webhook Signing Secret',
-      message:
-        'Rotating the signing secret will immediately cause subsequent event deliveries to be signed with the new secret. Your receiving server will need to update its verification logic.',
-      confirmText: 'Rotate Secret',
-      cancelText: 'Keep Secret',
-      variant: 'warning',
-      detail: `Endpoint URL: ${webhook.url}`,
-    });
-    if (!confirmed) return;
-
+  const handleRotateSecret = async (gracePeriodHours) => {
     try {
-      const res = await webhookService.rotateSecret(webhook._id);
-      setActiveSecretModal({
+      const res = await webhookService.rotateSecret(rotateTarget._id, gracePeriodHours);
+      setRotateTarget(null);
+      setSecretReveal({
         secret: res.secret,
-        title: 'Signing Secret Rotated',
-        subtitle:
-          'A new secret has been generated. Update your webhook endpoint with this secret immediately to continue verifying signatures.',
+        title: 'Signing secret rotated',
+        subtitle: res.previousSecretExpiresAt
+          ? `Deliveries are signed with both secrets until ${formatDateTime(res.previousSecretExpiresAt)}. Deploy this new secret before then.`
+          : 'The previous secret no longer verifies. Deploy this new secret now.',
       });
       toast.success('Signing secret rotated');
+      fetchWebhooks();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to rotate secret');
     }
@@ -270,31 +252,31 @@ const Webhooks = () => {
   const handleDelete = async (id) => {
     const target = webhooks.find((w) => w._id === id);
     const confirmed = await confirm({
-      title: 'Delete Webhook Subscription',
-      message:
-        'Are you sure you want to delete this webhook subscription? All associated delivery history, queued retries, and audit logs will be permanently removed.',
-      confirmText: 'Delete Webhook',
+      title: 'Delete webhook',
+      message: 'This removes the endpoint, cancels anything queued for it, and deletes its delivery history.',
+      confirmText: 'Delete',
       cancelText: 'Cancel',
       variant: 'danger',
-      detail: target ? target.url : undefined,
+      detail: target?.url,
     });
     if (!confirmed) return;
-
     try {
       await webhookService.remove(id);
       setWebhooks((prev) => prev.filter((w) => w._id !== id));
-      toast.success('Webhook and delivery logs deleted');
-    } catch {
-      toast.error('Failed to delete webhook');
+      toast.success('Webhook deleted');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete webhook');
     }
   };
 
-  const copySecretToClipboard = (secret) => {
+  const copySecret = (secret) => {
     navigator.clipboard.writeText(secret);
     setCopiedSecret(true);
     toast.success('Secret copied to clipboard');
     setTimeout(() => setCopiedSecret(false), 2000);
   };
+
+  const rateTone = stats.successRate === null ? 'text-paper-300' : stats.successRate >= 95 ? 'text-accent-400' : stats.successRate >= 80 ? 'text-amber-400' : 'text-rose-400';
 
   return (
     <>
@@ -302,106 +284,50 @@ const Webhooks = () => {
         <title>Webhooks — Linkora</title>
       </Helmet>
       <AppShell>
-        {/* Page Header */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl font-bold tracking-tight text-paper-100">
-                Webhooks
-              </h1>
-              <span className="badge-accent font-mono text-[11px]">
-                HMAC-SHA256
-              </span>
+              <h1 className="text-2xl font-bold tracking-tight text-paper-100">Webhooks</h1>
+              <span className="badge-accent font-mono text-[11px]">HMAC-SHA256</span>
             </div>
             <p className="mt-1 text-sm text-paper-400">
-              Enterprise event streaming with replay-proof signatures, exponential backoff retries, and dead-letter queue.
+              Signed, at-least-once event delivery with automatic retries, a per-endpoint circuit breaker, and replay.
             </p>
           </div>
-
           <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => setShowGuide(true)}
-              className="btn btn-secondary text-xs"
-            >
+            <button type="button" onClick={() => setShowGuide(true)} className="btn btn-secondary text-xs">
               <BookOpen size={14} />
               <span>Verify Signatures</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => setShowCreate(true)}
-              className="btn-primary text-xs"
-            >
+            <button type="button" onClick={() => setShowCreate(true)} className="btn-primary text-xs">
               <Plus size={15} />
               <span>New Webhook</span>
             </button>
           </div>
         </div>
 
-        {/* Telemetry Summary Cards */}
         {webhooks.length > 0 && (
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="panel p-4">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-paper-500">
-                Total Endpoints
-              </div>
-              <div className="mt-1 flex items-baseline gap-2 font-mono text-xl font-bold text-paper-100">
-                {stats.total}
-              </div>
-            </div>
-
-            <div className="panel p-4">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-paper-500">
-                Operational Status
-              </div>
-              <div className="mt-1 flex items-center gap-2 font-mono text-xl font-bold text-accent-400">
-                <CheckCircle2 size={18} />
-                <span>{stats.active} Active</span>
-              </div>
-            </div>
-
-            <div className="panel p-4">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-paper-500">
-                24h Success Rate
-              </div>
-              <div className="mt-1 flex items-baseline gap-2 font-mono text-xl font-bold text-paper-100">
-                <span
-                  className={
-                    stats.avgSuccessRate >= 95
-                      ? 'text-accent-400'
-                      : stats.avgSuccessRate >= 80
-                      ? 'text-amber-400'
-                      : 'text-rose-400'
-                  }
-                >
-                  {stats.avgSuccessRate}%
-                </span>
-                <span className="text-xs text-paper-500">
-                  ({stats.total24hDeliveries} sends)
-                </span>
-              </div>
-            </div>
-
-            <div className="panel p-4">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-paper-500">
-                Degraded / Paused
-              </div>
-              <div className="mt-1 flex items-baseline gap-2 font-mono text-xl font-bold text-paper-300">
-                <span className={stats.degraded > 0 ? 'text-amber-400' : 'text-paper-300'}>
-                  {stats.degraded} degraded
-                </span>
-                {stats.disabled > 0 && (
-                  <span className="text-xs text-paper-500">
-                    / {stats.disabled} paused
-                  </span>
-                )}
-              </div>
-            </div>
+            <SummaryTile label="Endpoints">
+              <span>{webhooks.length}</span>
+              <span className="flex items-center gap-1 text-xs text-accent-400">
+                <CheckCircle2 size={13} />
+                {stats.active} active
+              </span>
+            </SummaryTile>
+            <SummaryTile label="24h Success Rate">
+              <span className={rateTone}>{stats.successRate === null ? '—' : `${stats.successRate}%`}</span>
+              <span className="text-xs text-paper-500">({stats.settled} settled)</span>
+            </SummaryTile>
+            <SummaryTile label="Queued / Retrying">
+              <span className={stats.pending > 0 ? 'text-amber-400' : 'text-paper-100'}>{stats.pending}</span>
+            </SummaryTile>
+            <SummaryTile label="Need Attention">
+              <span className={stats.attention > 0 ? 'text-rose-400' : 'text-paper-100'}>{stats.attention}</span>
+            </SummaryTile>
           </div>
         )}
 
-        {/* Content Section */}
         {isLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-40" />
@@ -413,10 +339,10 @@ const Webhooks = () => {
               <WebhookCard
                 key={hook._id}
                 webhook={hook}
-                onTest={(w) => setTestModalWebhook(w)}
-                onViewLogs={(w) => setDrawerWebhook(w)}
-                onEdit={(w) => setEditWebhook({ ...w })}
-                onRotateSecret={handleRotateSecret}
+                onTest={setTestModalWebhook}
+                onViewLogs={setDrawerWebhook}
+                onEdit={(w) => setEditWebhook({ _id: w._id, url: w.url, description: w.description || '', events: [...w.events] })}
+                onRotateSecret={setRotateTarget}
                 onToggleActive={handleToggleActive}
                 onDelete={handleDelete}
               />
@@ -426,13 +352,9 @@ const Webhooks = () => {
           <EmptyState
             icon={WebhookIcon}
             title="No webhooks configured"
-            description="Provision a webhook endpoint to receive realtime HTTPS POST notifications for link clicks, lifecycle updates, and abuse alerts."
+            description="Add an endpoint to receive signed HTTPS POSTs for clicks, link lifecycle changes and abuse alerts."
             action={
-              <button
-                type="button"
-                onClick={() => setShowCreate(true)}
-                className="btn-primary"
-              >
+              <button type="button" onClick={() => setShowCreate(true)} className="btn-primary">
                 <Plus size={16} /> New Webhook
               </button>
             }
@@ -440,327 +362,83 @@ const Webhooks = () => {
         )}
       </AppShell>
 
-      {/* 1. Modal: Create Webhook */}
-      <Modal
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-        title="Register New Webhook Endpoint"
-        maxWidth="max-w-xl"
-      >
-        <form onSubmit={handleCreate} className="space-y-4">
-          <div>
-            <label className="field-label" htmlFor="create-url">
-              Endpoint URL (HTTPS)
-            </label>
-            <input
-              id="create-url"
-              type="url"
-              className="input-mono text-xs"
-              placeholder="https://api.yourdomain.com/v1/webhooks/linkora"
-              value={createData.url}
-              onChange={(e) =>
-                setCreateData({ ...createData, url: e.target.value })
-              }
-              required
-              autoFocus
-            />
-            <p className="mt-1 text-[11px] text-paper-500">
-              Must be an accessible URL. Local addresses and cloud metadata services are blocked for SSRF protection.
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-              <span className="text-paper-500">Quick fill:</span>
-              <button
-                type="button"
-                onClick={() =>
-                  setCreateData({
-                    ...createData,
-                    url: 'http://127.0.0.1:5001/api/webhooks/debug/echo',
-                    description: createData.description || 'Local Built-in Echo Receiver',
-                  })
-                }
-                className="text-accent-400 hover:underline font-mono bg-accent-400/10 px-2 py-0.5 rounded border border-accent-400/20"
-              >
-                Use Built-in Echo Endpoint
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="create-desc">
-              Description / Friendly Name (Optional)
-            </label>
-            <input
-              id="create-desc"
-              type="text"
-              className="input text-xs"
-              placeholder="e.g. Production Analytics Ingestion, Zapier Pipeline"
-              value={createData.description}
-              onChange={(e) =>
-                setCreateData({ ...createData, description: e.target.value })
-              }
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="field-label mb-0">Events to Receive</span>
-              <button
-                type="button"
-                onClick={toggleAllEventsInCreate}
-                className="text-[11px] font-medium text-accent-400 hover:underline"
-              >
-                {createData.events.length === ALL_EVENTS.length
-                  ? 'Deselect all'
-                  : 'Select all'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-              {ALL_EVENTS.map((opt) => {
-                const checked = createData.events.includes(opt.value);
-                return (
-                  <label
-                    key={opt.value}
-                    className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 transition-colors ${
-                      checked
-                        ? 'border-accent-400/40 bg-accent-400/5 text-paper-100'
-                        : 'border-ink-700 bg-ink-950 text-paper-400 hover:border-ink-600'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleEventInCreate(opt.value)}
-                      className="mt-0.5 h-3.5 w-3.5 accent-accent-400 rounded"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-mono text-xs font-semibold text-paper-100">
-                        {opt.value}
-                      </div>
-                      <div className="text-[10px] text-paper-400 leading-tight mt-0.5 line-clamp-2">
-                        {opt.description}
-                      </div>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              className="btn-primary flex-1"
-              disabled={isCreating}
-            >
-              {isCreating ? (
-                <>
-                  <RotateCw size={14} className="animate-spin" />
-                  <span>Provisioning…</span>
-                </>
-              ) : (
-                'Create Webhook'
-              )}
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => setShowCreate(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New Webhook Endpoint" maxWidth="max-w-xl">
+        <WebhookForm
+          form={createForm}
+          setForm={setCreateForm}
+          catalog={catalog}
+          onSubmit={handleCreate}
+          submitLabel="Create Webhook"
+          busyLabel="Creating…"
+          isBusy={isCreating}
+          onCancel={() => setShowCreate(false)}
+          autoFocus
+        />
       </Modal>
 
-      {/* 2. Modal: Edit Webhook */}
       {editWebhook && (
-        <Modal
-          open={Boolean(editWebhook)}
-          onClose={() => setEditWebhook(null)}
-          title="Edit Webhook Endpoint"
-          maxWidth="max-w-xl"
-        >
-          <form onSubmit={handleUpdate} className="space-y-4">
-            <div>
-              <label className="field-label" htmlFor="edit-url">
-                Endpoint URL
-              </label>
-              <input
-                id="edit-url"
-                type="url"
-                className="input-mono text-xs"
-                value={editWebhook.url}
-                onChange={(e) =>
-                  setEditWebhook({ ...editWebhook, url: e.target.value })
-                }
-                required
-              />
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                <span className="text-paper-500">Quick fill:</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditWebhook({
-                      ...editWebhook,
-                      url: 'http://127.0.0.1:5001/api/webhooks/debug/echo',
-                    })
-                  }
-                  className="text-accent-400 hover:underline font-mono bg-accent-400/10 px-2 py-0.5 rounded border border-accent-400/20"
-                >
-                  Use Built-in Echo Endpoint
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="field-label" htmlFor="edit-desc">
-                Description
-              </label>
-              <input
-                id="edit-desc"
-                type="text"
-                className="input text-xs"
-                value={editWebhook.description || ''}
-                onChange={(e) =>
-                  setEditWebhook({ ...editWebhook, description: e.target.value })
-                }
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="field-label mb-0">Events</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-                {ALL_EVENTS.map((opt) => {
-                  const checked = editWebhook.events?.includes(opt.value);
-                  return (
-                    <label
-                      key={opt.value}
-                      className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 transition-colors ${
-                        checked
-                          ? 'border-accent-400/40 bg-accent-400/5 text-paper-100'
-                          : 'border-ink-700 bg-ink-950 text-paper-400 hover:border-ink-600'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {
-                          const next = checked
-                            ? editWebhook.events.filter((e) => e !== opt.value)
-                            : [...editWebhook.events, opt.value];
-                          setEditWebhook({ ...editWebhook, events: next });
-                        }}
-                        className="mt-0.5 h-3.5 w-3.5 accent-accent-400 rounded"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-mono text-xs font-semibold text-paper-100">
-                          {opt.value}
-                        </div>
-                        <div className="text-[10px] text-paper-400 leading-tight mt-0.5 line-clamp-2">
-                          {opt.description}
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                type="submit"
-                className="btn-primary flex-1"
-                disabled={isUpdating}
-              >
-                {isUpdating ? 'Saving…' : 'Save Changes'}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => setEditWebhook(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
+        <Modal open onClose={() => setEditWebhook(null)} title="Edit Webhook Endpoint" maxWidth="max-w-xl">
+          <WebhookForm
+            form={editWebhook}
+            setForm={setEditWebhook}
+            catalog={catalog}
+            onSubmit={handleUpdate}
+            submitLabel="Save Changes"
+            busyLabel="Saving…"
+            isBusy={isUpdating}
+            onCancel={() => setEditWebhook(null)}
+          />
         </Modal>
       )}
 
-      {/* 3. Modal: Secret Reveal (Shown once upon creation or rotation) */}
-      {activeSecretModal && (
-        <Modal
-          open={Boolean(activeSecretModal)}
-          onClose={() => setActiveSecretModal(null)}
-          title={activeSecretModal.title}
-          maxWidth="max-w-md"
-        >
+      {secretReveal && (
+        <Modal open onClose={() => setSecretReveal(null)} title={secretReveal.title} maxWidth="max-w-md">
           <div className="space-y-4">
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
               <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-              <span>{activeSecretModal.subtitle}</span>
+              <span>{secretReveal.subtitle}</span>
             </div>
-
             <div>
               <span className="field-label">Signing Secret</span>
               <div className="relative flex items-center rounded-lg border border-ink-600 bg-ink-950 p-3">
-                <span className="font-mono text-xs text-accent-400 break-all select-all pr-8">
-                  {activeSecretModal.secret}
-                </span>
+                <span className="font-mono text-xs text-accent-400 break-all select-all pr-8">{secretReveal.secret}</span>
                 <button
                   type="button"
-                  onClick={() => copySecretToClipboard(activeSecretModal.secret)}
+                  onClick={() => copySecret(secretReveal.secret)}
                   className="absolute right-2.5 rounded p-1.5 text-paper-400 hover:bg-ink-800 hover:text-paper-100 transition-colors"
                   title="Copy secret"
+                  aria-label="Copy secret"
                 >
-                  {copiedSecret ? (
-                    <Check size={14} className="text-accent-400" />
-                  ) : (
-                    <Copy size={14} />
-                  )}
+                  {copiedSecret ? <Check size={14} className="text-accent-400" /> : <Copy size={14} />}
                 </button>
               </div>
             </div>
-
-            <div className="pt-2">
-              <button
-                type="button"
-                className="btn-primary w-full"
-                onClick={() => setActiveSecretModal(null)}
-              >
-                I have saved this secret securely
-              </button>
-            </div>
+            <button type="button" className="btn-primary w-full" onClick={() => setSecretReveal(null)}>
+              I have saved this secret
+            </button>
           </div>
         </Modal>
       )}
 
-      {/* 4. Modal: Test Endpoint Runner */}
+      {rotateTarget && (
+        <WebhookRotateSecretModal webhook={rotateTarget} onClose={() => setRotateTarget(null)} onConfirm={handleRotateSecret} />
+      )}
+
       {testModalWebhook && (
         <WebhookTestModal
-          open={Boolean(testModalWebhook)}
+          open
           onClose={() => setTestModalWebhook(null)}
           webhook={testModalWebhook}
+          catalog={catalog}
           onTestComplete={fetchWebhooks}
         />
       )}
 
-      {/* 5. Drawer: Delivery Logs & Replay */}
       {drawerWebhook && (
-        <WebhookDeliveryDrawer
-          open={Boolean(drawerWebhook)}
-          onClose={() => setDrawerWebhook(null)}
-          webhook={drawerWebhook}
-        />
+        <WebhookDeliveryDrawer open onClose={() => setDrawerWebhook(null)} webhook={drawerWebhook} onChanged={fetchWebhooks} />
       )}
 
-      {/* 6. Modal: Developer Verification Guide */}
-      <WebhookVerificationGuideModal
-        open={showGuide}
-        onClose={() => setShowGuide(false)}
-      />
+      <WebhookVerificationGuideModal open={showGuide} onClose={() => setShowGuide(false)} />
     </>
   );
 };

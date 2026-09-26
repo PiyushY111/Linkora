@@ -11,10 +11,29 @@ import {
   getUsageHistory,
   getOpenApiSpec,
 } from '../controllers/publicApiController.js';
+import {
+  listEventCatalog,
+  createWebhook,
+  listWebhooks,
+  getWebhook,
+  updateWebhook,
+  deleteWebhook,
+  testWebhook,
+  rotateSecret,
+  listDeliveries,
+  getDelivery,
+  replayDelivery,
+  bulkReplay,
+} from '../controllers/webhookController.js';
 import { apiKeyAuth, requireScope } from '../middleware/apiKeyAuth.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { apiTelemetry } from '../middleware/apiTelemetry.js';
-import { createTokenBucketLimiter, PUBLIC_API_TOKEN_BUCKET } from '../middleware/rateLimiter.js';
+import {
+  createTokenBucketLimiter,
+  PUBLIC_API_TOKEN_BUCKET,
+  webhookTestRateLimiter,
+  webhookReplayRateLimiter,
+} from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
@@ -70,6 +89,25 @@ v1.post('/links/bulk', requireScope('links:write'), canWriteLinks, bulkCreateLin
 // Usage & Telemetry
 v1.get('/usage', getUsage);
 v1.get('/usage/history', getUsageHistory);
+
+// Webhooks: the same handlers as the dashboard (controllers/
+// webhookController.js). The key's scope gates reads vs writes, and the key
+// creator must still hold 'webhooks:manage' in the key's workspace.
+const readWebhooks = [requireScope('webhooks:read'), requirePermission('webhooks:manage')];
+const writeWebhooks = [requireScope('webhooks:write'), requirePermission('webhooks:manage')];
+
+v1.get('/webhooks/events', readWebhooks, listEventCatalog);
+v1.get('/webhooks', readWebhooks, listWebhooks);
+v1.post('/webhooks', writeWebhooks, createWebhook);
+v1.get('/webhooks/:id', readWebhooks, getWebhook);
+v1.patch('/webhooks/:id', writeWebhooks, updateWebhook);
+v1.delete('/webhooks/:id', writeWebhooks, deleteWebhook);
+v1.post('/webhooks/:id/test', writeWebhooks, webhookTestRateLimiter, testWebhook);
+v1.post('/webhooks/:id/rotate-secret', writeWebhooks, rotateSecret);
+v1.get('/webhooks/:id/deliveries', readWebhooks, listDeliveries);
+v1.get('/webhooks/:id/deliveries/:deliveryId', readWebhooks, getDelivery);
+v1.post('/webhooks/:id/deliveries/:deliveryId/replay', writeWebhooks, webhookReplayRateLimiter, replayDelivery);
+v1.post('/webhooks/:id/replay', writeWebhooks, webhookReplayRateLimiter, bulkReplay);
 
 router.use('/v1', v1);
 
