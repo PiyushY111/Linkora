@@ -116,7 +116,7 @@ export default function ActionDropdown({
       <div
         data-action-dropdown
         style={style}
-        className="z-[9999] overflow-y-auto overflow-x-hidden rounded-xl border border-ink-600 bg-ink-850/98 py-1 shadow-2xl backdrop-blur-md ring-1 ring-black/50 text-left animate-in fade-in zoom-in-95 duration-100 scrollbar-thin"
+        className="panel-elevated z-[9999] overflow-y-auto overflow-x-hidden py-1 shadow-2xl ring-1 ring-black/50 text-left animate-in fade-in zoom-in-95 duration-100 scrollbar-thin"
         onClick={(e) => e.stopPropagation()}
       >
         {children}

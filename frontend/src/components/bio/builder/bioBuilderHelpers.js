@@ -46,7 +46,7 @@ export function detailsProblem(details, slugStatus) {
   if (details.bio.length > 280) return 'Bio can be at most 280 characters';
   if (details.avatarUrl && !AVATAR_URL_PATTERN.test(details.avatarUrl)) return 'Avatar URL must start with http(s)://';
   if (!isHexColor(details.theme.primaryColor) || !isHexColor(details.theme.bgColor)) {
-    return 'Colors must be hex values like #C6FF3D';
+    return 'Colors must be hex values like #B3EC11';
   }
   return null;
 }

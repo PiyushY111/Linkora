@@ -15,7 +15,7 @@ const PREVIEW_TABS = [
 ];
 
 const QR_CONFIG = {
-  dotsType: 'rounded', dotsColor: '#192013', bgColor: '#e4f5c4',
+  dotsType: 'rounded', dotsColor: '#0A0A0B', bgColor: '#F5F5F7',
   cornersSquareType: 'extra-rounded', cornersDotType: 'dot',
 };
 
@@ -29,13 +29,13 @@ export function PerformanceChart({ compact = false }) {
     <svg className={`performance-chart${compact ? ' performance-chart--compact' : ''}`} viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="Illustrative chart showing clicks increasing over time">
       <defs>
         <linearGradient id={`chart-${id}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#c5f277" stopOpacity="0.2" />
-          <stop offset="100%" stopColor="#c5f277" stopOpacity="0" />
+          <stop offset="0%" stopColor="#B7B7C2" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#B7B7C2" stopOpacity="0" />
         </linearGradient>
       </defs>
       {[30, 70, 110, 150].map((y) => <path key={y} d={`M0 ${y}H600`} stroke="currentColor" strokeDasharray="3 5" />)}
       <path d="M0 135 C15 135 20 117 35 122 S60 141 78 120 S98 129 115 108 S138 111 155 102 S176 128 195 99 S223 116 243 89 S272 107 295 78 S313 92 335 70 S355 83 380 51 S400 64 420 45 S445 67 465 39 S491 44 510 30 S534 54 550 27 S578 31 600 9 V160 H0 Z" fill={`url(#chart-${id})`} />
-      <path d="M0 135 C15 135 20 117 35 122 S60 141 78 120 S98 129 115 108 S138 111 155 102 S176 128 195 99 S223 116 243 89 S272 107 295 78 S313 92 335 70 S355 83 380 51 S400 64 420 45 S445 67 465 39 S491 44 510 30 S534 54 550 27 S578 31 600 9" fill="none" stroke="#c5f277" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+      <path d="M0 135 C15 135 20 117 35 122 S60 141 78 120 S98 129 115 108 S138 111 155 102 S176 128 195 99 S223 116 243 89 S272 107 295 78 S313 92 335 70 S355 83 380 51 S400 64 420 45 S445 67 465 39 S491 44 510 30 S534 54 550 27 S578 31 600 9" fill="none" stroke="#B7B7C2" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }

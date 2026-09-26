@@ -1,7 +1,7 @@
 import { User as UserIcon, Link as LinkIcon, Shield, BarChart3, AlertTriangle } from 'lucide-react';
 
 export const AVATAR_COLORS = [
-  { id: 'accent', label: 'Lime Accent', bg: 'bg-[#C6FF3D] text-[#0A0A0B]', border: 'border-[#C6FF3D]' },
+  { id: 'accent', label: 'Lime Accent', bg: 'bg-[#B3EC11] text-[#0A0A0B]', border: 'border-[#B3EC11]' },
   { id: 'indigo', label: 'Indigo', bg: 'bg-[#6366F1] text-white', border: 'border-[#6366F1]' },
   { id: 'violet', label: 'Violet', bg: 'bg-[#8B5CF6] text-white', border: 'border-[#8B5CF6]' },
   { id: 'cyan', label: 'Cyan', bg: 'bg-[#06B6D4] text-[#0A0A0B]', border: 'border-[#06B6D4]' },

@@ -23,7 +23,7 @@ import {
 } from '../../utils/qrPresets';
 
 const COLOR_SWATCHES = [
-  '#C6FF3D', // Cyber Lime
+  '#B3EC11', // Cyber Lime
   '#06B6D4', // Cyan
   '#6366F1', // Indigo
   '#A855F7', // Violet
@@ -316,7 +316,7 @@ export default function QRCodeCustomizer({ config, onChange, onReset }) {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <ColorField
                     label="Gradient Start"
-                    value={config.gradient?.color1 || '#C6FF3D'}
+                    value={config.gradient?.color1 || '#B3EC11'}
                     onChange={(color1) => updateGradient({ color1 })}
                   />
 
@@ -349,7 +349,7 @@ export default function QRCodeCustomizer({ config, onChange, onReset }) {
             ) : (
               <ColorField
                 label="Pattern Primary Color"
-                value={config.dotsColor || '#C6FF3D'}
+                value={config.dotsColor || '#B3EC11'}
                 onChange={(color) =>
                   updateConfig({ dotsColor: color, cornersSquareColor: color, cornersDotColor: color })
                 }
@@ -583,7 +583,7 @@ export default function QRCodeCustomizer({ config, onChange, onReset }) {
                   <ColorField
                     label="Frame Accent Color"
                     size="sm"
-                    value={config.frame?.color || '#C6FF3D'}
+                    value={config.frame?.color || '#B3EC11'}
                     onChange={(color) => updateFrame({ color })}
                   />
 

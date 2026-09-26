@@ -112,8 +112,8 @@ export default function ClicksOverTimeChart({
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="limeAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#C6FF3D" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#C6FF3D" stopOpacity={0.0} />
+                  <stop offset="5%" stopColor="#B3EC11" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#B3EC11" stopOpacity={0.0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#212124" vertical={false} />
@@ -136,11 +136,11 @@ export default function ClicksOverTimeChart({
               <Area
                 type="monotone"
                 dataKey="clicks"
-                stroke="#C6FF3D"
+                stroke="#B3EC11"
                 strokeWidth={2.5}
                 fillOpacity={1}
                 fill="url(#limeAreaGrad)"
-                activeDot={{ r: 5, fill: '#C6FF3D', stroke: '#0E0E10', strokeWidth: 2 }}
+                activeDot={{ r: 5, fill: '#B3EC11', stroke: '#0E0E10', strokeWidth: 2 }}
               />
             </AreaChart>
           </ResponsiveContainer>

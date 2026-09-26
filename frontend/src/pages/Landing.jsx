@@ -38,7 +38,7 @@ export default function Landing() {
           <nav className="marketing-desktop-nav" aria-label="Main navigation">
             {NAV_ITEMS.map(([label, href]) => <a key={href} href={href}>{label}</a>)}
           </nav>
-          <div className="marketing-header-actions"><Link to="/login" className="marketing-login-link">Log in</Link><Link to="/register" className="marketing-button marketing-button--small">Get started <ArrowUpRight size={15} /></Link></div>
+          <div className="marketing-header-actions"><Link to="/login" className="marketing-login-link">Log in</Link><Link to="/register" className="marketing-button marketing-button--secondary marketing-button--small">Get started <ArrowUpRight size={15} /></Link></div>
           <button className="marketing-menu-toggle" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen} aria-controls="mobile-navigation" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
         </div>
         {menuOpen && <nav className="marketing-mobile-nav" id="mobile-navigation" aria-label="Mobile navigation" onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(false); }}>

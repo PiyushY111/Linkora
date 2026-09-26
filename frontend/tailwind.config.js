@@ -17,10 +17,10 @@ export default {
           500: '#84848F',
         },
         accent: {
-          300: '#DEFF8C',
-          400: '#C6FF3D',
-          500: '#AEE62B',
-          600: '#8FC91A',
+          300: '#CBF35A',
+          400: '#B3EC11',
+          500: '#9DD00F',
+          600: '#86B10D',
         },
         success: '#33D17A',
         danger: '#FF5C5C',
@@ -30,9 +30,11 @@ export default {
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        // Wordmark only ("linkora."), matching the marketing Brand lockup.
+        display: ['"Space Grotesk"', 'Inter', 'ui-sans-serif', 'sans-serif'],
       },
       boxShadow: {
-        glow: '0 0 0 1px rgba(198,255,61,0.15), 0 8px 24px -4px rgba(198,255,61,0.12)',
+        glow: '0 0 0 1px rgba(179,236,17,0.15), 0 8px 24px -4px rgba(179,236,17,0.12)',
         panel: '0 1px 0 0 rgba(255,255,255,0.03) inset, 0 12px 32px -12px rgba(0,0,0,0.6)',
       },
       backgroundImage: {

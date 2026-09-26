@@ -16,7 +16,7 @@ import {
   Cpu,
 } from 'lucide-react';
 
-const PALETTE = ['#C6FF3D', '#6E9BFF', '#FFB84D', '#A78BFA', '#34D399', '#F472B6'];
+const PALETTE = ['#B3EC11', '#6E9BFF', '#FFB84D', '#A78BFA', '#34D399', '#F472B6'];
 
 const DeviceIcon = ({ type }) => {
   const t = (type || '').toLowerCase();
