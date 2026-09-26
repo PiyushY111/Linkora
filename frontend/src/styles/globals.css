@@ -27,7 +27,7 @@ code,
 }
 
 ::selection {
-  background: #c6ff3d;
+  background: #b3ec11;
   color: #0a0a0b;
 }
 
@@ -55,7 +55,7 @@ code,
   }
   .btn-primary {
     @apply btn bg-accent-400 text-ink-950 hover:bg-accent-300 active:bg-accent-500
-      focus-visible:ring-accent-400 shadow-[0_0_0_0_rgba(198,255,61,0)] hover:shadow-glow;
+      focus-visible:ring-accent-400 shadow-[0_0_0_0_rgba(179,236,17,0)] hover:shadow-glow;
   }
   .btn-secondary {
     @apply btn bg-ink-800 text-paper-100 border border-ink-600 hover:bg-ink-700 hover:border-ink-500
@@ -64,8 +64,10 @@ code,
   .btn-ghost {
     @apply btn bg-transparent text-paper-300 hover:bg-ink-800 hover:text-paper-100 focus-visible:ring-ink-500;
   }
+  /* Grayscale: told apart from secondary by the dashed border (pair with an alert icon). */
   .btn-danger {
-    @apply btn bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20 focus-visible:ring-danger;
+    @apply btn bg-transparent text-paper-100 border border-dashed border-paper-300 hover:bg-ink-800
+      hover:border-paper-100 focus-visible:ring-paper-300;
   }
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
@@ -78,7 +80,7 @@ code,
   .input {
     @apply w-full rounded-lg border border-ink-600 bg-ink-900 px-3.5 py-2.5 text-sm text-paper-100
       placeholder:text-paper-500 outline-none transition-all duration-150
-      focus:border-accent-400/60 focus:ring-2 focus:ring-accent-400/20;
+      focus:border-paper-500 focus:ring-2 focus:ring-paper-500/20;
   }
   .input-mono {
     @apply input font-mono;
@@ -92,7 +94,7 @@ code,
     @apply rounded-xl border border-ink-600 bg-ink-800 shadow-panel;
   }
 
-  /* Badges */
+  /* Badges: status is carried by icon + fill style, not hue. .badge-accent is the rare spotlight. */
   .badge {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
   }
@@ -100,10 +102,10 @@ code,
     @apply badge bg-accent-400/10 text-accent-400 ring-1 ring-inset ring-accent-400/25;
   }
   .badge-success {
-    @apply badge bg-success/10 text-success ring-1 ring-inset ring-success/25;
+    @apply badge bg-paper-100/10 text-paper-100 ring-1 ring-inset ring-paper-100/20;
   }
   .badge-danger {
-    @apply badge bg-danger/10 text-danger ring-1 ring-inset ring-danger/25;
+    @apply badge bg-transparent text-paper-300 outline-dashed outline-1 -outline-offset-1 outline-paper-300;
   }
   .badge-neutral {
     @apply badge bg-ink-700 text-paper-300 ring-1 ring-inset ring-ink-600;
@@ -112,10 +114,15 @@ code,
   /* Nav */
   .nav-link {
     @apply flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-paper-300
-      transition-colors duration-150 hover:bg-ink-800 hover:text-paper-100;
+      transition-colors duration-150 hover:bg-ink-800 hover:text-paper-100
+      [&>svg]:shrink-0 [&>svg]:text-paper-500 [&>svg]:transition-colors [&>svg]:duration-150 hover:[&>svg]:text-paper-100
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-paper-500;
   }
+  /* The accent is only the small left bar; the row itself stays grayscale. */
   .nav-link-active {
-    @apply nav-link bg-ink-800 text-paper-100;
+    @apply nav-link relative bg-ink-800 text-paper-100 [&>svg]:text-paper-100
+      before:absolute before:left-0 before:top-1/2 before:h-4 before:w-0.5 before:-translate-y-1/2
+      before:rounded-full before:bg-accent-400;
   }
 }
 

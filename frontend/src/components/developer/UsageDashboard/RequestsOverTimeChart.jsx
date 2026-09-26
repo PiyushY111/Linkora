@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { BarChart3 } from 'lucide-react';
 import { toChartSeries } from './usageHelpers';
 
-const SUCCESS_COLOR = '#C6FF3D';
+const SUCCESS_COLOR = '#B3EC11';
 const ERROR_COLOR = '#FB7185';
 
 const ChartTooltip = ({ active, payload, label }) => {

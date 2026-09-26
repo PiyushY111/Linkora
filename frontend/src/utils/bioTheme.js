@@ -2,7 +2,7 @@ import { QR_BRAND_ICONS, QR_DESIGNER_PRESETS } from './qrPresets';
 import { getHostedOrigin } from './domain';
 
 // Mirrors the backend's defaults (models/BioPage.js).
-export const DEFAULT_BIO_THEME = Object.freeze({ primaryColor: '#C6FF3D', bgColor: '#0A0A0B', font: 'sans' });
+export const DEFAULT_BIO_THEME = Object.freeze({ primaryColor: '#B3EC11', bgColor: '#0A0A0B', font: 'sans' });
 
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const FONT_CLASSES = { sans: 'font-sans', mono: 'font-mono' };

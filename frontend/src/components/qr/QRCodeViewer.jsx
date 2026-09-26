@@ -29,7 +29,7 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
 
     const dotsOptions = {
       type: config.dotsType || 'rounded',
-      color: config.dotsColor || '#C6FF3D',
+      color: config.dotsColor || '#B3EC11',
     };
 
     if (config.gradient?.enabled) {
@@ -37,7 +37,7 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
         type: config.gradient.type || 'linear',
         rotation: (config.gradient.rotation || 45) * (Math.PI / 180),
         colorStops: [
-          { offset: 0, color: config.gradient.color1 || '#C6FF3D' },
+          { offset: 0, color: config.gradient.color1 || '#B3EC11' },
           { offset: 1, color: config.gradient.color2 || '#06B6D4' },
         ],
       };
@@ -64,11 +64,11 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
       dotsOptions,
       cornersSquareOptions: {
         type: config.cornersSquareType || 'extra-rounded',
-        color: config.cornersSquareColor || config.dotsColor || '#C6FF3D',
+        color: config.cornersSquareColor || config.dotsColor || '#B3EC11',
       },
       cornersDotOptions: {
         type: config.cornersDotType || 'dot',
-        color: config.cornersDotColor || config.dotsColor || '#C6FF3D',
+        color: config.cornersDotColor || config.dotsColor || '#B3EC11',
       },
       backgroundOptions: {
         color: config.isTransparent ? 'transparent' : config.bgColor || '#0A0A0B',
@@ -124,7 +124,7 @@ const QRCodeViewer = forwardRef(function QRCodeViewer(
   const frameType = showFrame ? config.frame?.type || 'none' : 'none';
   const frameText = config.frame?.text || 'SCAN ME';
   const frameSubtext = config.frame?.subtext || '';
-  const frameColor = config.frame?.color || '#C6FF3D';
+  const frameColor = config.frame?.color || '#B3EC11';
   const frameTextColor = config.frame?.textColor || '#0A0A0B';
 
   return (

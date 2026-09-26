@@ -99,7 +99,7 @@ function App() {
               border: '1px solid #2B2B30',
               fontSize: '0.875rem',
             },
-            success: { iconTheme: { primary: '#C6FF3D', secondary: '#0A0A0B' } },
+            success: { iconTheme: { primary: '#B3EC11', secondary: '#0A0A0B' } },
             error: { iconTheme: { primary: '#FF5C5C', secondary: '#0A0A0B' } },
           }}
         />
