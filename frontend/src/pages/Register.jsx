@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
-import { ArrowRight, AlertTriangle, User, Building2 } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, AlertTriangle, User, Building2, Mail, Loader2, Check } from 'lucide-react';
+import AuthLayout from '../components/auth/AuthLayout';
+import AuthField from '../components/auth/AuthField';
 import { authService } from '../services';
 import useAuthStore from '../context/authStore';
 import { safeRedirectPath } from '../utils/authRedirect';
 
 const ACCOUNT_TYPES = [
-  { value: 'personal', label: 'Just for me', icon: User },
-  { value: 'organization', label: 'My team / company', icon: Building2 },
+  { value: 'personal', label: 'Just for me', description: 'My links, my space', icon: User },
+  { value: 'organization', label: 'With my team', description: 'Better, together', icon: Building2 },
 ];
 const ORG_NAME_MIN = 2;
 const ORG_NAME_MAX = 100;
@@ -29,6 +31,7 @@ const Register = () => {
   const location = useLocation();
   const { setToken, setUser, setActiveWorkspace, refreshWorkspaces } = useAuthStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [accountType, setAccountType] = useState('personal');
   const [organizationName, setOrganizationName] = useState('');
   const [orgNameTouched, setOrgNameTouched] = useState(false);
@@ -43,9 +46,10 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitError('');
 
     if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
+      setSubmitError('Your passwords don’t match. Please try again.');
       return;
     }
     if (orgNameError) {
@@ -76,7 +80,7 @@ const Register = () => {
       const next = from ? safeRedirectPath(from) : isOrganization ? '/onboarding/invite-team' : '/dashboard';
       navigate(next, { replace: true });
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Registration failed');
+      setSubmitError(error.response?.data?.message || 'Could not create your account. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -84,142 +88,46 @@ const Register = () => {
 
   return (
     <>
-      <Helmet>
-        <title>Create account — Linkora</title>
-      </Helmet>
-
-      <div className="relative flex min-h-screen items-center justify-center bg-ink-950 bg-grid px-4 py-10">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink-950 via-transparent to-ink-950" />
-
-        <div className="relative w-full max-w-sm animate-fade-up">
-          <Link to="/" className="mb-8 flex items-center justify-center gap-2">
-            <img src="/logo.svg" alt="" width={30} height={30} />
-            <span className="text-lg font-bold text-paper-100">Linkora</span>
-          </Link>
-
-          <div className="panel p-7">
-            <h1 className="text-xl font-bold text-paper-100">Create your account</h1>
-            <p className="mt-1 text-sm text-paper-500">Start shortening in under a minute.</p>
-
-            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-              <div>
-                <label className="field-label" htmlFor="name">Name</label>
-                <input
-                  id="name"
-                  type="text"
-                  className="input"
-                  placeholder="Ada Lovelace"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <span className="field-label" id="accountTypeLabel">Account</span>
-                <div
-                  role="radiogroup"
-                  aria-labelledby="accountTypeLabel"
-                  className="grid grid-cols-2 gap-1 rounded-lg border border-ink-700 bg-ink-950 p-0.5"
-                >
-                  {ACCOUNT_TYPES.map(({ value, label, icon: Icon }) => (
-                    <button
-                      key={value}
-                      type="button"
-                      role="radio"
-                      aria-checked={accountType === value}
-                      onClick={() => setAccountType(value)}
-                      className={`flex items-center justify-center gap-1.5 rounded-md px-2.5 py-2 text-xs font-medium transition-colors ${
-                        accountType === value ? 'bg-ink-800 text-paper-100 shadow-sm' : 'text-paper-400 hover:text-paper-200'
-                      }`}
-                    >
-                      <Icon size={13} />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {isOrganization && (
-                <div>
-                  <label className="field-label" htmlFor="organizationName">Organization name</label>
-                  <input
-                    id="organizationName"
-                    type="text"
-                    className="input"
-                    placeholder="Acme Inc"
-                    value={organizationName}
-                    onChange={(e) => setOrganizationName(e.target.value)}
-                    onBlur={() => setOrgNameTouched(true)}
-                    maxLength={ORG_NAME_MAX}
-                    aria-invalid={Boolean(orgNameTouched && orgNameError)}
-                    aria-describedby={orgNameTouched && orgNameError ? 'organizationNameError' : undefined}
-                    required
-                  />
-                  {orgNameTouched && orgNameError && (
-                    <p id="organizationNameError" className="mt-1.5 flex items-center gap-1 text-xs text-danger">
-                      <AlertTriangle size={12} />
-                      <span>{orgNameError}</span>
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <label className="field-label" htmlFor="email">Email</label>
-                <input
-                  id="email"
-                  type="email"
-                  className="input"
-                  placeholder="you@company.com"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="field-label" htmlFor="password">Password</label>
-                  <input
-                    id="password"
-                    type="password"
-                    className="input"
-                    placeholder="••••••••"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="field-label" htmlFor="confirmPassword">Confirm</label>
-                  <input
-                    id="confirmPassword"
-                    type="password"
-                    className="input"
-                    placeholder="••••••••"
-                    value={formData.confirmPassword}
-                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                    required
-                  />
-                </div>
-              </div>
-
-              <button type="submit" className="btn-primary w-full" disabled={isLoading}>
-                {isLoading ? 'Creating account…' : 'Create account'} <ArrowRight size={16} />
-              </button>
-            </form>
-          </div>
-
-          <p className="mt-6 text-center text-sm text-paper-500">
-            Already have an account?{' '}
-            <Link to="/login" state={location.state} className="font-semibold text-accent-400 hover:text-accent-300">
-              Sign in
-            </Link>
-          </p>
+      <Helmet><title>Create your account — Linkora</title></Helmet>
+      <AuthLayout register>
+        <div className="auth-form-heading">
+          <span className="auth-heading-icon"><ArrowUpRight size={25} /></span>
+          <span className="marketing-eyebrow">YOUR NEXT CHAPTER STARTS HERE</span>
+          <h1>Small link. Big start.</h1>
+          <p>Create your account. Make your first connection.</p>
         </div>
-      </div>
+
+        {submitError && <div className="auth-notice" role="alert"><AlertTriangle size={17} /><p>{submitError}</p></div>}
+        <form onSubmit={handleSubmit} className="auth-form" aria-label="Create an account" aria-busy={isLoading}>
+          <fieldset className="auth-account-fieldset">
+            <legend>How will you use Linkora?</legend>
+            <div className="auth-account-options">
+              {ACCOUNT_TYPES.map(({ value, label, description, icon: Icon }) => (
+                <label key={value} className={`auth-account-option${accountType === value ? ' is-selected' : ''}`}>
+                  <input type="radio" name="accountType" value={value} checked={accountType === value} onChange={() => setAccountType(value)} />
+                  <Icon size={19} aria-hidden="true" /><span>{label}<small>{description}</small></span><span className="auth-radio-indicator">{accountType === value && <Check size={10} />}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <AuthField id="name" label="Full name" icon={User} placeholder="Your name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} autoComplete="name" maxLength={50} required />
+          {isOrganization && <div>
+            <AuthField id="organizationName" label="Organization name" icon={Building2} placeholder="Your team or company" value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} onBlur={() => setOrgNameTouched(true)} autoComplete="organization" maxLength={ORG_NAME_MAX} aria-invalid={Boolean(orgNameTouched && orgNameError)} aria-describedby={orgNameTouched && orgNameError ? 'organizationNameError' : undefined} required />
+            {orgNameTouched && orgNameError && <p id="organizationNameError" className="auth-field-error"><AlertTriangle size={12} />{orgNameError}</p>}
+          </div>}
+          <AuthField id="email" label="Email address" type="email" icon={Mail} placeholder="you@example.com" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} autoComplete="email" required />
+          <div className="auth-password-row">
+            <AuthField id="password" label="Password" type="password" placeholder="Create a password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} hint="At least 6 characters" autoComplete="new-password" minLength={6} required />
+            <AuthField id="confirmPassword" label="Confirm password" type="password" placeholder="Repeat password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} autoComplete="new-password" minLength={6} required />
+          </div>
+          <button type="submit" className="marketing-button auth-submit" disabled={isLoading}>
+            {isLoading ? <><Loader2 size={17} className="auth-spinner" /> Creating your account…</> : <>Create your account <ArrowRight size={17} /></>}
+          </button>
+          <p className="auth-signup-note"><Check size={13} /> No credit card needed. Just a little possibility.</p>
+        </form>
+        <p className="auth-bottom-link">Already part of the picture? <Link to="/login" state={location.state}>Sign in <ArrowUpRight size={13} /></Link></p>
+      </AuthLayout>
     </>
   );
 };
