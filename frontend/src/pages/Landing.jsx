@@ -1,252 +1,108 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { motion } from 'framer-motion';
 import {
-  ArrowRight,
-  Zap,
-  ShieldCheck,
-  Webhook,
-  Building2,
-  Gauge,
-  GitBranch,
-  ScrollText,
+  ArrowDown, ArrowRight, ArrowUpRight, BarChart3, Check, ChevronDown,
+  Code2, Crosshair, Globe2, Link2, Menu, Plus, QrCode, ShieldCheck,
+  Sparkles, Users, X,
 } from 'lucide-react';
+import Brand from '../components/marketing/Brand';
+import ProductPreview, { DemoQR, MiniBars } from '../components/marketing/ProductPreview';
 import { getHostedDomain } from '../utils/domain';
+import '../styles/marketing.css';
 
-const FEATURES = [
-  {
-    icon: Gauge,
-    title: 'Sub-25ms redirects',
-    description:
-      'Redis read-through cache on the hot path. Zero synchronous database writes — click events stream asynchronously.',
-    featured: true,
-  },
-  {
-    icon: GitBranch,
-    title: 'Real-time analytics',
-    description: 'Every click enriched with geo and device data, broken down by country, device, referrer and campaign.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'SSRF & threat protection',
-    description: 'Destination URLs are DNS-validated and screened against threat intel before a link goes live.',
-  },
-  {
-    icon: Building2,
-    title: 'Workspaces & RBAC',
-    description: 'Owner, admin, creator, viewer roles. Enterprise SSO via SAML/OIDC.',
-  },
-  {
-    icon: Webhook,
-    title: 'Signed webhooks',
-    description: 'HMAC-signed delivery for clicks, expirations, and abuse flags, with retry and a dead-letter queue.',
-  },
-  {
-    icon: ScrollText,
-    title: 'Full audit trail',
-    description: 'Every mutation — logins, link edits, role changes — recorded with actor, IP, and diff.',
-  },
+const FAQS = [
+  ['What can I do with Linkora?', 'Turn long URLs into short, shareable links, create custom QR codes, and see how people engage with what you share. Keep everything organized in one workspace, whether you are sharing your own work or running a campaign with your team.'],
+  ['Can I choose my own short link?', 'Yes. Add a custom alias when you create a link to make the address memorable and easy to recognize. You can also add campaign tags to understand where your traffic comes from.'],
+  ['What can I learn from my link analytics?', 'See clicks over time and explore countries, devices, browsers, and referrers. Filter by a time range to understand how your audience finds and interacts with your links.'],
+  ['Can I use Linkora with my team?', 'Absolutely. Choose a team account at signup, give your workspace a name, and invite your teammates. Workspace roles help you control who can create links, view analytics, and manage settings.'],
+  ['Can I change a link after sharing it?', 'Yes. Update a link’s destination from your workspace while keeping the same short URL. You can also pause a link or add an expiration date when a campaign is finished.'],
 ];
 
-const STATS = [
-  { value: '<25ms', label: 'p95 redirect latency' },
-  { value: '99.99%', label: 'target uptime' },
-  { value: '10M+', label: 'links per workspace' },
-];
+const NAV_ITEMS = [['Features', '#features'], ['How it works', '#how-it-works'], ['FAQs', '#faqs']];
 
-const Sparkline = () => (
-  <svg viewBox="0 0 240 64" className="h-16 w-full" preserveAspectRatio="none">
-    <polyline
-      points="0,48 24,42 48,44 72,28 96,32 120,18 144,22 168,10 192,16 216,6 240,12"
-      fill="none"
-      stroke="#C6FF3D"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <polygon
-      points="0,48 24,42 48,44 72,28 96,32 120,18 144,22 168,10 192,16 216,6 240,12 240,64 0,64"
-      fill="url(#sparkline-fade)"
-    />
-    <defs>
-      <linearGradient id="sparkline-fade" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#C6FF3D" stopOpacity="0.25" />
-        <stop offset="100%" stopColor="#C6FF3D" stopOpacity="0" />
-      </linearGradient>
-    </defs>
-  </svg>
-);
-
-const ProductPreview = () => {
+export default function Landing() {
+  const [menuOpen, setMenuOpen] = useState(false);
   const hostedDomain = getHostedDomain();
+
   return (
-    <div className="panel-elevated relative mx-auto w-full max-w-xl overflow-hidden p-1.5">
-      <div className="flex items-center gap-1.5 px-3 py-2.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-danger/70" />
-        <span className="h-2.5 w-2.5 rounded-full bg-warning/70" />
-        <span className="h-2.5 w-2.5 rounded-full bg-success/70" />
-        <span className="ml-3 truncate font-mono text-xs text-paper-500">{hostedDomain}/dashboard</span>
-      </div>
-      <div className="rounded-lg bg-ink-950 p-5">
-        <div className="flex items-center justify-between rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="badge-accent shrink-0">307</span>
-            <span className="truncate font-mono text-sm text-paper-100">{hostedDomain}/x7K9mP</span>
-          </div>
-          <span className="shrink-0 font-mono text-xs text-paper-500">18ms</span>
-        </div>
-
-      <div className="mt-5 grid grid-cols-3 gap-3">
-        <div className="rounded-lg border border-ink-700 bg-ink-900 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-paper-500">Clicks</p>
-          <p className="mt-1 font-mono text-xl font-bold text-paper-100">42.8k</p>
-        </div>
-        <div className="rounded-lg border border-ink-700 bg-ink-900 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-paper-500">Unique</p>
-          <p className="mt-1 font-mono text-xl font-bold text-paper-100">31.2k</p>
-        </div>
-        <div className="rounded-lg border border-ink-700 bg-ink-900 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-paper-500">Countries</p>
-          <p className="mt-1 font-mono text-xl font-bold text-paper-100">64</p>
-        </div>
-      </div>
-
-      <div className="mt-3 rounded-lg border border-ink-700 bg-ink-900 p-3">
-        <Sparkline />
-      </div>
-    </div>
-  </div>
-  );
-};
-
-const Landing = () => {
-  return (
-    <>
+    <div className="marketing-theme landing-page">
       <Helmet>
-        <title>Linkora — Links, engineered</title>
+        <title>Linkora — Small links. Big possibilities.</title>
+        <meta name="description" content="Create memorable short links, custom QR codes, and meaningful connections. Get clear click analytics and bring your team together with Linkora." />
       </Helmet>
+      <a href="#main-content" className="marketing-skip">Skip to content</a>
+      <header className="marketing-header">
+        <div className="marketing-container marketing-header-inner">
+          <Brand />
+          <nav className="marketing-desktop-nav" aria-label="Main navigation">
+            {NAV_ITEMS.map(([label, href]) => <a key={href} href={href}>{label}</a>)}
+          </nav>
+          <div className="marketing-header-actions"><Link to="/login" className="marketing-login-link">Log in</Link><Link to="/register" className="marketing-button marketing-button--small">Get started <ArrowUpRight size={15} /></Link></div>
+          <button className="marketing-menu-toggle" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen} aria-controls="mobile-navigation" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
+        </div>
+        {menuOpen && <nav className="marketing-mobile-nav" id="mobile-navigation" aria-label="Mobile navigation" onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(false); }}>
+          {NAV_ITEMS.map(([label, href]) => <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}<ArrowUpRight size={15} /></a>)}
+          <Link to="/login">Log in<ArrowRight size={15} /></Link>
+        </nav>}
+      </header>
 
-      <div className="min-h-screen bg-ink-950 text-paper-100">
-        <header className="sticky top-0 z-40 border-b border-ink-700/60 bg-ink-950/80 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-2">
-              <img src="/logo.svg" alt="Linkora" width={28} height={28} />
-              <span className="text-base font-bold tracking-tight">Linkora</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link to="/login" className="btn-ghost btn-sm">Sign in</Link>
-              <Link to="/register" className="btn-primary btn-sm">
-                Get started <ArrowRight size={14} />
-              </Link>
-            </div>
-          </div>
-        </header>
-
-        <section className="relative overflow-hidden bg-grid">
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink-950 via-transparent to-ink-950" />
-          <div className="relative mx-auto max-w-6xl px-4 pb-20 pt-16 sm:px-6 lg:px-8 lg:pb-28 lg:pt-24">
-            <div className="grid items-center gap-14 lg:grid-cols-2">
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <span className="badge-accent">Enterprise-grade link infrastructure</span>
-                <h1 className="mt-5 text-balance text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-5xl lg:text-[3.4rem]">
-                  Short links that run like <span className="text-accent-400">production infrastructure.</span>
-                </h1>
-                <p className="mt-5 max-w-lg text-balance text-lg text-paper-300">
-                  Redis-cached redirects, MongoDB-backed analytics, signed webhooks, and workspace RBAC —
-                  built for teams who treat their link layer as a real system, not a form.
-                </p>
-                <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                  <Link to="/register" className="btn-primary">
-                    Start shortening <ArrowRight size={16} />
-                  </Link>
-                  <Link to="/login" className="btn-secondary">
-                    Sign in
-                  </Link>
-                </div>
-                <div className="mt-10 flex flex-wrap gap-x-8 gap-y-4">
-                  {STATS.map((stat) => (
-                    <div key={stat.label}>
-                      <p className="font-mono text-2xl font-bold text-paper-100">{stat.value}</p>
-                      <p className="text-xs text-paper-500">{stat.label}</p>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <ProductPreview />
-              </motion.div>
-            </div>
+      <main id="main-content">
+        <section className="marketing-hero">
+          <div className="hero-ambient" aria-hidden="true" />
+          <div className="marketing-container hero-content">
+            <a className="hero-announcement" href="#features"><span><Sparkles size={12} /> MEET LINKORA</span> A little link goes a long way <ArrowRight size={13} /></a>
+            <h1>Small links.<br /><span>Big possibilities.</span><span className="hero-asterisk" aria-hidden="true">✳</span></h1>
+            <p>Everything you share deserves a better link.<br className="desktop-break" /> Shorten, customize, and track. Make every connection count.</p>
+            <div className="hero-actions"><Link to="/register" className="marketing-button">Start making connections <ArrowUpRight size={18} /></Link><a href="#platform" className="marketing-button marketing-button--secondary">Take a closer look <ArrowDown size={16} /></a></div>
+            <div className="hero-reassurance"><span><Check size={13} /> No credit card needed</span><span><Check size={13} /> Ready in minutes</span></div>
+            <ProductPreview />
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6 lg:px-8">
-          <div className="mb-10 max-w-xl">
-            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              The parts that are usually an afterthought, aren&apos;t.
-            </h2>
-            <p className="mt-3 text-paper-400">
-              Every one of these is a real subsystem in Linkora, not a marketing bullet.
-            </p>
-          </div>
+        <div className="marketing-container audience-strip"><span>FOR EVERYTHING<br />YOU PUT OUT THERE.</span><p><Globe2 size={20} /> Your next big launch</p><p><Users size={20} /> Your growing community</p><p><Sparkles size={20} /> Your everyday ideas</p></div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            {FEATURES.map(({ icon: Icon, title, description, featured }) => (
-              <div
-                key={title}
-                className={`group rounded-xl border p-6 shadow-panel transition-colors ${
-                  featured
-                    ? 'border-accent-400/30 bg-accent-400/[0.06] hover:border-accent-400/50'
-                    : 'border-ink-700 bg-ink-900 hover:border-ink-500'
-                }`}
-              >
-                <div
-                  className={`mb-4 flex h-10 w-10 items-center justify-center rounded-lg ring-1 ${
-                    featured ? 'bg-accent-400/15 ring-accent-400/30' : 'bg-ink-800 ring-ink-600'
-                  }`}
-                >
-                  <Icon size={18} className={featured ? 'text-accent-400' : 'text-paper-300'} />
-                </div>
-                <h3 className="text-base font-semibold text-paper-100">{title}</h3>
-                <p className="mt-1.5 text-sm text-paper-400">{description}</p>
-              </div>
-            ))}
+        <section className="marketing-container marketing-features" id="features">
+          <div className="marketing-section-heading"><div><span className="marketing-eyebrow"><span className="tiny-dot" /> SMALL LINK. FULL PICTURE.</span><h2>More than a shortcut.<br /><span>A way forward.</span></h2></div><p>From the first click to your next big milestone.<br />Everything you need to share with intention.</p></div>
+          <div className="feature-grid">
+            <article className="feature-card feature-card--links">
+              <div className="feature-copy"><span className="feature-icon"><Link2 size={20} /></span><h3>Long story. Short link.</h3><p>Trade the endless URL for something clean, memorable, and unmistakably yours.</p></div>
+              <div className="feature-link-demo" aria-label="A long URL transformed into a custom short link"><div className="long-url"><Globe2 size={15} /><span>yourwebsite.com/collection?ref=summer&amp;campaign=launch</span></div><span className="link-demo-connector"><ArrowDown size={17} /></span><div className="short-url"><span className="short-url-icon"><Link2 size={17} /></span><span>{hostedDomain}/<strong>your-next-idea</strong></span><Check size={16} /></div></div>
+              <span className="feature-footnote">LESS TO TYPE. MORE TO REMEMBER.</span>
+            </article>
+            <article className="feature-card feature-card--analytics">
+              <div className="feature-copy"><span className="feature-icon"><BarChart3 size={20} /></span><h3>Every click has a story.</h3><p>Meet your audience. Understand what connects, where they come from, and what works.</p></div>
+              <div className="feature-analytics-demo"><div><span>Total clicks</span><strong>24,848 <small>↗ 18.6%</small></strong></div><MiniBars /><div className="chart-axis"><span>MON</span><span>WED</span><span>FRI</span><span>SUN</span></div></div>
+              <span className="feature-footnote">ILLUSTRATIVE ANALYTICS</span>
+            </article>
+            <article className="feature-card feature-card--qr">
+              <div className="feature-copy"><span className="feature-icon"><QrCode size={20} /></span><h3>Make the real world clickable.</h3><p>On a package, a poster, or your next big idea. Custom QR codes open up a world of connection.</p></div>
+              <div className="feature-qr-demo"><div className="feature-qr-paper"><DemoQR size={116} /><span>GOOD THINGS THIS WAY <ArrowUpRight size={11} /></span></div><div className="feature-qr-note">A little scan.<br />A new possibility.<svg viewBox="0 0 75 46" aria-hidden="true"><path d="M68 4C70 32 30 47 7 26M7 26l14 2M7 26l5 12" /></svg></div></div>
+            </article>
+            <article className="feature-card feature-card--team">
+              <div className="feature-copy"><span className="feature-icon"><Users size={20} /></span><h3>Good together. Better connected.</h3><p>A shared space for the links, people, and ideas moving your work forward. Everyone in sync.</p></div>
+              <div className="feature-team-demo"><div className="team-demo-heading"><div><span className="team-workspace-icon"><Users size={18} /></span><span>The creative studio<small>One workspace. Shared possibilities.</small></span></div><span className="team-demo-label">TEAM WORKSPACE</span></div><div className="team-people"><div className="team-avatars"><span>JD</span><span>AK</span><span>ML</span><span>+2</span></div><span className="team-invite-icon"><Plus size={17} /></span><span>Room for your whole team</span></div><div className="team-roles"><span><Check size={12} /> Shared links</span><span><Check size={12} /> Custom roles</span><span><Check size={12} /> One clear view</span></div></div>
+            </article>
           </div>
+          <div className="extra-features">{[
+            [ShieldCheck, 'Share with confidence', 'Password protection and link expiration put you in control.'],
+            [Code2, 'Fits right into your workflow', 'An API and webhooks to connect with the tools you already use.'],
+            [Crosshair, 'Find your next best move', 'Campaign tags and A/B testing turn clicks into clearer decisions.'],
+          ].map(([Icon, title, copy]) => <div key={title}><Icon size={19} /><h3>{title}</h3><p>{copy}</p></div>)}</div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6 lg:px-8">
-          <div className="panel-elevated flex flex-col items-center gap-5 px-6 py-14 text-center">
-            <Zap className="text-accent-400" size={28} />
-            <h2 className="text-balance text-2xl font-bold sm:text-3xl">Ready to ship faster links?</h2>
-            <p className="max-w-md text-paper-400">
-              Create an account and generate your first tracked short link in under a minute.
-            </p>
-            <Link to="/register" className="btn-primary">
-              Get started free <ArrowRight size={16} />
-            </Link>
-          </div>
-        </section>
+        <section className="how-section" id="how-it-works"><div className="marketing-container"><div className="marketing-section-heading"><div><span className="marketing-eyebrow"><span className="tiny-dot" /> LESS FRICTION. MORE CONNECTION.</span><h2>From long URL<br /><span>to your next opportunity.</span></h2></div><Link to="/register" className="marketing-text-link">Let’s make your first link <ArrowUpRight size={17} /></Link></div><div className="how-steps">{[
+          ['01', Link2, 'Make it yours.', 'Drop in your destination. Choose a memorable short link and add your own touch.'],
+          ['02', ArrowUpRight, 'Put it out there.', 'Share it in your bio, your next campaign, or the real world with a custom QR code.'],
+          ['03', BarChart3, 'See what connects.', 'Follow the clicks, get to know your audience, and make your next move with clarity.'],
+        ].map(([number, Icon, title, copy]) => <article key={number}><div className="how-step-top"><span>{number}</span><Icon size={23} /></div><h3>{title}</h3><p>{copy}</p></article>)}</div></div></section>
 
-        <footer className="border-t border-ink-700/60 px-4 py-8 sm:px-6 lg:px-8">
-          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 sm:flex-row">
-            <div className="flex items-center gap-2 text-sm text-paper-500">
-              <img src="/logo.svg" alt="" width={18} height={18} />
-              Linkora
-            </div>
-            <p className="text-xs text-paper-500">Built on Redis &amp; MongoDB.</p>
-          </div>
-        </footer>
-      </div>
-    </>
+        <section className="marketing-container faq-section" id="faqs"><div><span className="marketing-eyebrow"><span className="tiny-dot" /> A FEW GOOD QUESTIONS</span><h2>Glad you asked.</h2><p>The little details, before your first little link.</p></div><div className="faq-list">{FAQS.map(([question, answer]) => <details key={question}><summary>{question}<ChevronDown size={18} /></summary><p>{answer}</p></details>)}</div></section>
+
+        <section className="marketing-container final-cta"><div className="cta-decoration" aria-hidden="true"><ArrowUpRight /></div><div><span className="marketing-eyebrow">BIG THINGS START SMALL.</span><h2>Your next connection<br />is a link away.</h2><p>Make it short. Make it yours. See where it takes you.</p><Link to="/register" className="marketing-button">Get started with Linkora <ArrowUpRight size={18} /></Link></div><span className="cta-corner-label">GO ON. PUT IT OUT THERE. ↗</span></section>
+      </main>
+
+      <footer className="marketing-footer marketing-container"><div className="footer-main"><div><Brand /><p>A little link. A world of possibility.</p></div><nav aria-label="Footer navigation"><a href="#features">Features</a><a href="#how-it-works">How it works</a><a href="#faqs">FAQs</a><Link to="/login">Log in <ArrowUpRight size={13} /></Link></nav></div><div className="footer-bottom"><span>© {new Date().getFullYear()} Linkora. Made for connection.</span><a href="#main-content">Back to top <ArrowUpRight size={13} /></a></div></footer>
+    </div>
   );
-};
-
-export default Landing;
+}
