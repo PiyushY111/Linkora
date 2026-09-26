@@ -276,12 +276,14 @@ export const webhookService = {
     return response.data;
   },
 
-  create: async (dataOrUrl, events, description) => {
-    const payload =
-      typeof dataOrUrl === 'object'
-        ? dataOrUrl
-        : { url: dataOrUrl, events, description };
-    const response = await api.post('/webhooks', payload);
+  eventCatalog: async () => {
+    const response = await api.get('/webhooks/events');
+    return response.data;
+  },
+
+  // Resolves to { webhook, secret }; the secret is never returned again.
+  create: async ({ url, events, description }) => {
+    const response = await api.post('/webhooks', { url, events, description });
     return response.data;
   },
 
@@ -300,8 +302,8 @@ export const webhookService = {
     return response.data;
   },
 
-  rotateSecret: async (id) => {
-    const response = await api.post(`/webhooks/${id}/rotate-secret`);
+  rotateSecret: async (id, gracePeriodHours = 24) => {
+    const response = await api.post(`/webhooks/${id}/rotate-secret`, { gracePeriodHours });
     return response.data;
   },
 
@@ -310,8 +312,18 @@ export const webhookService = {
     return response.data;
   },
 
-  retryDelivery: async (id, deliveryId) => {
-    const response = await api.post(`/webhooks/${id}/deliveries/${deliveryId}/retry`);
+  getDelivery: async (id, deliveryId) => {
+    const response = await api.get(`/webhooks/${id}/deliveries/${deliveryId}`);
+    return response.data;
+  },
+
+  replayDelivery: async (id, deliveryId) => {
+    const response = await api.post(`/webhooks/${id}/deliveries/${deliveryId}/replay`);
+    return response.data;
+  },
+
+  replayFailed: async (id, { since, includeCancelled = false } = {}) => {
+    const response = await api.post(`/webhooks/${id}/replay`, { since, includeCancelled });
     return response.data;
   },
 };

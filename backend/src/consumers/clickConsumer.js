@@ -8,7 +8,8 @@ import { logger } from '../config/logger.js';
 import { lookupGeo, scheduleGeoIpUpdates } from '../services/geoipService.js';
 import { getAnalyticsRepository } from '../repositories/analytics/analyticsRepository.js';
 import connectDB from '../config/db.js';
-import { dispatchLinkEvent } from '../services/webhookService.js';
+import { dispatchEvents } from '../services/webhookService.js';
+import { createWebhookWorker } from '../workers/webhookWorker.js';
 
 /**
  * Redis Streams consumer-group worker for click events. Runs as its own
@@ -101,8 +102,8 @@ async function enrichEvent(id, fields) {
 }
 
 /**
- * Enriches a batch, records it through the analytics repository, and only
- * then XACKs. Entries that fail enrichment are
+ * Enriches a batch, records it through the analytics repository, queues
+ * its click webhooks, and only then XACKs. Entries that fail enrichment are
  * left un-acked so XAUTOCLAIM retries them; a failed write throws, leaving
  * the whole batch pending, which is safe because every write is idempotent.
  */
@@ -120,26 +121,37 @@ export async function processBatch(entries, { redis = getRedis() } = {}) {
   }
 
   // Raw event, rollups, unique visitors and Link.clicks, all idempotent.
-  const { applied } = await getAnalyticsRepository().recordClicks(events);
+  await getAnalyticsRepository().recordClicks(events);
+
+  // Queue link.clicked before ACKing, so a crash between the two redelivers
+  // the batch rather than losing the webhooks. Every event in the batch is
+  // offered (not only newly applied ones): the stream entry ID is the
+  // dispatch's idempotency key, so a redelivered batch queues nothing twice.
+  await dispatchEvents(
+    events.map((e) => ({
+      workspaceId: e.workspaceId || undefined,
+      linkId: e.linkId,
+      type: 'link.clicked',
+      sourceKey: `click:${e.eventId}`,
+      data: {
+        linkId: e.linkId,
+        shortCode: e.shortCode,
+        timestamp: e.timestamp.toISOString(),
+        ip: e.ip || '',
+        country: e.country,
+        city: e.city,
+        device: e.device,
+        browser: e.browser,
+        os: e.os,
+        referrerDomain: e.referrerDomain,
+        utm: { source: e.utmSource, medium: e.utmMedium, campaign: e.utmCampaign },
+        isBot: e.isBot,
+      },
+    }))
+  );
+
   if (ackIds.length > 0) {
     await redis.xack(env.CLICK_STREAM_KEY, env.CLICK_STREAM_CONSUMER_GROUP, ...ackIds);
-  }
-
-  // Fire-and-forget: click webhook subscribers, only for newly applied events.
-  for (const e of applied) {
-    const data = {
-      linkId: e.linkId,
-      shortCode: e.shortCode,
-      ip: e.ip || '',
-      country: e.country,
-      device: e.device,
-      browser: e.browser,
-      referrerDomain: e.referrerDomain,
-      timestamp: e.timestamp.toISOString(),
-    };
-    dispatchLinkEvent({ linkId: e.linkId, workspaceId: e.workspaceId }, 'click', data).catch((err) =>
-      logger.error({ err }, 'Failed to dispatch click webhook')
-    );
   }
 
   if (entries.length > 0) {
@@ -293,6 +305,10 @@ if (isMainModule) {
     const { cronTasks } = await prepareClickConsumer();
     const consumer = createClickConsumer();
     consumer.start();
+    // The standalone worker process also drains the webhook delivery queue
+    // the consumer (and the API) fill.
+    const webhookWorker = createWebhookWorker();
+    webhookWorker.start();
 
     let stopping = false;
     const shutdown = async (signal) => {
@@ -300,7 +316,7 @@ if (isMainModule) {
       stopping = true;
       logger.info({ signal }, 'Stopping click consumer');
       cronTasks.forEach((task) => task.stop());
-      await consumer.stop();
+      await Promise.all([consumer.stop(), webhookWorker.stop()]);
       await Promise.allSettled([mongoose.connection.close(), closeRedis()]);
       process.exit(0);
     };

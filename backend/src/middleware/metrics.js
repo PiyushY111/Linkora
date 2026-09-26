@@ -50,6 +50,50 @@ export const mongodbQueryDurationSeconds = new client.Histogram({
   registers: [registry],
 });
 
+export const webhookDeliveriesTotal = new client.Counter({
+  name: 'webhook_deliveries_total',
+  help: 'Webhook delivery attempts by result (succeeded, failed, retry_scheduled, cancelled)',
+  labelNames: ['outcome'],
+  registers: [registry],
+});
+
+export const webhookAttemptDurationSeconds = new client.Histogram({
+  name: 'webhook_attempt_duration_seconds',
+  help: 'Wall time of one webhook HTTP attempt, including DNS re-resolution',
+  labelNames: ['outcome'],
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [registry],
+});
+
+/**
+ * Queue depth and age of the oldest due delivery, computed on scrape by
+ * whoever registers a sampler (the webhook queue module), so this file
+ * doesn't import models.
+ * @type {(() => Promise<{ pending: number, oldestPendingAgeSeconds: number }>) | null}
+ */
+let webhookQueueSampler = null;
+export function setWebhookQueueSampler(sampler) {
+  webhookQueueSampler = sampler;
+}
+
+const webhookPendingGauge = new client.Gauge({
+  name: 'webhook_deliveries_pending',
+  help: 'Deliveries waiting for a worker (due or scheduled)',
+  registers: [registry],
+  async collect() {
+    if (!webhookQueueSampler) return;
+    const sample = await webhookQueueSampler();
+    webhookPendingGauge.set(sample.pending);
+    webhookOldestPendingGauge.set(sample.oldestPendingAgeSeconds);
+  },
+});
+
+const webhookOldestPendingGauge = new client.Gauge({
+  name: 'webhook_oldest_due_delivery_age_seconds',
+  help: 'How long the longest-waiting due delivery has been waiting for a worker',
+  registers: [registry],
+});
+
 function routeLabel(req) {
   return req.route?.path ? `${req.baseUrl}${req.route.path}` : req.path;
 }

@@ -12,6 +12,7 @@ import { logger } from '../config/logger.js';
 import { PUBLIC_API_TOKEN_BUCKET, peekTokenBucket, tokenBucketKey } from '../middleware/rateLimiter.js';
 import { ValidationError, NotFoundError, toClientError } from '../lib/errors.js';
 import { mapWithConcurrency } from '../utils/concurrency.js';
+import { WEBHOOK_EVENT_TYPES } from '../lib/webhookEvents.js';
 
 const MAX_BULK_SIZE = 1000;
 const DEFAULT_HISTORY_DAYS = 7;
@@ -554,6 +555,64 @@ export const getOpenApiSpec = (req, res) => {
           ],
           responses: { 200: { description: 'Usage history' } },
         },
+      },
+      '/webhooks/events': {
+        get: { summary: 'List webhook event types with descriptions and sample payloads (scope webhooks:read)' },
+      },
+      '/webhooks': {
+        get: { summary: 'List webhook endpoints with 24h delivery stats (scope webhooks:read)' },
+        post: {
+          summary: 'Create a webhook endpoint; the signing secret is returned only in this response (scope webhooks:write)',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['url', 'events'],
+                  properties: {
+                    url: { type: 'string', format: 'uri', description: 'HTTPS in production' },
+                    events: { type: 'array', items: { type: 'string', enum: WEBHOOK_EVENT_TYPES } },
+                    description: { type: 'string', maxLength: 200 },
+                  },
+                },
+              },
+            },
+          },
+          responses: { 201: { description: 'Endpoint created' } },
+        },
+      },
+      '/webhooks/{id}': {
+        get: { summary: 'Get an endpoint with 24h/7d stats and recent deliveries (scope webhooks:read)' },
+        patch: { summary: 'Update url, events, description, or pause/resume with isActive (scope webhooks:write)' },
+        delete: { summary: 'Delete an endpoint and its delivery history (scope webhooks:write)' },
+      },
+      '/webhooks/{id}/test': {
+        post: { summary: 'Send one signed sample event and return the recorded exchange (scope webhooks:write)' },
+      },
+      '/webhooks/{id}/rotate-secret': {
+        post: { summary: 'Rotate the signing secret; both secrets sign during gracePeriodHours (0-72, default 24) (scope webhooks:write)' },
+      },
+      '/webhooks/{id}/deliveries': {
+        get: {
+          summary: 'List deliveries (scope webhooks:read)',
+          parameters: [
+            { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'in_flight', 'succeeded', 'failed', 'cancelled'] } },
+            { name: 'event', in: 'query', schema: { type: 'string', enum: WEBHOOK_EVENT_TYPES } },
+            { name: 'kind', in: 'query', schema: { type: 'string', enum: ['live', 'test', 'replay'] } },
+            { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', default: 20, maximum: 100 } },
+          ],
+        },
+      },
+      '/webhooks/{id}/deliveries/{deliveryId}': {
+        get: { summary: 'Get a delivery with its payload and every recorded attempt (scope webhooks:read)' },
+      },
+      '/webhooks/{id}/deliveries/{deliveryId}/replay': {
+        post: { summary: 'Re-send a delivery’s event (same event id) and attempt it now (scope webhooks:write)' },
+      },
+      '/webhooks/{id}/replay': {
+        post: { summary: 'Queue replays of failed (optionally cancelled) deliveries between since and until (scope webhooks:write)' },
       },
     },
   };

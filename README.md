@@ -113,7 +113,9 @@ npm install
 npm run dev           # Vite dev server on http://localhost:3000
 ```
 
-With `WORKER_MODE=embedded`, step 3 isn't needed: the API process runs the consumer itself.
+With `WORKER_MODE=embedded`, step 3 isn't needed: the API process runs the consumer itself. Either way a webhook worker runs alongside the consumer; `npm run webhook-worker` starts more.
+
+Upgrading an existing database: run `node scripts/migrate-webhooks-v2.js` once (from `backend/`) to encrypt stored webhook secrets and convert old delivery logs.
 
 ### Access Points
 - **Frontend**: `http://localhost:3000`
@@ -142,8 +144,12 @@ With `WORKER_MODE=embedded`, step 3 isn't needed: the API process runs the consu
 - **Security**:
   - Refresh-token rotation; presenting an already-rotated token revokes the whole token family.
   - SSRF checks on every redirect destination, on create and update, from both the dashboard and public APIs: http(s) only, and the resolved address must not be loopback, RFC 1918, link-local (including `169.254.169.254`) or IPv6 private.
-  - Webhook deliveries re-resolve DNS before each attempt and connect to the validated IP (DNS pinning), with redirects disabled.
-  - Webhooks signed with HMAC-SHA256 over `timestamp.payload`, sent as `Linkora-Signature: t=...,v1=...`.
+  - Webhook deliveries re-resolve DNS before each attempt and connect to the validated IP (DNS pinning), with redirects disabled and response reads capped at 64 KB.
+  - Webhooks signed with HMAC-SHA256 over `timestamp.payload`, sent as `Linkora-Signature: t=...,v1=...` (one `v1` per secret during a rotation grace period); signing secrets are AES-256-GCM encrypted at rest.
+- **Webhooks** ([details](docs/ARCHITECTURE.md#84-webhook-delivery)):
+  - Queued in MongoDB and sent by workers with leased claims, so restarts and crashed workers lose nothing; producers are idempotent, and the event id is stable across retries and replays.
+  - Up to 10 attempts over about 23 hours with jittered backoff and `Retry-After`; a per-endpoint circuit breaker holds deliveries while an endpoint is down; endpoints are disabled after 72 hours of failure or a `410 Gone`.
+  - Dashboard and public API (`webhooks:read`, `webhooks:write`): event catalog, test pings, per-attempt delivery logs, single and bulk replay, pause/resume, secret rotation with a grace period.
 
 ---
 

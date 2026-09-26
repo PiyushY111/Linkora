@@ -1,100 +1,81 @@
 import { useState } from 'react';
-import { ShieldCheck, Copy, Check, Terminal, ExternalLink } from 'lucide-react';
+import { ShieldCheck, Copy, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 
+// Each snippet accepts the header if ANY v1 matches: during a secret
+// rotation grace period Linkora sends one v1 per active secret.
 const CODE_SNIPPETS = {
   nodejs: `const crypto = require('crypto');
 
-// Express middleware handler example
+// Verify against the raw bytes: re-serialising parsed JSON changes them.
 app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
-  const signatureHeader = req.headers['linkora-signature'] || req.headers['linkly-signature'];
-  const webhookSecret = process.env.LINKORA_WEBHOOK_SECRET;
+  const header = req.get('Linkora-Signature');
+  if (!header) return res.status(400).send('Missing Linkora-Signature');
 
-  if (!signatureHeader) {
-    return res.status(400).send('Missing Linkora-Signature header');
+  const parts = header.split(',').map((p) => p.split('='));
+  const timestamp = Number(parts.find(([k]) => k === 't')?.[1]);
+  const signatures = parts.filter(([k]) => k === 'v1').map(([, v]) => v);
+
+  // Reject stale timestamps to stop replays (5 minute tolerance).
+  if (!Number.isFinite(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300) {
+    return res.status(400).send('Stale signature');
   }
 
-  // 1. Extract timestamp and signature
-  const parts = signatureHeader.split(',').reduce((acc, item) => {
-    const [k, v] = item.split('=');
-    acc[k] = v;
-    return acc;
-  }, {});
+  const expected = crypto
+    .createHmac('sha256', process.env.LINKORA_WEBHOOK_SECRET)
+    .update(\`\${timestamp}.\${req.body.toString('utf8')}\`)
+    .digest();
+  const valid = signatures.some((sig) => {
+    const given = Buffer.from(sig, 'hex');
+    return given.length === expected.length && crypto.timingSafeEqual(given, expected);
+  });
+  if (!valid) return res.status(400).send('Invalid signature');
 
-  const { t: timestamp, v1: signature } = parts;
-
-  // 2. Prevent replay attacks (allow +/- 5 minutes drift)
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - parseInt(timestamp, 10)) > 300) {
-    return res.status(400).send('Signature timestamp expired');
-  }
-
-  // 3. Compute expected HMAC SHA-256
-  const signedPayload = \`\${timestamp}.\${req.body.toString('utf8')}\`;
-  const expectedSignature = crypto
-    .createHmac('sha256', webhookSecret)
-    .update(signedPayload)
-    .digest('hex');
-
-  // 4. Constant-time equality check to prevent timing attacks
-  const isValid = crypto.timingSafeEqual(
-    Buffer.from(signature, 'hex'),
-    Buffer.from(expectedSignature, 'hex')
-  );
-
-  if (!isValid) {
-    return res.status(400).send('Invalid signature');
-  }
-
-  // 5. Process verified event
   const event = JSON.parse(req.body.toString('utf8'));
-  console.log('Verified Webhook Event:', event.type, event.data);
+  // Retries and replays reuse event.id (also Linkora-Event-Id): skip ones
+  // you have already processed.
+  if (alreadyProcessed(event.id)) return res.sendStatus(200);
 
-  res.status(200).json({ received: true });
+  handle(event.type, event.data);
+  res.sendStatus(200);
 });`,
 
-  python: `import hmac
-import hashlib
-import time
+  python: `import hashlib
+import hmac
 import json
-from flask import Flask, request, jsonify, abort
+import os
+import time
+from flask import Flask, abort, request
 
 app = Flask(__name__)
-WEBHOOK_SECRET = "whsec_your_secret_here"
+SECRET = os.environ["LINKORA_WEBHOOK_SECRET"].encode()
 
-@app.route("/webhook", methods=["POST"])
-def handle_webhook():
-    signature_header = request.headers.get("Linkora-Signature") or request.headers.get("Linkly-Signature")
-    if not signature_header:
-        abort(400, "Missing Linkora-Signature header")
+@app.post("/webhook")
+def webhook():
+    header = request.headers.get("Linkora-Signature")
+    if not header:
+        abort(400, "Missing Linkora-Signature")
 
-    # 1. Parse t=... and v1=...
-    elements = dict(item.split("=") for item in signature_header.split(","))
-    timestamp = elements.get("t")
-    signature = elements.get("v1")
+    parts = [p.split("=", 1) for p in header.split(",")]
+    timestamp = next((v for k, v in parts if k == "t"), None)
+    signatures = [v for k, v in parts if k == "v1"]
 
-    # 2. Prevent replay attacks (5 minutes tolerance)
-    if abs(time.time() - int(timestamp)) > 300:
-        abort(400, "Signature timestamp expired")
+    # Reject stale timestamps to stop replays (5 minute tolerance).
+    if not timestamp or not timestamp.isdigit() or abs(time.time() - int(timestamp)) > 300:
+        abort(400, "Stale signature")
 
-    # 3. Compute expected HMAC
-    raw_body = request.get_data()
-    signed_payload = f"{timestamp}.".encode("utf-8") + raw_body
-    expected_sig = hmac.new(
-        WEBHOOK_SECRET.encode("utf-8"),
-        signed_payload,
-        hashlib.sha256
-    ).hexdigest()
-
-    # 4. Constant-time comparison
-    if not hmac.compare_digest(signature, expected_sig):
+    raw = request.get_data()
+    expected = hmac.new(SECRET, timestamp.encode() + b"." + raw, hashlib.sha256).hexdigest()
+    if not any(hmac.compare_digest(sig, expected) for sig in signatures):
         abort(400, "Invalid signature")
 
-    # 5. Process event
-    payload = json.loads(raw_body)
-    print("Verified Event:", payload.get("type"))
-    return jsonify({"received": True}), 200`,
+    event = json.loads(raw)
+    # Retries and replays reuse event["id"]: skip ones already processed.
+    if already_processed(event["id"]):
+        return "", 200
+    handle(event["type"], event["data"])
+    return "", 200`,
 
   go: `package main
 
@@ -102,64 +83,77 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
-var webhookSecret = "whsec_your_secret_here"
+var secret = []byte(os.Getenv("LINKORA_WEBHOOK_SECRET"))
 
 func webhookHandler(w http.ResponseWriter, r *http.Request) {
-	sigHeader := r.Header.Get("Linkora-Signature")
-	if sigHeader == "" {
-		sigHeader = r.Header.Get("Linkly-Signature")
-	}
-	if sigHeader == "" {
-		http.Error(w, "Missing Linkora-Signature header", http.StatusBadRequest)
-		return
-	}
-
-	// 1. Extract t and v1
-	parts := strings.Split(sigHeader, ",")
-	var timestamp, signature string
-	for _, part := range parts {
+	header := r.Header.Get("Linkora-Signature")
+	var timestamp string
+	var signatures []string
+	for _, part := range strings.Split(header, ",") {
 		kv := strings.SplitN(part, "=", 2)
-		if len(kv) == 2 {
-			if kv[0] == "t" { timestamp = kv[1] }
-			if kv[0] == "v1" { signature = kv[1] }
+		if len(kv) != 2 {
+			continue
+		}
+		switch kv[0] {
+		case "t":
+			timestamp = kv[1]
+		case "v1":
+			signatures = append(signatures, kv[1])
 		}
 	}
 
-	// 2. Prevent replay attack (300s tolerance)
-	tsInt, err := strconv.ParseInt(timestamp, 10, 64)
-	if err != nil || math.Abs(float64(time.Now().Unix()-tsInt)) > 300 {
-		http.Error(w, "Signature timestamp expired", http.StatusBadRequest)
+	// Reject stale timestamps to stop replays (5 minute tolerance).
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil || math.Abs(float64(time.Now().Unix()-ts)) > 300 {
+		http.Error(w, "stale signature", http.StatusBadRequest)
 		return
 	}
 
-	// 3. Read raw body and construct signed payload
-	rawBody, _ := io.ReadAll(r.Body)
-	signedPayload := fmt.Sprintf("%s.%s", timestamp, string(rawBody))
+	raw, _ := io.ReadAll(r.Body)
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(timestamp + "." + string(raw)))
+	expected := mac.Sum(nil)
 
-	// 4. Compute expected HMAC SHA-256
-	mac := hmac.New(sha256.New, []byte(webhookSecret))
-	mac.Write([]byte(signedPayload))
-	expectedSig := hex.EncodeToString(mac.Sum(nil))
-
-	// 5. Constant-time check
-	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {
-		http.Error(w, "Invalid signature", http.StatusBadRequest)
+	valid := false
+	for _, sig := range signatures {
+		given, err := hex.DecodeString(sig)
+		if err == nil && hmac.Equal(given, expected) {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
 	}
 
+	// Retries and replays reuse the Linkora-Event-Id: skip ones already processed.
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(\`{"received":true}\`))
 }`,
 };
+
+const HEADERS = [
+  ['Linkora-Signature', 't=<unix seconds>,v1=<hex HMAC>[,v1=<hex HMAC>]'],
+  ['Linkora-Event-Id', 'Stable across every retry and replay of the event; use it to de-duplicate'],
+  ['Linkora-Event', 'The event type, e.g. link.clicked'],
+  ['Linkora-Delivery', 'This delivery (one event to one endpoint)'],
+  ['Linkora-Attempt', '1 for the first attempt, then 2, 3, …'],
+];
+
+const TABS = [
+  { id: 'nodejs', label: 'Node.js (Express)' },
+  { id: 'python', label: 'Python (Flask)' },
+  { id: 'go', label: 'Go' },
+];
 
 const WebhookVerificationGuideModal = ({ open, onClose }) => {
   const [lang, setLang] = useState('nodejs');
@@ -173,63 +167,57 @@ const WebhookVerificationGuideModal = ({ open, onClose }) => {
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Verify Webhook Signatures"
-      maxWidth="max-w-3xl"
-    >
+    <Modal open={open} onClose={onClose} title="Verify Webhook Signatures" maxWidth="max-w-3xl">
       <div className="space-y-4">
-        <p className="text-xs text-paper-400">
-          Linkora signs every outgoing webhook delivery with HMAC-SHA256 and provides timestamp replay defense matching Stripe &amp; Svix standards.
-        </p>
-
-        {/* Specification Box */}
         <div className="rounded-xl border border-ink-700 bg-ink-950 p-3.5 space-y-2 text-xs">
           <div className="flex items-center gap-2 text-accent-400 font-semibold">
             <ShieldCheck size={16} />
-            <span>Signature Specification</span>
-          </div>
-          <div className="font-mono text-paper-200 bg-ink-900 rounded-md p-2 text-[11px] border border-ink-700">
-            Linkora-Signature: t=1727018400,v1=3c5d8a9...
+            <span>How deliveries are signed</span>
           </div>
           <ul className="list-disc list-inside space-y-1 text-paper-300 text-[11px]">
             <li>
-              <code className="text-paper-100">t</code> is the UNIX timestamp (seconds) when the delivery attempt was prepared.
+              Each <code className="text-paper-100">v1</code> is HMAC-SHA256 of <code className="text-paper-100">{'${t}.${rawBody}'}</code>{' '}
+              keyed with the endpoint secret. Accept the request if <em>any</em> v1 matches: while a rotated secret is in its
+              grace period, one v1 is sent per active secret.
             </li>
             <li>
-              <code className="text-paper-100">v1</code> is the HMAC-SHA256 hex digest of <code className="text-paper-100">{'${t}.${rawBody}'}</code> signed with your endpoint secret.
+              Reject requests where <code className="text-paper-100">|now − t| &gt; 300</code> seconds.
             </li>
             <li>
-              Reject deliveries where <code className="text-paper-100">Math.abs(now - t) &gt; 300</code> to prevent replay attacks.
+              Respond with any 2xx within 10 seconds. Other responses and timeouts are retried with backoff for about 23
+              hours; redirects are never followed, and <code className="text-paper-100">410 Gone</code> disables the endpoint.
             </li>
           </ul>
+          <table className="w-full text-[11px]">
+            <tbody>
+              {HEADERS.map(([name, meaning]) => (
+                <tr key={name} className="border-t border-ink-800">
+                  <td className="py-1 pr-3 font-mono text-paper-100 whitespace-nowrap align-top">{name}</td>
+                  <td className="py-1 text-paper-400">{meaning}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        {/* Code Tabs */}
         <div>
           <div className="flex items-center justify-between border-b border-ink-700 pb-2">
-            <div className="flex gap-1.5">
-              {[
-                { id: 'nodejs', label: 'Node.js (Express)' },
-                { id: 'python', label: 'Python (FastAPI / Flask)' },
-                { id: 'go', label: 'Go' },
-              ].map((tab) => (
+            <div className="flex gap-1.5" role="tablist">
+              {TABS.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
+                  role="tab"
+                  aria-selected={lang === tab.id}
                   onClick={() => setLang(tab.id)}
                   className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                    lang === tab.id
-                      ? 'bg-ink-800 text-accent-400 border border-ink-600'
-                      : 'text-paper-400 hover:text-paper-200'
+                    lang === tab.id ? 'bg-ink-800 text-accent-400 border border-ink-600' : 'text-paper-400 hover:text-paper-200'
                   }`}
                 >
                   {tab.label}
                 </button>
               ))}
             </div>
-
             <button
               type="button"
               onClick={handleCopy}
@@ -239,13 +227,11 @@ const WebhookVerificationGuideModal = ({ open, onClose }) => {
               <span>Copy snippet</span>
             </button>
           </div>
-
-          <pre className="mt-3 max-h-80 overflow-auto rounded-xl border border-ink-700 bg-ink-950 p-3.5 font-mono text-[11px] leading-relaxed text-paper-200 selection:bg-accent-400 selection:text-ink-950">
+          <pre className="mt-3 max-h-80 overflow-auto rounded-xl border border-ink-700 bg-ink-950 p-3.5 font-mono text-[11px] leading-relaxed text-paper-200">
             {CODE_SNIPPETS[lang]}
           </pre>
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end pt-2">
           <button type="button" onClick={onClose} className="btn-secondary">
             Done

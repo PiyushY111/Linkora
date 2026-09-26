@@ -19,7 +19,7 @@ How Linkora serves redirects, ingests clicks, builds analytics and secures sessi
   - [8.1 Refresh-Token Rotation and Family Revocation](#81-refresh-token-rotation-and-family-revocation)
   - [8.2 Cross-Site Refresh Cookie (CHIPS)](#82-cross-site-refresh-cookie-chips)
   - [8.3 SSRF Defense and DNS Pinning](#83-ssrf-defense-and-dns-pinning)
-  - [8.4 Webhook Signing, Retries and Circuit Breakers](#84-webhook-signing-retries-and-circuit-breakers)
+  - [8.4 Webhook Delivery](#84-webhook-delivery)
   - [8.5 Rate Limiting](#85-rate-limiting)
 - [9. Deployment Topologies](#9-deployment-topologies)
 
@@ -79,10 +79,18 @@ How Linkora serves redirects, ingests clicks, builds analytics and secures sessi
                                                   |
                                                   v
                                      +-------------------------------------+
-                                     | WEBHOOK DELIVERY (webhookService.js)|
+                                     | WEBHOOK QUEUE (MongoDB)             |
+                                     |   webhook_events + webhook_deliveries
+                                     |   written by every producer, keyed  |
+                                     |   by sourceKey (idempotent)         |
+                                     +-------------------------------------+
+                                                  |
+                                                  v
+                                     +-------------------------------------+
+                                     | WEBHOOK WORKER (webhookWorker.js)   |
+                                     |   leased claims, circuit breaker    |
                                      |   SSRF re-check + DNS-pinned connect|
-                                     |   HMAC-SHA256 signature             |
-                                     |   retries, then DLQ stream          |
+                                     |   HMAC-SHA256, backoff for ~23h     |
                                      +-------------------------------------+
 ```
 
@@ -279,6 +287,9 @@ One document per link per bucket (`src/models/LinkStats.js`): `linkId`, `userId`
 #### `processed_events`
 Ledger of claimed stream entries (`src/models/ProcessedEvent.js`): `_id` (stream entry ID), `state` (`pending` or `done`), `createdAt`, expiring after 3 days.
 
+#### `webhooks` / `webhookevents` / `webhookdeliveries`
+The webhook queue (8.4). `webhooks` (`src/models/Webhook.js`): endpoint `url`, `events`, encrypted `secret`/`previousSecret` (`select: false`), `isActive` + `disabledReason`, the `circuit` breaker state and `failingSince`; index `{ workspace: 1, isActive: 1, events: 1 }`. `webhookevents` (`src/models/WebhookEvent.js`): `_id` `evt_…`, `type`, `data`, unique sparse `sourceKey`. `webhookdeliveries` (`src/models/WebhookDelivery.js`): one per event and endpoint with `kind` (`live`, `test`, `replay`), `status` (`pending`, `in_flight`, `succeeded`, `failed`, `cancelled`), `attemptCount`/`maxAttempts`, `nextAttemptAt`, the `lockedUntil`/`lockedBy` lease and the last 10 `attempts`; unique `{ event: 1, webhook: 1 }` for live deliveries, plus claim and listing indexes. Events and deliveries expire after 30 days. `scripts/migrate-webhooks-v2.js` converts data written before the queue existed.
+
 ### 7.2 Redis Keys
 
 Every key prefix, its data type, TTL and purpose is listed in [`docs/redis-keys.md`](redis-keys.md). In short: one Redis database holds the link cache, click-cap counters, rate-limiter state, refresh-token families, single-use tokens, XFetch locks, unique-visitor HyperLogLogs and two capped streams. Every key has a TTL except the streams, which are capped with `MAXLEN ~`; `test/hygiene/redisKeyTtl.test.js` checks this after every test run.
@@ -328,7 +339,7 @@ Because production uses `SameSite=None`, the Origin/Referer check in 8.1 is the 
 
 ### 8.3 SSRF Defense and DNS Pinning
 
-Two separate checks exist, one for link destinations and one for webhook targets.
+Link destinations and webhook targets are checked against one table of blocked address ranges, `src/lib/netPolicy.js`, so a range added there is blocked on both paths.
 
 **Link destinations** (`validateUrlSafety` in `src/middleware/ssrfValidator.js`, called through `src/services/linkUrlValidation.js`) run on create and update, from both the dashboard and the public API, for every redirect-capable field (`originalUrl`, `iosRedirect`, `androidRedirect`, `expiredRedirectUrl`, `variants[].url`):
 
@@ -342,10 +353,13 @@ Two separate checks exist, one for link destinations and one for webhook targets
   2. Resolve all addresses (dns.lookup, all: true)
         |
         v
-  3. Reject if any address is in:
-       127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
-       169.254.0.0/16 (includes 169.254.169.254), 0.0.0.0/8,
-       ::1, fc00::/7, fe80::/10, or an IPv4-mapped form of the above
+  3. Reject if any address is in (lib/netPolicy.js):
+       0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8,
+       169.254.0.0/16 (includes 169.254.169.254), 172.16.0.0/12,
+       192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15, 224.0.0.0/4,
+       240.0.0.0/4, ::, ::1, fc00::/7, fe80::/10, ff00::/8, and
+       IPv4-mapped, NAT64 (64:ff9b::/96) or 6to4 (2002::/16)
+       forms of a blocked IPv4 address
         |
         v
   4. Optional threat intel (Google Safe Browsing, VirusTotal), fails open
@@ -353,26 +367,67 @@ Two separate checks exist, one for link destinations and one for webhook targets
 
 The redirect itself is a client-side `307`, so the server never fetches the destination; this check hardens what can be stored.
 
-**Webhook targets** (`src/services/webhookService.js`) are checked at registration and again immediately before every delivery attempt:
+**Webhook targets** are checked at registration (`isSafeEndpointUrl` in `src/services/webhookService.js`) and again immediately before every delivery attempt (`src/services/webhookDelivery.js`):
 
-- Cloud metadata hosts (`169.254.169.254`, `metadata.google.internal`) are always blocked. Loopback, RFC 1918 and link-local addresses are blocked only when `NODE_ENV=production`, so a local webhook can target this app during development.
-- **DNS pinning**: the delivery re-resolves the hostname, picks an address that passes the policy, and sends the request through an undici `Agent` whose `lookup` always returns that address. A DNS answer that changes between the check and the connect (DNS rebinding) can't redirect the connection.
-- **No redirects**: requests use `redirect: 'manual'`, and a 3xx response is recorded as a failure, so an endpoint can't bounce the request to an internal address.
+- At registration the URL must be http(s) (https only when `NODE_ENV=production`), must not embed credentials, and must resolve to at least one allowed address.
+- Cloud metadata hosts (`169.254.169.254`, `metadata.google.internal`, `*.internal`, `fd00:ec2::254`) and all of `169.254.0.0/16` are always blocked. The other private ranges are blocked only when `NODE_ENV=production`, so a local webhook can target this app during development.
+- **DNS pinning**: each attempt re-resolves the hostname, picks an address that passes the policy, and sends the request through an undici `Agent` whose `lookup` always returns that address (in both the single-address and the happy-eyeballs `all: true` form). A DNS answer that changes between the check and the connect (DNS rebinding) can't redirect the connection.
+- **No redirects**: requests use `redirect: 'manual'`, and a 3xx response fails the delivery without a retry, so an endpoint can't bounce the request to an internal address.
+- **Bounded reads**: at most 64 KB of a response is read before the stream is cancelled; 2 KB is kept as a preview.
 
-### 8.4 Webhook Signing, Retries and Circuit Breakers
+### 8.4 Webhook Delivery
 
-Each delivery is signed with the webhook's secret:
+Webhooks are delivered from a queue stored in MongoDB, never from process memory, so a restart or a crashed worker loses nothing.
 
 ```
-signature = HMAC-SHA256(secret, `${t}.${payload}`)       (hex)
-Linkora-Signature: t=1727161200,v1=<signature>
+[ producer: link CRUD, click consumer, click cap, expiry sweep, threat rescan ]
+        |  dispatchEvents(): one webhook_events doc per occurrence (unique sourceKey),
+        |  one webhook_deliveries doc per subscribed endpoint (unique event+endpoint)
+        v
+[ webhook_deliveries: status pending, nextAttemptAt ]
+        |  worker: findOneAndUpdate -> in_flight, lockedUntil = now + 60 s
+        v
+[ attempt ] -- 2xx --------------------------------> succeeded
+        |---- 5xx / 429 / timeout / network ------> pending, nextAttemptAt += backoff
+        |---- 3xx / blocked address / 410 --------> failed (410 also disables the endpoint)
+        '---- attempt 10 fails -------------------> failed
 ```
 
-Receivers should recompute the HMAC and reject a timestamp more than 300 seconds from their clock; the verification guide in the dashboard does this. `X-Linkora-Signature` carries an older, untimestamped form (`HMAC-SHA256(secret, payload)`). For backward compatibility the same values are also sent as `Linkly-Delivery`, `Linkly-Event`, `Linkly-Signature` and `X-Linkly-Signature`.
+**Producers are idempotent.** Every producer passes a `sourceKey` (`click:<stream id>`, `link.expired:<link id>`, `link.updated:<link id>:<updatedAt>`, ...). Running a producer twice for the same occurrence (a redelivered stream batch, the expiry sweep on two instances) finds the existing event and adds no delivery twice. The click consumer queues its webhooks before `XACK`, so a crash between the two redelivers the batch rather than dropping webhooks. The expiry sweep also claims each link (`expiryNotified`) before dispatching.
 
-**Retries**: a failed delivery is retried up to 4 times, after 10 s, 1 min, 5 min and 30 min (each plus up to 2 s of jitter), for 5 attempts in total. Retries are scheduled with in-process timers, so a process restart drops any pending retry. After the last attempt the delivery is marked `failed` and appended to the `stream:webhooks:dlq` stream (`MAXLEN ~ 1000`). Every attempt is recorded in the `WebhookDelivery` model with status, latency and a response preview of up to 2 KB, and an endpoint is disabled after 10 consecutive failures.
+**Workers** (`src/workers/webhookWorker.js`) claim due rows with an atomic `findOneAndUpdate` that sets a 60-second lease. A row whose lease expired (its worker died) is claimed again. Each worker runs up to `WEBHOOK_WORKER_CONCURRENCY` attempts at once and polls every `WEBHOOK_WORKER_POLL_MS` when idle. With `WORKER_MODE=embedded` the API process runs one; with `separate`, `npm run consumer` runs one alongside the click consumer, and `npm run webhook-worker` runs a standalone one. Any number can run at once.
 
-**Circuit breakers**: Opossum breakers (3 s timeout, trip at 50% errors, 30 s reset) wrap the third-party calls on the link-creation path: Google Safe Browsing and VirusTotal (which fail open when the breaker is open) and the Cloudinary QR upload (which falls back to an inline Base64 image). Webhook delivery doesn't use a breaker; it relies on the retry schedule and the auto-disable above.
+**Every attempt re-reads the endpoint**, so a delivery queued before the endpoint was deleted, paused or given a new secret is cancelled or signed with the current secret.
+
+**Retries**: up to 10 attempts. The waits between them are 5 s, 30 s, 2 min, 10 min, 30 min, 1 h, 3 h, 6 h and 12 h, each ±20% jitter (about 23 hours end to end). A `Retry-After` on a 429 or 503 is honoured up to one hour. Test pings are attempted once.
+
+**Circuit breaker**: after 5 consecutive failures an endpoint's circuit opens for 1 minute, doubling with each trip up to 30 minutes. While it's open, due deliveries are held (rescheduled to the end of the cooldown) without being attempted or using up their attempts. When the cooldown ends, one delivery goes through as a probe (`half_open`). Its success closes the circuit; its failure re-opens it for longer. If a probe's worker dies, another delivery takes over as the probe once the lease has expired.
+
+**Auto-disable**: an endpoint that has failed without a single success for `WEBHOOK_AUTO_DISABLE_AFTER_HOURS` (default 72), or that answers `410 Gone`, is disabled (`disabledReason: failing | gone`) and its queued deliveries are cancelled. Pausing an endpoint (`manual`) also cancels its queue. Resuming resets the breaker.
+
+**Signing**: every attempt is signed afresh (the timestamp must be current) over the same body:
+
+```
+v1 = HMAC-SHA256(secret, `${t}.${rawBody}`)                (hex)
+Linkora-Signature: t=1727161200,v1=<hex>[,v1=<hex>]
+Linkora-Event-Id:  evt_…   (same on every attempt and replay; de-duplicate on it)
+Linkora-Event:     link.clicked
+Linkora-Delivery:  <delivery id>
+Linkora-Attempt:   1, 2, …
+Linkora-Timestamp: <t>
+```
+
+The body is `{ id, type, createdAt, workspaceId, data }`. Receivers should accept the header if any `v1` matches and reject a `t` more than 300 seconds from their clock; `verifySignature` in `src/lib/webhookSignature.js` is the reference implementation. The pre-queue `Linkly-*` headers and the untimestamped `X-Linkora-Signature` are no longer sent.
+
+**Secrets** are `whsec_` plus 48 hex characters, returned only when an endpoint is created or rotated, and stored AES-256-GCM encrypted under `WEBHOOK_SECRET_KEY` (`src/lib/webhookSecrets.js`; required in production, derived from `JWT_SECRET` elsewhere). A rotation can keep the old secret valid for 0–72 hours (default 24), during which each delivery carries one `v1` per secret.
+
+**Replay**: a single delivery can be re-sent now as a new `replay` delivery of the same event, and every failed (optionally cancelled) delivery in a window of up to 30 days can be queued for replay, at most 1,000 per request. Test pings and replays are rate-limited per workspace (20 and 30 per minute). Events and deliveries expire after 30 days.
+
+**Event catalog**: `src/lib/webhookEvents.js` defines every type (`link.clicked`, `link.created`, `link.updated`, `link.deleted`, `link.limit_reached`, `link.expired`, `security.abuse_flagged`, `endpoint.test`), their legacy aliases (`click`, `abuse.flagged`, still matched for old subscriptions) and the sample payloads test pings send, which have the same shape as real payloads.
+
+**Metrics** (`/metrics`): `webhook_deliveries_total{outcome}`, `webhook_attempt_duration_seconds{outcome}`, `webhook_deliveries_pending`, `webhook_oldest_due_delivery_age_seconds`.
+
+**Circuit breakers on third-party calls**: Opossum breakers (3 s timeout, trip at 50% errors, 30 s reset) wrap the third-party calls on the link-creation path: Google Safe Browsing and VirusTotal (which fail open when the breaker is open) and the Cloudinary QR upload (which falls back to an inline Base64 image).
 
 ### 8.5 Rate Limiting
 
@@ -420,5 +475,6 @@ The backend runs in one of two modes, chosen by `WORKER_MODE`:
 What is safe with more than one process:
 
 - **Consumers**: yes. The consumer group shares entries between them, and a crashed consumer's pending entries are reclaimed with `XAUTOCLAIM` once they have been idle 30 s, on the next 5-minute claim pass.
-- **API instances**: yes for correctness. The Redis limiters, refresh families, click caps and link cache are shared, and each instance reserves its own short-code blocks. Two things stay per instance: the in-memory `express-rate-limit` counters and pending webhook retry timers.
-- **Cron jobs** (abuse rescan, expiry webhooks, GeoIP database updates) run in every process that schedules them; there's no leader election.
+- **API instances**: yes for correctness. The Redis limiters, refresh families, click caps and link cache are shared, and each instance reserves its own short-code blocks. The in-memory `express-rate-limit` counters stay per instance.
+- **Webhook workers**: yes. Claims are leased atomically in MongoDB, so any number of workers share the queue and pick up a dead worker's rows once its lease expires. `WEBHOOK_WORKER_CONCURRENCY` bounds each worker, not the fleet.
+- **Cron jobs** (abuse rescan, expiry webhooks, GeoIP database updates) run in every process that schedules them; there's no leader election. The expiry sweep claims each link before announcing it, and every producer's `sourceKey` makes a duplicate run queue nothing twice.

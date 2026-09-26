@@ -9,6 +9,7 @@
     "dev": "nodemon src/server.js",
     "consumer": "node src/consumers/clickConsumer.js",
     "consumer:dev": "nodemon src/consumers/clickConsumer.js",
+    "webhook-worker": "node src/workers/webhookWorker.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",

@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  listEventCatalog,
   createWebhook,
   listWebhooks,
   getWebhook,
@@ -8,10 +9,14 @@ import {
   testWebhook,
   rotateSecret,
   listDeliveries,
-  retryDelivery,
+  getDelivery,
+  replayDelivery,
+  bulkReplay,
 } from '../controllers/webhookController.js';
 import { protect } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/rbac.js';
+import { webhookTestRateLimiter, webhookReplayRateLimiter } from '../middleware/rateLimiter.js';
+import { env } from '../config/env.js';
 
 const router = express.Router();
 
@@ -20,30 +25,37 @@ const router = express.Router();
 // payloads carry visitor IPs).
 const adminOnly = [protect, requirePermission('webhooks:manage')];
 
+router.get('/events', adminOnly, listEventCatalog);
+
 router.post('/', adminOnly, createWebhook);
 router.get('/', adminOnly, listWebhooks);
 router.get('/:id', adminOnly, getWebhook);
 router.put('/:id', adminOnly, updateWebhook);
 router.delete('/:id', adminOnly, deleteWebhook);
 
-router.post('/:id/test', adminOnly, testWebhook);
+router.post('/:id/test', adminOnly, webhookTestRateLimiter, testWebhook);
 router.post('/:id/rotate-secret', adminOnly, rotateSecret);
 
 router.get('/:id/deliveries', adminOnly, listDeliveries);
-router.post('/:id/deliveries/:deliveryId/retry', adminOnly, retryDelivery);
+router.get('/:id/deliveries/:deliveryId', adminOnly, getDelivery);
+router.post('/:id/deliveries/:deliveryId/replay', adminOnly, webhookReplayRateLimiter, replayDelivery);
+router.post('/:id/replay', adminOnly, webhookReplayRateLimiter, bulkReplay);
 
-// Built-in public echo endpoint for instant testing with zero external setup
-router.post('/debug/echo', (req, res) => {
-  const sig = req.headers['linkora-signature'] || req.headers['linkly-signature'];
-  res.status(200).json({
-    success: true,
-    message: 'Webhook payload successfully delivered and acknowledged by Linkora Echo Service',
-    receivedAt: new Date().toISOString(),
-    event: req.body?.type || req.body?.event || 'test',
-    signatureReceived: Boolean(sig),
-    signatureHeader: sig || null,
-    payloadSize: JSON.stringify(req.body).length,
+// Built-in echo endpoint for trying webhooks with zero external setup. It
+// can't verify signatures (it holds no secret), and it's a public POST
+// target, so it exists only outside production.
+if (env.NODE_ENV !== 'production') {
+  router.post('/debug/echo', (req, res) => {
+    res.status(200).json({
+      success: true,
+      message: 'Received by the Linkora echo endpoint',
+      receivedAt: new Date().toISOString(),
+      eventId: req.headers['linkora-event-id'] || null,
+      type: req.body?.type || null,
+      attempt: Number(req.headers['linkora-attempt']) || null,
+      signatureReceived: Boolean(req.headers['linkora-signature']),
+    });
   });
-});
+}
 
 export default router;

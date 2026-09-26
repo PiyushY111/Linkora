@@ -321,6 +321,24 @@ export const loginRateLimiter = createSlidingWindowLimiter({
   keyPrefix: 'login',
 });
 
+// Webhook test pings and replays make this server POST to a customer's
+// endpoint on demand, so both are bounded per workspace rather than per IP.
+const perWorkspace = (req) => String(req.activeWorkspace?._id || getClientIp(req));
+
+export const webhookTestRateLimiter = createSlidingWindowLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  keyPrefix: 'webhook-test',
+  keyFn: perWorkspace,
+});
+
+export const webhookReplayRateLimiter = createSlidingWindowLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyPrefix: 'webhook-replay',
+  keyFn: perWorkspace,
+});
+
 export const authRateLimitMiddleware = async (req, res, next) => {
   const ip = getClientIp(req);
   try {

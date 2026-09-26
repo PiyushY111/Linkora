@@ -114,12 +114,12 @@ export async function rescanActiveLinksForAbuse() {
           await Link.findByIdAndUpdate(link._id, { isActive: false, abuseFlag: true });
           await invalidateLinkMeta(link.shortCode);
           if (link.customAlias) await invalidateLinkMeta(link.customAlias);
-          dispatchEvent(link.workspace, 'abuse.flagged', {
-            linkId: String(link._id),
-            shortCode: link.shortCode,
-            originalUrl: link.originalUrl,
-            source,
-          }).catch((err) => logger.error({ err }, 'Failed to dispatch abuse.flagged webhook'));
+          dispatchEvent(
+            link.workspace,
+            'security.abuse_flagged',
+            { linkId: String(link._id), shortCode: link.shortCode, originalUrl: link.originalUrl, source },
+            { sourceKey: `security.abuse_flagged:${link._id}` }
+          ).catch((err) => logger.error({ err }, 'Failed to dispatch security.abuse_flagged webhook'));
           flagged += 1;
           logger.warn({ linkId: link._id, source }, 'Link flagged as abusive by background rescan');
         }
