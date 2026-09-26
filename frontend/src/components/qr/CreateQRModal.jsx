@@ -44,7 +44,13 @@ const CATEGORIES = [
   { id: 'other', label: 'Other' },
 ];
 
-export default function CreateQRModal({ open, onClose, onCreated }) {
+/**
+ * @param {{ open: boolean, onClose: () => void, onCreated?: (link: object) => void,
+ *   initialDestinationUrl?: string, initialTitle?: string }} props
+ *   initialDestinationUrl / initialTitle pre-fill a dynamic QR code, e.g. for
+ *   a bio page's public URL.
+ */
+export default function CreateQRModal({ open, onClose, onCreated, initialDestinationUrl = '', initialTitle = '' }) {
   const { addLink } = useLinkStore();
 
   // Step / Tab: 'content' | 'styling'
@@ -92,8 +98,8 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
     if (open) {
       setModalTab('content');
       setContentType('dynamic');
-      setDestinationUrl('');
-      setTitle('');
+      setDestinationUrl(initialDestinationUrl);
+      setTitle(initialTitle);
       setCustomAlias('');
       setCategory('marketing');
       setWifiData({ ssid: '', password: '', encryption: 'WPA', hidden: false });
@@ -112,7 +118,7 @@ export default function CreateQRModal({ open, onClose, onCreated }) {
       setCreatedAsset(null);
       setIsCopied(false);
     }
-  }, [open, qrDefault]);
+  }, [open, qrDefault, initialDestinationUrl, initialTitle]);
 
   // Compute raw payload data for live preview
   const previewPayload = useMemo(() => {

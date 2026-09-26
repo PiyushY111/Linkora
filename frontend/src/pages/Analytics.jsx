@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import {
   TrendingUp,
@@ -28,13 +28,19 @@ import DevicesAndClientsPanel from '../components/analytics/DevicesAndClientsPan
 import UtmAttributionPanel from '../components/analytics/UtmAttributionPanel';
 import RealtimeClickStream from '../components/analytics/RealtimeClickStream';
 import EmptyState from '../components/ui/EmptyState';
+import BioPageAnalyticsPanel from '../components/analytics/BioPageAnalyticsPanel';
 import { analyticsService, linkService } from '../services';
-import { useCan } from '../context/authStore';
+import useAuthStore, { useCan } from '../context/authStore';
 import { downloadBlob } from '../utils/download';
 
 const Analytics = () => {
   const { linkId = 'all' } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // ?view=bio shows the workspace's bio page instead of link analytics.
+  const view = searchParams.get('view') === 'bio' ? 'bio' : 'links';
+  const activeWorkspaceId = useAuthStore((state) => state.activeWorkspace?.id);
+  const [bioRefreshKey, setBioRefreshKey] = useState(0);
 
   const [timeRange, setTimeRange] = useState('30d');
   const [customStart, setCustomStart] = useState('');
@@ -101,10 +107,16 @@ const Analytics = () => {
     [linkId, timeRange, customStart, customEnd, excludeBots]
   );
 
-  // Initial and reactive fetch
+  // Initial and reactive fetch (the bio page tab loads its own data)
   useEffect(() => {
+    if (view === 'bio') return;
     fetchAnalytics();
-  }, [fetchAnalytics]);
+  }, [fetchAnalytics, view]);
+
+  const refresh = useCallback(
+    (background) => (view === 'bio' ? setBioRefreshKey((key) => key + 1) : fetchAnalytics(background)),
+    [view, fetchAnalytics]
+  );
 
   // Load user links for switcher dropdown
   useEffect(() => {
@@ -118,10 +130,10 @@ const Analytics = () => {
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
-      fetchAnalytics(true);
+      refresh(true);
     }, 15000);
     return () => clearInterval(interval);
-  }, [autoRefresh, fetchAnalytics]);
+  }, [autoRefresh, refresh]);
 
   // Time range handler
   const handleTimeRangeChange = ({ timeRange: tr, startDate = '', endDate = '' }) => {
@@ -189,7 +201,7 @@ const Analytics = () => {
           {/* Right Header Actions */}
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Styled Link Selector */}
-            <div className="flex h-9 w-full sm:w-auto items-center gap-2 rounded-xl border border-ink-700 bg-ink-850/90 px-3 shadow-sm transition-colors hover:border-ink-600 focus-within:border-accent-400 focus-within:ring-1 focus-within:ring-accent-400">
+            <div className={`${view === 'bio' ? 'hidden' : 'flex'} h-9 w-full sm:w-auto items-center gap-2 rounded-xl border border-ink-700 bg-ink-850/90 px-3 shadow-sm transition-colors hover:border-ink-600 focus-within:border-accent-400 focus-within:ring-1 focus-within:ring-accent-400`}>
               <Globe size={14} className="text-accent-400 shrink-0" />
               <select
                 value={linkId}
@@ -228,7 +240,7 @@ const Analytics = () => {
             </button>
 
             {/* Export CSV Button (raw click rows: creator+) */}
-            {canExport && (
+            {canExport && view === 'links' && (
               <button
                 type="button"
                 onClick={handleExportCSV}
@@ -285,7 +297,7 @@ const Analytics = () => {
             {/* Manual Refresh Button */}
             <button
               type="button"
-              onClick={() => fetchAnalytics(true)}
+              onClick={() => refresh(true)}
               disabled={isRefreshing}
               className="inline-flex h-8.5 w-8.5 items-center justify-center rounded-xl border border-ink-700 bg-ink-800 text-paper-400 transition-colors hover:border-ink-600 hover:text-paper-100 disabled:opacity-50 cursor-pointer"
               title="Refresh telemetry"
@@ -295,6 +307,43 @@ const Analytics = () => {
           </div>
         </div>
 
+        {/* Links / Bio page tabs */}
+        <div className="mb-6 flex border-b border-ink-700" role="tablist" aria-label="Analytics view">
+          {[
+            { id: 'links', label: 'Links' },
+            { id: 'bio', label: 'Bio page' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={view === tab.id}
+              onClick={() => setSearchParams(tab.id === 'bio' ? { view: 'bio' } : {})}
+              className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+                view === tab.id
+                  ? 'border-accent-400 text-accent-400'
+                  : 'border-transparent text-paper-400 hover:text-paper-100'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {view === 'bio' ? (
+          <BioPageAnalyticsPanel
+            workspaceId={activeWorkspaceId}
+            queryParams={{
+              timeRange,
+              startDate: customStart || undefined,
+              endDate: customEnd || undefined,
+              excludeBots: excludeBots ? 'true' : undefined,
+            }}
+            refreshKey={bioRefreshKey}
+            onRetry={() => setBioRefreshKey((key) => key + 1)}
+          />
+        ) : (
+          <>
         {/* Selected Link Metadata Banner (if specific link chosen) */}
         {linkId !== 'all' && selectedLink && (
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-700 bg-ink-850/60 px-4 py-3 text-xs">
@@ -587,6 +636,8 @@ const Analytics = () => {
               <RealtimeClickStream clicks={recentClicks} isLive={autoRefresh} />
             )}
           </div>
+        )}
+          </>
         )}
       </AppShell>
     </>

@@ -16,6 +16,7 @@ import { updateIpAllowlist } from '../controllers/ipAllowlistController.js';
 import { exportActivity, updateAuditSettings } from '../controllers/auditController.js';
 import { updateDirectorySync } from '../controllers/directorySyncController.js';
 import { listRoles, createRole, updateRole, deleteRole } from '../controllers/customRoleController.js';
+import { getBioPageAnalytics } from '../controllers/bioPageAnalyticsController.js';
 import { protect } from '../middleware/auth.js';
 import { loadWorkspaceMembership, requireWorkspacePermission } from '../middleware/rbac.js';
 import { inviteRateLimiter } from '../middleware/rateLimiter.js';
@@ -61,6 +62,13 @@ router.delete('/:workspaceId/roles/:roleId', inWorkspace, canManageRoles, delete
 router.patch('/:workspaceId/settings', inWorkspace, requireWorkspacePermission('settings:manage'), updateSettings);
 router.get('/:workspaceId/activity', inWorkspace, requireWorkspacePermission('activity:read'), listActivity);
 router.get('/:workspaceId/activity/export', inWorkspace, requireWorkspacePermission('activity:read'), exportActivity);
+// Same permission as the other analytics endpoints (routes/analytics.js).
+router.get(
+  '/:workspaceId/bio-page/analytics',
+  inWorkspace,
+  requireWorkspacePermission('analytics:read'),
+  getBioPageAnalytics
+);
 router.post(
   '/:workspaceId/transfer-ownership',
   inWorkspace,

@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/b/:slug",
+      "destination": "https://linkora-api.onrender.com/b/:slug"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

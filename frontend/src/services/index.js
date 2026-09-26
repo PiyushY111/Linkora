@@ -124,6 +124,12 @@ export const analyticsService = {
     return response.data;
   },
 
+  // Bio page views plus each item's link clicks, over params.timeRange.
+  getBioPageAnalytics: async (workspaceId, params = {}) => {
+    const response = await api.get(`/workspaces/${workspaceId}/bio-page/analytics`, { params });
+    return response.data;
+  },
+
   exportAnalytics: async (params = {}) => {
     const response = await api.get('/analytics/export', {
       params,
@@ -450,9 +456,42 @@ export const publicApiService = {
     return response.data;
   },
 
+  getUsageHistory: async (apiKey, days) => {
+    const response = await api.get('/public/v1/usage/history', {
+      params: { days },
+      headers: { 'x-api-key': apiKey },
+    });
+    return response.data;
+  },
+
   getOpenApiSpec: async () => {
     const response = await api.get('/public/v1/openapi.json');
     return response.data;
   },
 };
 
+
+export const bioPageService = {
+  // Public: what /b/:slug renders. No auth needed.
+  getPublicPage: async (slug) => {
+    const response = await api.get(`/bio-pages/public/${encodeURIComponent(slug)}`);
+    return response.data;
+  },
+
+  // Public: { slug, available, reason?: 'taken' | 'invalid' }
+  checkSlug: async (slug, { signal } = {}) => {
+    const response = await api.get('/bio-pages/slug-availability', { params: { slug }, signal });
+    return response.data;
+  },
+
+  // The active workspace's page (404 until one is created).
+  getPage: async () => (await api.get('/bio-pages')).data,
+  createPage: async (data) => (await api.post('/bio-pages', data)).data,
+  updatePage: async (data) => (await api.patch('/bio-pages', data)).data,
+
+  // { linkId } or { destinationUrl }, plus label and optional icon.
+  addItem: async (item) => (await api.post('/bio-pages/items', item)).data,
+  updateItem: async (itemId, changes) => (await api.patch(`/bio-pages/items/${itemId}`, changes)).data,
+  reorderItems: async (itemIds) => (await api.put('/bio-pages/items/order', { itemIds })).data,
+  removeItem: async (itemId) => (await api.delete(`/bio-pages/items/${itemId}`)).data,
+};

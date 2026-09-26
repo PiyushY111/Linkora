@@ -11,6 +11,7 @@ import {
   Check,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ColorField from '../ui/ColorField';
 import {
   QR_DOT_TYPES,
   QR_CORNER_SQUARE_TYPES,
@@ -313,41 +314,17 @@ export default function QRCodeCustomizer({ config, onChange, onReset }) {
             {config.gradient?.enabled ? (
               <div className="space-y-4 rounded-xl border border-ink-700 bg-ink-800/40 p-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="field-label">Gradient Start</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={config.gradient?.color1 || '#C6FF3D'}
-                        onChange={(e) => updateGradient({ color1: e.target.value })}
-                        className="h-9 w-10 cursor-pointer rounded-lg border border-ink-600 bg-ink-800 p-0.5"
-                      />
-                      <input
-                        type="text"
-                        value={config.gradient?.color1 || '#C6FF3D'}
-                        onChange={(e) => updateGradient({ color1: e.target.value })}
-                        className="input font-mono text-xs uppercase"
-                      />
-                    </div>
-                  </div>
+                  <ColorField
+                    label="Gradient Start"
+                    value={config.gradient?.color1 || '#C6FF3D'}
+                    onChange={(color1) => updateGradient({ color1 })}
+                  />
 
-                  <div>
-                    <label className="field-label">Gradient End</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={config.gradient?.color2 || '#06B6D4'}
-                        onChange={(e) => updateGradient({ color2: e.target.value })}
-                        className="h-9 w-10 cursor-pointer rounded-lg border border-ink-600 bg-ink-800 p-0.5"
-                      />
-                      <input
-                        type="text"
-                        value={config.gradient?.color2 || '#06B6D4'}
-                        onChange={(e) => updateGradient({ color2: e.target.value })}
-                        className="input font-mono text-xs uppercase"
-                      />
-                    </div>
-                  </div>
+                  <ColorField
+                    label="Gradient End"
+                    value={config.gradient?.color2 || '#06B6D4'}
+                    onChange={(color2) => updateGradient({ color2 })}
+                  />
                 </div>
 
                 {/* Angle Slider */}
@@ -370,35 +347,13 @@ export default function QRCodeCustomizer({ config, onChange, onReset }) {
                 </div>
               </div>
             ) : (
-              <div>
-                <label className="field-label">Pattern Primary Color</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={config.dotsColor || '#C6FF3D'}
-                    onChange={(e) => {
-                      updateConfig({
-                        dotsColor: e.target.value,
-                        cornersSquareColor: e.target.value,
-                        cornersDotColor: e.target.value,
-                      });
-                    }}
-                    className="h-9 w-10 cursor-pointer rounded-lg border border-ink-600 bg-ink-800 p-0.5"
-                  />
-                  <input
-                    type="text"
-                    value={config.dotsColor || '#C6FF3D'}
-                    onChange={(e) => {
-                      updateConfig({
-                        dotsColor: e.target.value,
-                        cornersSquareColor: e.target.value,
-                        cornersDotColor: e.target.value,
-                      });
-                    }}
-                    className="input font-mono text-xs uppercase"
-                  />
-                </div>
-              </div>
+              <ColorField
+                label="Pattern Primary Color"
+                value={config.dotsColor || '#C6FF3D'}
+                onChange={(color) =>
+                  updateConfig({ dotsColor: color, cornersSquareColor: color, cornersDotColor: color })
+                }
+              />
             )}
 
             {/* Quick Color Swatches */}
@@ -447,19 +402,8 @@ export default function QRCodeCustomizer({ config, onChange, onReset }) {
               </div>
 
               {!config.isTransparent && (
-                <div className="mt-3 flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={config.bgColor || '#0A0A0B'}
-                    onChange={(e) => updateConfig({ bgColor: e.target.value })}
-                    className="h-9 w-10 cursor-pointer rounded-lg border border-ink-600 bg-ink-800 p-0.5"
-                  />
-                  <input
-                    type="text"
-                    value={config.bgColor || '#0A0A0B'}
-                    onChange={(e) => updateConfig({ bgColor: e.target.value })}
-                    className="input font-mono text-xs uppercase"
-                  />
+                <div className="mt-3">
+                  <ColorField value={config.bgColor || '#0A0A0B'} onChange={(bgColor) => updateConfig({ bgColor })} />
                 </div>
               )}
             </div>
@@ -636,41 +580,19 @@ export default function QRCodeCustomizer({ config, onChange, onReset }) {
                 )}
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="field-label">Frame Accent Color</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={config.frame?.color || '#C6FF3D'}
-                        onChange={(e) => updateFrame({ color: e.target.value })}
-                        className="h-8 w-9 cursor-pointer rounded-lg border border-ink-600 bg-ink-800 p-0.5"
-                      />
-                      <input
-                        type="text"
-                        value={config.frame?.color || '#C6FF3D'}
-                        onChange={(e) => updateFrame({ color: e.target.value })}
-                        className="input font-mono text-xs uppercase py-1.5"
-                      />
-                    </div>
-                  </div>
+                  <ColorField
+                    label="Frame Accent Color"
+                    size="sm"
+                    value={config.frame?.color || '#C6FF3D'}
+                    onChange={(color) => updateFrame({ color })}
+                  />
 
-                  <div>
-                    <label className="field-label">Text Color</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={config.frame?.textColor || '#0A0A0B'}
-                        onChange={(e) => updateFrame({ textColor: e.target.value })}
-                        className="h-8 w-9 cursor-pointer rounded-lg border border-ink-600 bg-ink-800 p-0.5"
-                      />
-                      <input
-                        type="text"
-                        value={config.frame?.textColor || '#0A0A0B'}
-                        onChange={(e) => updateFrame({ textColor: e.target.value })}
-                        className="input font-mono text-xs uppercase py-1.5"
-                      />
-                    </div>
-                  </div>
+                  <ColorField
+                    label="Text Color"
+                    size="sm"
+                    value={config.frame?.textColor || '#0A0A0B'}
+                    onChange={(textColor) => updateFrame({ textColor })}
+                  />
                 </div>
               </div>
             )}

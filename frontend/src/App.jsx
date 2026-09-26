@@ -20,6 +20,8 @@ import Settings from './pages/Settings';
 import QRCodeStudio from './pages/QRCodeStudio';
 import NotFound from './pages/NotFound';
 import Redirect from './pages/Redirect';
+import PublicBioPage from './pages/PublicBioPage';
+import BioPageBuilder from './pages/BioPageBuilder';
 import Workspaces from './pages/Workspaces';
 import AcceptInvite from './pages/AcceptInvite';
 import OnboardingInviteTeam from './pages/OnboardingInviteTeam';
@@ -69,6 +71,7 @@ function App() {
 
             <Route path="/dashboard" element={<ProtectedRoute component={Dashboard} />} />
             <Route path="/qr-codes" element={<ProtectedRoute component={QRCodeStudio} />} />
+            <Route path="/bio" element={<ProtectedRoute component={BioPageBuilder} permission="links:read" />} />
             <Route path="/analytics" element={<Navigate to="/analytics/all" replace />} />
             <Route path="/analytics/:linkId" element={<ProtectedRoute component={Analytics} />} />
             <Route path="/workspaces" element={<ProtectedRoute component={Workspaces} />} />
@@ -76,6 +79,10 @@ function App() {
             <Route path="/webhooks" element={<ProtectedRoute component={Webhooks} permission="webhooks:manage" />} />
             <Route path="/developer" element={<ProtectedRoute component={Developer} permission="apiKeys:manage" />} />
             <Route path="/settings" element={<ProtectedRoute component={Settings} />} />
+
+            {/* Public link-in-bio pages; the frontend host proxies the first
+                load to the API so link previews get real meta tags. */}
+            <Route path="/b/:slug" element={<PublicBioPage />} />
 
             {/* Catch short links and redirect through backend */}
             <Route path="/:shortCode" element={<Redirect />} />

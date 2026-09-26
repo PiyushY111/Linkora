@@ -8,12 +8,13 @@ import {
   getLinkAnalytics,
   bulkCreateLinks,
   getUsage,
+  getUsageHistory,
   getOpenApiSpec,
 } from '../controllers/publicApiController.js';
 import { apiKeyAuth, requireScope } from '../middleware/apiKeyAuth.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { apiTelemetry } from '../middleware/apiTelemetry.js';
-import { createTokenBucketLimiter } from '../middleware/rateLimiter.js';
+import { createTokenBucketLimiter, PUBLIC_API_TOKEN_BUCKET } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
@@ -38,12 +39,7 @@ router.get('/v1/docs', (req, res) => {
 </html>`);
 });
 
-// Token-bucket limiter: Burst up to 30 requests, sustained ~10 req/s per API key
-const publicApiLimiter = createTokenBucketLimiter({
-  capacity: 30,
-  refillPerSecond: 10,
-  keyPrefix: 'public-api',
-});
+const publicApiLimiter = createTokenBucketLimiter(PUBLIC_API_TOKEN_BUCKET);
 
 // Authenticated Public API V1 router
 const v1 = express.Router();
@@ -73,6 +69,7 @@ v1.post('/links/bulk', requireScope('links:write'), canWriteLinks, bulkCreateLin
 
 // Usage & Telemetry
 v1.get('/usage', getUsage);
+v1.get('/usage/history', getUsageHistory);
 
 router.use('/v1', v1);
 

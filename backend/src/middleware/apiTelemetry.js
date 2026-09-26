@@ -2,11 +2,28 @@ import ApiLog from '../models/ApiLog.js';
 import { getClientIp } from '../utils/helpers.js';
 import { logger } from '../config/logger.js';
 
+// Read-only usage introspection. The Developer dashboard polls these, and
+// logging them would fill the very history they report with its own polls.
+const USAGE_READ_PATHS = new Set(['/usage', '/usage/history']);
+
+/**
+ * True for GET/HEAD /usage and /usage/history (relative to the v1 router).
+ * @param {import('express').Request} req
+ */
+export function isUsageRead(req) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  const path = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
+  // Express matches routes case-insensitively, so compare the same way.
+  return USAGE_READ_PATHS.has(path.toLowerCase());
+}
+
 /**
  * Asynchronously records API request telemetry into the ApiLog collection.
  * Attaches to res.on('finish') to ensure zero latency overhead on API responses.
  */
 export function apiTelemetry(req, res, next) {
+  if (isUsageRead(req)) return next();
+
   const startTime = Date.now();
 
   res.on('finish', () => {
